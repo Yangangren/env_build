@@ -41,7 +41,7 @@ def convert_observation_to_space(observation):
     return space
 
 
-class CrossroadEnd2end(gym.Env):
+class CrossroadEnd2endPI(gym.Env):
     def __init__(self,
                  training_task,  # 'left', 'straight', 'right'
                  num_future_data=0,
@@ -77,9 +77,9 @@ class CrossroadEnd2end(gym.Env):
 
         self.done_type = 'not_done_yet'
         self.reward_info = None
-        self.ego_info_dim = None
-        self.per_tracking_info_dim = None
-        self.per_veh_info_dim = None
+        self.ego_info_dim = 6
+        self.per_tracking_info_dim = 3
+        self.per_veh_info_dim = 4
         self.mode = mode
         if not multi_display:
             self.traffic = Traffic(self.step_length,
@@ -188,10 +188,6 @@ class CrossroadEnd2end(gym.Env):
         self.ego_dynamics = ego_dynamics  # coordination 2
         self.v_light = self.traffic.v_light
 
-        # all_vehicles
-        # dict(x=x, y=y, v=v, phi=a, l=length,
-        #      w=width, route=route)
-
         all_info = dict(all_vehicles=self.all_vehicles,
                         ego_dynamics=self.ego_dynamics,
                         v_light=self.v_light)
@@ -295,7 +291,6 @@ class CrossroadEnd2end(gym.Env):
                                                              np.array([ego_phi], dtype=np.float32),
                                                              np.array([ego_v_x], dtype=np.float32),
                                                              self.num_future_data).numpy()[0]
-        self.per_tracking_info_dim = 3
 
         vector = np.concatenate((ego_vector, tracking_error, vehs_vector), axis=0)
         # vector = self.convert_vehs_to_rela(vector)
@@ -410,7 +405,7 @@ class CrossroadEnd2end(gym.Env):
             lr = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < CROSSROAD_SIZE/2+10, lr))  # interest of right
             ld = ld  # not interest in case of traffic light
 
-            # sort
+            # sort TODO: maybe delete in PI
             dl = sorted(dl, key=lambda v: (v['y'], -v['x']))
             du = sorted(du, key=lambda v: v['y'])
             dr = sorted(dr, key=lambda v: (v['y'], v['x']))
@@ -424,16 +419,13 @@ class CrossroadEnd2end(gym.Env):
 
             ud = sorted(ud, key=lambda v: v['y'])
             ul = sorted(ul, key=lambda v: (-v['y'], -v['x']), reverse=True)
-
             lr = sorted(lr, key=lambda v: -v['x'])
 
             # slice or fill to some number
-            def slice_or_fill(sorted_list, fill_value, num):
+            def slice(sorted_list, num):
                 if len(sorted_list) >= num:
                     return sorted_list[:num]
                 else:
-                    while len(sorted_list) < num:
-                        sorted_list.append(fill_value)
                     return sorted_list
 
             mode2fillvalue = dict(
@@ -447,11 +439,16 @@ class CrossroadEnd2end(gym.Env):
                 lr=dict(x=-(CROSSROAD_SIZE/2+20), y=-LANE_WIDTH*1.5, v=0, phi=0, w=2.5, l=5, route=('4o', '2i')))
 
             tmp = OrderedDict()
+            veh_num = 0
             for mode, num in VEHICLE_MODE_DICT[task].items():
-                tmp[mode] = slice_or_fill(eval(mode), mode2fillvalue[mode], num)
-
+                tmp[mode] = slice(eval(mode), num)
+                veh_num += len(tmp[mode])
+            if veh_num == 0:
+                print('surr vehicle is null')
+                if task == 'left':
+                    tmp['dl'].append(dict(x=LANE_WIDTH/2, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5,
+                                               route=('1o', '4i')))
             return tmp
-
         list_of_interested_veh_dict = []
         self.interested_vehs = filter_interested_vehicles(self.all_vehicles, self.training_task)
         for part in list(self.interested_vehs.values()):
@@ -460,7 +457,6 @@ class CrossroadEnd2end(gym.Env):
         for veh in list_of_interested_veh_dict:
             veh_x, veh_y, veh_v, veh_phi = veh['x'], veh['y'], veh['v'], veh['phi']
             vehs_vector.extend([veh_x, veh_y, veh_v, veh_phi])
-        self.per_veh_info_dim = 4
         return np.array(vehs_vector, dtype=np.float32)
 
     def recover_orig_position_fn(self, transformed_x, transformed_y, x, y, d):  # x, y, d are used to transform
@@ -653,14 +649,13 @@ class CrossroadEnd2end(gym.Env):
                     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
             # plot_interested vehs
-            for mode, num in self.veh_mode_dict.items():
-                for i in range(num):
-                    veh = self.interested_vehs[mode][i]
-                    veh_x = veh['x']
-                    veh_y = veh['y']
-                    veh_phi = veh['phi']
-                    veh_l = veh['l']
-                    veh_w = veh['w']
+            for mode, vehs in self.interested_vehs.items():
+                for i in range(len(vehs)):
+                    veh_x = vehs[i]['x']
+                    veh_y = vehs[i]['y']
+                    veh_phi = vehs[i]['phi']
+                    veh_l = vehs[i]['l']
+                    veh_w = vehs[i]['w']
                     task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
 
                     if is_in_plot_area(veh_x, veh_y):
@@ -796,7 +791,7 @@ class CrossroadEnd2end(gym.Env):
 
 
 def test_end2end():
-    env = CrossroadEnd2end(training_task='straight', num_future_data=0)
+    env = CrossroadEnd2endPI(training_task='left', num_future_data=0)
     obs = env.reset()
     i = 0
     done = 0
@@ -810,6 +805,7 @@ def test_end2end():
             else:
                 action = np.array([0.5, 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
+            print(len(obs))
             env.render()
         done = 0
         obs = env.reset()
