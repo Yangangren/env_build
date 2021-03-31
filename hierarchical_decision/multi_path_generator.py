@@ -3,7 +3,7 @@
 
 # =====================================
 # @Time    : 2020/10/12
-# @Author  : Yang Guan; Yangang Ren (Tsinghua Univ.)
+# @Author  : Yang Guan; Yangang Ren; Dongjie Yu (Tsinghua Univ.)
 # @FileName: hier_decision.py
 # =====================================
 from dynamics_and_models import ReferencePath
