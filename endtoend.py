@@ -59,7 +59,7 @@ class CrossroadEnd2endPI(gym.Env):
         self.env_model = EnvironmentModel(training_task, num_future_data)
         self.init_state = {}
         self.action_number = 2
-        self.exp_v = EXPECTED_V #TODO: temp
+        self.exp_v = EXPECTED_V
         self.ego_l, self.ego_w = L, W
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(self.action_number,), dtype=np.float32)
 
@@ -444,6 +444,7 @@ class CrossroadEnd2endPI(gym.Env):
                     self.veh_num += 1
                     self.veh_mode += ['static']
             return tmp
+
         list_of_interested_veh_dict = []
         self.interested_vehs = filter_interested_vehicles(self.all_vehicles, self.training_task)
         for part in list(self.interested_vehs.values()):
@@ -491,8 +492,10 @@ class CrossroadEnd2endPI(gym.Env):
 
     def compute_reward(self, obs, action):
         obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
-        reward, _, _, _, _, reward_dict = \
-            self.env_model.compute_rewards(obses, actions)
+        obses_ego = obses[:, :self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data + 1)]
+        obses_other = np.reshape(obses[:, self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data + 1):],
+                                 [-1, self.per_veh_info_dim])
+        reward, _, _, _, _, reward_dict = self.env_model.compute_rewards(obses_ego, actions, obses_other, obses_other.shape[0])
         for k, v in reward_dict.items():
             reward_dict[k] = v.numpy()[0]
         return reward.numpy()[0], reward_dict
@@ -790,17 +793,18 @@ def test_end2end():
     obs = env.reset()
     i = 0
     while i < 100000:
-        for j in range(80):
-            i += 1
+        for j in range(90):
             # action=2*np.random.random(2)-1
             if obs[4] < -18:
                 action = np.array([0, 1], dtype=np.float32)
             else:
                 action = np.array([0.25, 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
+            env.render()
             print(obs[env.ego_info_dim + env.per_tracking_info_dim:])
             print(env.veh_num, env.veh_mode)
-            env.render()
+            print('--------------------------------')
+        i += 1
         obs = env.reset()
         env.render()
 
