@@ -19,7 +19,7 @@ from gym.utils import seeding
 # gym.envs.user_defined.toyota_env.
 from dynamics_and_models import VehicleDynamics, ReferencePath, EnvironmentModel
 from endtoend_env_utils import shift_coordination, rotate_coordination, rotate_and_shift_coordination, deal_with_phi, \
-    L, W, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, judge_feasible, MODE2TASK, VEHICLE_MODE_DICT, VEH_NUM, EXPECTED_V
+    L, W, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, judge_feasible, MODE2TASK, VEHICLE_MODE_DICT, VEH_NUM, EXPECTED_V, mode2fillvalue
 from traffic import Traffic
 
 warnings.filterwarnings("ignore")
@@ -71,8 +71,9 @@ class CrossroadEnd2endPI(gym.Env):
         self.init_state = self._reset_init_state()
         self.obs = None
         self.action = None
+        self.veh_mode = []
         self.veh_mode_dict = VEHICLE_MODE_DICT[self.training_task]
-        self.veh_num = VEH_NUM[self.training_task]
+        self.veh_num = None
         self.virtual_red_light_vehicle = False
 
         self.done_type = 'not_done_yet'
@@ -140,7 +141,8 @@ class CrossroadEnd2endPI(gym.Env):
         self.obs = self._get_obs()
         self.done_type, done = self._judge_done()
         self.reward_info.update({'final_rew': reward})
-        all_info.update({'reward_info': self.reward_info, 'ref_index': self.ref_path.ref_index})
+        all_info.update({'reward_info': self.reward_info, 'ref_index': self.ref_path.ref_index,
+                         'veh_num': self.veh_num, 'veh_mode': self.veh_mode})
         return self.obs, reward, done, all_info
 
     def _set_observation_space(self, observation):
@@ -428,26 +430,19 @@ class CrossroadEnd2endPI(gym.Env):
                 else:
                     return sorted_list
 
-            mode2fillvalue = dict(
-                dl=dict(x=LANE_WIDTH/2, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '4i')),
-                du=dict(x=LANE_WIDTH*1.5, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '3i')),
-                dr=dict(x=LANE_WIDTH*(LANE_NUMBER-0.5), y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '2i')),
-                ru=dict(x=(CROSSROAD_SIZE/2+15), y=LANE_WIDTH*(LANE_NUMBER-0.5), v=0, phi=180, w=2.5, l=5, route=('2o', '3i')),
-                ur=dict(x=-LANE_WIDTH/2, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '2i')),
-                ud=dict(x=-LANE_WIDTH*1.5, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '1i')),
-                ul=dict(x=-LANE_WIDTH*(LANE_NUMBER-0.5), y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '4i')),
-                lr=dict(x=-(CROSSROAD_SIZE/2+20), y=-LANE_WIDTH*1.5, v=0, phi=0, w=2.5, l=5, route=('4o', '2i')))
-
             tmp = OrderedDict()
-            veh_num = 0
+            self.veh_num = 0
+            self.veh_mode = []
             for mode, num in VEHICLE_MODE_DICT[task].items():
                 tmp[mode] = slice(eval(mode), num)
-                veh_num += len(tmp[mode])
-            if veh_num == 0:
+                self.veh_num += len(tmp[mode])
+                self.veh_mode += ([mode] * len(tmp[mode]))
+            if self.veh_num == 0:
                 print('surr vehicle is null')
                 if task == 'left':
-                    tmp['dl'].append(dict(x=LANE_WIDTH/2, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5,
-                                               route=('1o', '4i')))
+                    tmp['dl'].append(mode2fillvalue[task])
+                    self.veh_num += 1
+                    self.veh_mode += ['static']
             return tmp
         list_of_interested_veh_dict = []
         self.interested_vehs = filter_interested_vehicles(self.all_vehicles, self.training_task)
@@ -520,11 +515,11 @@ class CrossroadEnd2endPI(gym.Env):
             #                            facecolor='none', linewidth=2))
 
             # ----------arrow--------------
-            plt.arrow(lane_width/2, -square_length / 2-10, 0, 5, color='b')
-            plt.arrow(lane_width/2, -square_length / 2-10+5, -0.5, 0, color='b', head_width=1)
-            plt.arrow(lane_width*1.5, -square_length / 2-10, 0, 4, color='b', head_width=1)
-            plt.arrow(lane_width*2.5, -square_length / 2 - 10, 0, 5, color='b')
-            plt.arrow(lane_width*2.5, -square_length / 2 - 10+5, 0.5, 0, color='b', head_width=1)
+            # plt.arrow(lane_width/2, -square_length / 2-10, 0, 5, color='b')
+            # plt.arrow(lane_width/2, -square_length / 2-10+5, -0.5, 0, color='b', head_width=1)
+            # plt.arrow(lane_width*1.5, -square_length / 2-10, 0, 4, color='b', head_width=1)
+            # plt.arrow(lane_width*2.5, -square_length / 2 - 10, 0, 5, color='b')
+            # plt.arrow(lane_width*2.5, -square_length / 2 - 10+5, 0.5, 0, color='b', head_width=1)
 
             # ----------horizon--------------
 
@@ -656,7 +651,7 @@ class CrossroadEnd2endPI(gym.Env):
                     veh_phi = vehs[i]['phi']
                     veh_l = vehs[i]['l']
                     veh_w = vehs[i]['w']
-                    task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
+                    task2color = {'left': 'cyan', 'straight': 'aqua', 'right': 'm'}
 
                     if is_in_plot_area(veh_x, veh_y):
                         plot_phi_line(veh_x, veh_y, veh_phi, 'black')
@@ -794,20 +789,18 @@ def test_end2end():
     env = CrossroadEnd2endPI(training_task='left', num_future_data=0)
     obs = env.reset()
     i = 0
-    done = 0
     while i < 100000:
         for j in range(80):
-            # print(i)
             i += 1
             # action=2*np.random.random(2)-1
-            if obs[4]<-18:
+            if obs[4] < -18:
                 action = np.array([0, 1], dtype=np.float32)
             else:
-                action = np.array([0.5, 0.33], dtype=np.float32)
+                action = np.array([0.25, 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
-            print(len(obs))
+            print(obs[env.ego_info_dim + env.per_tracking_info_dim:])
+            print(env.veh_num, env.veh_mode)
             env.render()
-        done = 0
         obs = env.reset()
         env.render()
 

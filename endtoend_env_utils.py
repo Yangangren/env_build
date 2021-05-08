@@ -22,7 +22,6 @@ VEHICLE_MODE_DICT = dict(left=OrderedDict(dl=2, du=2, ud=2, ul=2),
                          straight=OrderedDict(dl=1, du=2, ud=2, ru=2, ur=2),
                          right=OrderedDict(dr=1, ur=2, lr=2))
 
-
 def dict2flat(inp):
     out = []
     for key, val in inp.items():
@@ -44,6 +43,20 @@ VEH_NUM = dict(left=dict2num(VEHICLE_MODE_DICT['left']),
 VEHICLE_MODE_LIST = dict(left=dict2flat(VEHICLE_MODE_DICT['left']),
                          straight=dict2flat(VEHICLE_MODE_DICT['straight']),
                          right=dict2flat(VEHICLE_MODE_DICT['right']))
+
+mode2fillvalue = dict(
+    left=dict(x=LANE_WIDTH / 2, y=-(CROSSROAD_SIZE / 2 + 30), v=0, phi=90, w=2.5, l=5, route=('1o', '4i')),
+    du=dict(x=LANE_WIDTH * 1.5, y=-(CROSSROAD_SIZE / 2 + 30), v=0, phi=90, w=2.5, l=5, route=('1o', '3i')),
+    dr=dict(x=LANE_WIDTH * (LANE_NUMBER - 0.5), y=-(CROSSROAD_SIZE / 2 + 30), v=0, phi=90, w=2.5, l=5,
+            route=('1o', '2i')),
+    ru=dict(x=(CROSSROAD_SIZE / 2 + 15), y=LANE_WIDTH * (LANE_NUMBER - 0.5), v=0, phi=180, w=2.5, l=5,
+            route=('2o', '3i')),
+    ur=dict(x=-LANE_WIDTH / 2, y=(CROSSROAD_SIZE / 2 + 20), v=0, phi=-90, w=2.5, l=5, route=('3o', '2i')),
+    ud=dict(x=-LANE_WIDTH * 1.5, y=(CROSSROAD_SIZE / 2 + 20), v=0, phi=-90, w=2.5, l=5, route=('3o', '1i')),
+    ul=dict(x=-LANE_WIDTH * (LANE_NUMBER - 0.5), y=(CROSSROAD_SIZE / 2 + 20), v=0, phi=-90, w=2.5, l=5,
+            route=('3o', '4i')),
+    lr=dict(x=-(CROSSROAD_SIZE / 2 + 20), y=-LANE_WIDTH * 1.5, v=0, phi=0, w=2.5, l=5, route=('4o', '2i')))
+
 # Things related to lane number: static path generation (which further influences obs initialization),
 # observation formulation (especially other vehicles selection and number), rewards formulation
 # other vehicle prediction
