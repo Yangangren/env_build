@@ -729,69 +729,68 @@ class HierarchicalMpc(object):
         #             color = task2color[task]
         #             draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
 
-
-        # plot_interested vehs
-        for mode, num in self.veh_mode_dict.items():
-            for i in range(num):
-                veh = self.interested_vehs[mode][i]
-                veh_x = veh['x']
-                veh_y = veh['y']
-                veh_phi = veh['phi']
-                veh_l = veh['l']
-                veh_w = veh['w']
-                veh_type = veh['type']
-                #TODO: 定义veh_type
-                # print("车辆信息", veh)
-                # veh_type = 'car_1'
-                task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
-
-                if is_in_plot_area(veh_x, veh_y):
-                    plot_phi_line(veh_type, veh_x, veh_y, veh_phi, 'black')
-                    task = MODE2TASK[mode]
-                    color = task2color[task]
-                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
-
-        # plot_interested bicycle
-        for mode, num in self.bicycle_mode_dict.items():
-            for i in range(num):
-                veh = self.interested_vehs[mode][i]
-                veh_x = veh['x']
-                veh_y = veh['y']
-                veh_phi = veh['phi']
-                veh_l = veh['l']
-                veh_w = veh['w']
-                veh_type = veh['type']
-                # TODO: 定义veh_type
-                # print("车辆信息", veh)
-                # veh_type = 'bicycle_1'
-                task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
-
-                if is_in_plot_area(veh_x, veh_y):
-                    plot_phi_line(veh_type, veh_x, veh_y, veh_phi, 'black')
-                    task = MODE2TASK[mode]
-                    color = task2color[task]
-                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
-
-        # plot_interested person
-        for mode, num in self.person_mode_dict.items():
-            for i in range(num):
-                veh = self.interested_vehs[mode][i]
-                veh_x = veh['x']
-                veh_y = veh['y']
-                veh_phi = veh['phi']
-                veh_l = veh['l']
-                veh_w = veh['w']
-                veh_type = veh['type']
-                # TODO: 定义veh_type
-                # print("车辆信息", veh)
-                # veh_type = 'bicycle_1'
-                task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
-
-                if is_in_plot_area(veh_x, veh_y):
-                    plot_phi_line(veh_type, veh_x, veh_y, veh_phi, 'black')
-                    task = MODE2TASK[mode]
-                    color = task2color[task]
-                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
+        # # plot_interested vehs
+        # for mode, num in self.veh_mode_dict.items():
+        #     for i in range(num):
+        #         veh = self.interested_vehs[mode][i]
+        #         veh_x = veh['x']
+        #         veh_y = veh['y']
+        #         veh_phi = veh['phi']
+        #         veh_l = veh['l']
+        #         veh_w = veh['w']
+        #         veh_type = veh['type']
+        #         #TODO: 定义veh_type
+        #         # print("车辆信息", veh)
+        #         # veh_type = 'car_1'
+        #         task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
+        #
+        #         if is_in_plot_area(veh_x, veh_y):
+        #             plot_phi_line(veh_type, veh_x, veh_y, veh_phi, 'black')
+        #             task = MODE2TASK[mode]
+        #             color = task2color[task]
+        #             draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
+        #
+        # # plot_interested bicycle
+        # for mode, num in self.bicycle_mode_dict.items():
+        #     for i in range(num):
+        #         veh = self.interested_vehs[mode][i]
+        #         veh_x = veh['x']
+        #         veh_y = veh['y']
+        #         veh_phi = veh['phi']
+        #         veh_l = veh['l']
+        #         veh_w = veh['w']
+        #         veh_type = veh['type']
+        #         # TODO: 定义veh_type
+        #         # print("车辆信息", veh)
+        #         # veh_type = 'bicycle_1'
+        #         task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
+        #
+        #         if is_in_plot_area(veh_x, veh_y):
+        #             plot_phi_line(veh_type, veh_x, veh_y, veh_phi, 'black')
+        #             task = MODE2TASK[mode]
+        #             color = task2color[task]
+        #             draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
+        #
+        # # plot_interested person
+        # for mode, num in self.person_mode_dict.items():
+        #     for i in range(num):
+        #         veh = self.interested_vehs[mode][i]
+        #         veh_x = veh['x']
+        #         veh_y = veh['y']
+        #         veh_phi = veh['phi']
+        #         veh_l = veh['l']
+        #         veh_w = veh['w']
+        #         veh_type = veh['type']
+        #         # TODO: 定义veh_type
+        #         # print("车辆信息", veh)
+        #         # veh_type = 'bicycle_1'
+        #         task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
+        #
+        #         if is_in_plot_area(veh_x, veh_y):
+        #             plot_phi_line(veh_type, veh_x, veh_y, veh_phi, 'black')
+        #             task = MODE2TASK[mode]
+        #             color = task2color[task]
+        #             draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
 
         ego_v_x = self.env.ego_dynamics['v_x']
         ego_v_y = self.env.ego_dynamics['v_y']
