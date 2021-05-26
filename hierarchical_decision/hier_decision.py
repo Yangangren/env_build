@@ -725,6 +725,8 @@ def plot_static_path():
             plt.plot([four_points[2][0], four_points[3][0]], [four_points[2][1], four_points[3][1]], linestyle='--', color=color[i], alpha=0.5)
 
     plt.savefig('./multipath_planning.pdf')
+    plt.savefig('./multipath_planning.jpg')
+
     plt.show()
 
 
@@ -743,8 +745,8 @@ def select_and_rename_snapshots_of_an_episode(logdir, epinum, num):
 
 
 if __name__ == '__main__':
-    main()
-    # plot_static_path()
+    # main()
+    plot_static_path()
     # plot_and_save_ith_episode_data('./results/good/2021-03-15-23-56-21', 0)
     # select_and_rename_snapshots_of_an_episode('./results/good/2021-03-15-23-56-21', 0, 12)
 

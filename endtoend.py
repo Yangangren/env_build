@@ -137,7 +137,8 @@ class CrossroadEnd2end(gym.Env):
         del self.traffic
 
     def step(self, action):
-        self.action = self._action_transformation_for_end2end(action)
+        # self.action = self._action_transformation_for_end2end(action)
+        self.action = np.array(action, dtype=np.float32)        # MPC不需要归一化
         reward, self.reward_info = self.compute_reward(self.obs, self.action)
         next_ego_state, next_ego_params = self._get_next_ego_state(self.action)
         ego_dynamics = self._get_ego_dynamics(next_ego_state, next_ego_params)
@@ -218,8 +219,8 @@ class CrossroadEnd2end(gym.Env):
             return 'break_road_constrain', 1
         elif self._deviate_too_much():
             return 'deviate_too_much', 1
-        elif self._break_stability():
-            return 'break_stability', 1
+        # elif self._break_stability():
+        #     return 'break_stability', 1
         elif self._break_red_light():
             return 'break_red_light', 1
         elif self._is_achieve_goal():
@@ -475,7 +476,7 @@ class CrossroadEnd2end(gym.Env):
             # dr_b = list(filter(lambda v: v['x'] < CROSSROAD_SIZE / 2 + 10 and v['y'] > ego_y - 2, dr_b))  # interest of right
             # rl_b = rl_b  # not interest in case of traffic light
             # ru_b = list(filter(lambda v: v['x'] < CROSSROAD_SIZE / 2 + 10 and v['y'] < CROSSROAD_SIZE / 2 + 10, ru_b))  # interest of straight
-            ud_b = list(filter(lambda v: max(ego_y - 2, -8) < v['y'] < CROSSROAD_SIZE / 2 and ego_x > v['x'], ud_b))  # interest of left
+            ud_b = list(filter(lambda v: max(ego_y , -8) < v['y'] < CROSSROAD_SIZE / 2 and ego_x > v['x'], ud_b))  # interest of left
             # ul_b = list(filter(lambda v: -CROSSROAD_SIZE / 2 - 10 < v['x'] < ego_x and v['y'] < CROSSROAD_SIZE / 2, ul_b))  # interest of left
             lr_b = list(filter(lambda v: 0 < v['x'] < CROSSROAD_SIZE / 2 + 10, lr_b))  # interest of right
             # ld_b = ld_b  # not interest in case of traffic light
@@ -533,7 +534,7 @@ class CrossroadEnd2end(gym.Env):
 
             # fetch veh in range
             dl = list(filter(lambda v: v['x'] > -CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, dl))  # interest of left straight
-            du = list(filter(lambda v: ego_y-2 < v['y'] < CROSSROAD_SIZE/2+10 and v['x'] < ego_x+5, du))  # interest of left straight
+            du = list(filter(lambda v: ego_y-2 < v['y'] < CROSSROAD_SIZE/2+10 and v['x'] < ego_x+10, du))  # interest of left straight
             dr = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] > ego_y, dr))  # interest of right
             rd = rd  # not interest in case of traffic light
             rl = rl  # not interest in case of traffic light
@@ -541,9 +542,9 @@ class CrossroadEnd2end(gym.Env):
             if task == 'straight':
                 ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < CROSSROAD_SIZE/2+10, ur))  # interest of straight
             elif task == 'right':
-                ur = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2, ur))  # interest of right
-            ud = list(filter(lambda v: max(ego_y-2, -CROSSROAD_SIZE/2) < v['y'] < CROSSROAD_SIZE/2 and ego_x > v['x'], ud))  # interest of left
-            ul = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < ego_x and v['y'] < CROSSROAD_SIZE/2, ul))  # interest of left
+                ur = list(filter(lambda v: ego_x - 5 < v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2, ur))  # interest of right
+            ud = list(filter(lambda v: max(ego_y+5, -CROSSROAD_SIZE/2) < v['y'] < min(ego_y+12, CROSSROAD_SIZE/2) and ego_x > v['x'], ud))  # interest of left
+            ul = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < ego_x+5 and v['y'] < CROSSROAD_SIZE/2, ul))  # interest of left
             lu = lu  # not interest in case of traffic light
             lr = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < CROSSROAD_SIZE/2+10, lr))  # interest of right
             ld = ld  # not interest in case of traffic light
@@ -597,11 +598,14 @@ class CrossroadEnd2end(gym.Env):
 
     def _reset_init_state(self):
         if self.training_task == 'left':
-            random_index = int(np.random.random()*(900+500)) + 700
+            # random_index = int(np.random.random()*(900+500)) + 700
+            random_index = 1200
         elif self.training_task == 'straight':
-            random_index = int(np.random.random()*(1200+500)) + 700
+            # random_index = int(np.random.random()*(1200+500)) + 700
+            random_index = 900
         else:
-            random_index = int(np.random.random()*(420+500)) + 700
+            # random_index = int(np.random.random()*(420+500)) + 700
+            random_index = 1200
 
         x, y, phi = self.ref_path.indexs2points(random_index)
         # v = 7 + 6 * np.random.random()
@@ -1056,7 +1060,7 @@ def test_end2end():
     obs = env.reset()
     i = 0
     while i < 100000:
-        for j in range(200):
+        for j in range(80):
             i += 1
             # action=2*np.random.random(2)-1
             if obs[4] < -18:
