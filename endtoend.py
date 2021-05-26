@@ -41,7 +41,7 @@ def convert_observation_to_space(observation):
     return space
 
 
-class CrossroadEnd2end(gym.Env):
+class CrossroadEnd2endPiFix(gym.Env):
     def __init__(self,
                  training_task,  # 'left', 'straight', 'right'
                  num_future_data=0,
@@ -140,7 +140,8 @@ class CrossroadEnd2end(gym.Env):
         self.obs = self._get_obs()
         self.done_type, done = self._judge_done()
         self.reward_info.update({'final_rew': reward})
-        all_info.update({'reward_info': self.reward_info, 'ref_index': self.ref_path.ref_index})
+        all_info.update({'reward_info': self.reward_info, 'ref_index': self.ref_path.ref_index, 
+                         'veh_num': self.veh_num})
         return self.obs, reward, done, all_info
 
     def _set_observation_space(self, observation):
@@ -500,8 +501,9 @@ class CrossroadEnd2end(gym.Env):
 
     def compute_reward(self, obs, action):
         obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
-        reward, _, _, _, _, reward_dict = \
-            self.env_model.compute_rewards(obses, actions)
+        obses_ego = obses[:, :self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data + 1)]
+        obses_other = obses[:, self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data + 1):]
+        reward, _, _, _, _, reward_dict = self.env_model.compute_rewards(obses_ego, actions, obses_other)
         for k, v in reward_dict.items():
             reward_dict[k] = v.numpy()[0]
         return reward.numpy()[0], reward_dict
@@ -796,21 +798,33 @@ class CrossroadEnd2end(gym.Env):
 
 
 def test_end2end():
-    env = CrossroadEnd2end(training_task='straight', num_future_data=0)
+    env = CrossroadEnd2endPiFix(training_task='left', num_future_data=0)
+    env_model = EnvironmentModel(training_task='left', num_future_data=0)
     obs = env.reset()
     i = 0
-    done = 0
     while i < 100000:
-        for j in range(80):
-            # print(i)
+        for j in range(200):
             i += 1
             # action=2*np.random.random(2)-1
-            if obs[4]<-18:
+            if obs[4] < -18:
                 action = np.array([0, 1], dtype=np.float32)
+            elif obs[3] <= -18:
+                action = np.array([0, 0], dtype=np.float32)
             else:
-                action = np.array([0.5, 0.33], dtype=np.float32)
+                action = np.array([-0.3, 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
+            obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
+            obses_ego = obses[:, :env.ego_info_dim + env.per_tracking_info_dim * (env.num_future_data + 1)]
+            obses_other = np.reshape(obses[:, env.ego_info_dim + env.per_tracking_info_dim * (env.num_future_data + 1):],
+                                     [-1, env.per_veh_info_dim])
+            env_model.reset(obses_ego, obses_other, [env.veh_num], env.ref_path.ref_index)
+            env_model.mode = 'testing'
+            for _ in range(2):
+                obses_ego, obses_other, rewards, punish_term_for_training, \
+                    real_punish_term, veh2veh4real, veh2road4real = env_model.rollout_out(actions)
             env.render()
+            if done:
+                break
         done = 0
         obs = env.reset()
         env.render()
