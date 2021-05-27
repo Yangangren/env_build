@@ -19,7 +19,7 @@ import numpy as np
 import tensorflow as tf
 
 from dynamics_and_models import EnvironmentModel, ReferencePath
-from endtoend import CrossroadEnd2end
+from endtoend import CrossroadEnd2endPiFix
 from endtoend_env_utils import rotate_coordination, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, MODE2TASK
 from hierarchical_decision.multi_path_generator import MultiPathGenerator
 from utils.load_policy import LoadPolicy
@@ -31,7 +31,7 @@ class HierarchicalDecision(object):
     def __init__(self, task, train_exp_dir, ite, logdir=None):
         self.task = task
         self.policy = LoadPolicy('../utils/models/{}/{}'.format(task, train_exp_dir), ite)
-        self.env = CrossroadEnd2end(training_task=self.task, mode='testing')
+        self.env = CrossroadEnd2endPiFix(training_task=self.task, mode='testing')
         self.model = EnvironmentModel(self.task, mode='selecting')
         self.recorder = Recorder()
         self.episode_counter = -1
@@ -51,14 +51,20 @@ class HierarchicalDecision(object):
         self.old_index = 0
         self.path_list = self.stg.generate_path(self.task)
         # ------------------build graph for tf.function in advance-----------------------
-        for i in range(3):
-            obs = self.env.reset()
-            obs = tf.convert_to_tensor(obs[np.newaxis, :], dtype=tf.float32)
-            self.is_safe(obs, i)
-        obs = self.env.reset()
-        obs_with_specific_shape = np.tile(obs, (3, 1))
-        self.policy.run_batch(obs_with_specific_shape)
-        self.policy.obj_value_batch(obs_with_specific_shape)
+        for i in range(LANE_NUMBER):
+            obs = self.env.reset()[np.newaxis, :]
+            obs_ego = obs[:, :self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1)]
+            obs_other = np.reshape(obs[:, self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1):],
+                                   [-1, self.env.per_veh_info_dim])
+            self.is_safe(obs_ego, obs_other, i)
+        obs = self.env.reset()[np.newaxis, :]
+        obs_ego = obs[:, :self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data + 1)]
+        obs_other = np.reshape(obs[:, self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1):],
+                               [-1, self.env.per_veh_info_dim])
+        obs_ego_with_specific_shape = np.tile(obs_ego, (LANE_NUMBER, 1))
+        obs_other_with_specific_shape = np.tile(obs_other, (LANE_NUMBER, 1))
+        self.policy.run_batch(obs_ego_with_specific_shape, obs_other_with_specific_shape, [self.env.veh_num]*LANE_NUMBER)
+        self.policy.obj_value_batch(obs_ego_with_specific_shape, obs_other_with_specific_shape, [self.env.veh_num]*LANE_NUMBER)
         # ------------------build graph for tf.function in advance-----------------------
         self.reset()
 
@@ -87,24 +93,26 @@ class HierarchicalDecision(object):
     #     return False if veh2veh4real[0] > 0 else True
 
     @tf.function
-    def is_safe(self, obs, path_index):
-        self.model.add_traj(obs, path_index)
+    def is_safe(self, obs_ego, obs_other, path_index):
+        self.model.add_traj(obs_ego, obs_other, [self.env.veh_num], path_index)
         punish = 0.
         for step in range(5):
-            action = self.policy.run_batch(obs)
-            obs, _, _, _, veh2veh4real, _ = self.model.rollout_out(action)
+            action = self.policy.run_batch(obs_ego, obs_other, [self.env.veh_num])
+            obs_ego, obs_other, _, _, _, veh2veh4real, _ = self.model.rollout_out(action)
             punish += veh2veh4real[0]
         return False if punish > 0 else True
 
     def safe_shield(self, real_obs, path_index):
         action_safe_set = [[[0., -1.]]]
         real_obs = tf.convert_to_tensor(real_obs[np.newaxis, :], dtype=tf.float32)
-        obs = real_obs
-        if not self.is_safe(obs, path_index):
+        real_obs_ego = real_obs[:, :self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1)]
+        real_obs_other = tf.reshape(real_obs[:, self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1):],
+                                    [-1, self.env.per_veh_info_dim])
+        if not self.is_safe(real_obs_ego, real_obs_other, path_index):
             print('SAFETY SHIELD STARTED!')
             return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), True
         else:
-            return self.policy.run_batch(real_obs).numpy()[0], False
+            return self.policy.run_batch(real_obs_ego, real_obs_other, [self.env.veh_num]*real_obs.shape[0]).numpy()[0], False
 
     def step(self):
         self.step_counter += 1
@@ -115,7 +123,10 @@ class HierarchicalDecision(object):
                 self.env.set_traj(path)
                 obs_list.append(self.env._get_obs())
             all_obs = tf.stack(obs_list, axis=0)
-            path_values = self.policy.obj_value_batch(all_obs).numpy()
+            all_obs_ego = all_obs[:, :self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data + 1)]
+            all_obs_other = tf.reshape(all_obs[:, self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data + 1):],
+                                       [-1, self.env.per_veh_info_dim])
+            path_values = self.policy.obj_value_batch(all_obs_ego, all_obs_other, [self.env.veh_num]*all_obs.shape[0]).numpy()
             old_value = path_values[self.old_index]
             new_index, new_value = int(np.argmin(path_values)), min(path_values)  # value is to approximate (- sum of reward)
             path_index = self.old_index if old_value - new_value < 0.1 else new_index
@@ -406,7 +417,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-03-15-16-39-00', 180000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-05-24-12-36-18', 100000, logdir)
 
     for i in range(300):
         done = 0
