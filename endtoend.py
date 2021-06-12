@@ -73,13 +73,13 @@ class CrossroadEnd2end(gym.Env):
         self.action = None
         self.veh_mode_dict = VEHICLE_MODE_DICT[self.training_task]
         self.veh_num = VEH_NUM[self.training_task]
-        self.virtual_red_light_vehicle = False
 
         self.done_type = 'not_done_yet'
         self.reward_info = None
-        self.ego_info_dim = None
-        self.per_tracking_info_dim = None
-        self.per_veh_info_dim = None
+        self.ego_info_dim = 6
+        self.per_veh_info_dim = 4
+        self.per_tracking_info_dim = 3
+        self.light_dim = 1
         self.mode = mode
         if not multi_display:
             self.traffic = Traffic(self.step_length,
@@ -117,13 +117,6 @@ class CrossroadEnd2end(gym.Env):
         self.action = None
         self.reward_info = None
         self.done_type = 'not_done_yet'
-        if self.mode == 'training':
-            if np.random.random() > 0.9:
-                self.virtual_red_light_vehicle = True
-            else:
-                self.virtual_red_light_vehicle = False
-        else:
-            self.virtual_red_light_vehicle = False
         return self.obs
 
     def close(self):
@@ -295,9 +288,8 @@ class CrossroadEnd2end(gym.Env):
                                                              np.array([ego_phi], dtype=np.float32),
                                                              np.array([ego_v_x], dtype=np.float32),
                                                              self.num_future_data).numpy()[0]
-        self.per_tracking_info_dim = 3
-
-        vector = np.concatenate((ego_vector, tracking_error, vehs_vector), axis=0)
+        light_vector = np.array([self.v_light], dtype=np.float32)
+        vector = np.concatenate((ego_vector, tracking_error, light_vector, vehs_vector), axis=0)
         # vector = self.convert_vehs_to_rela(vector)
 
         return vector
@@ -334,7 +326,6 @@ class CrossroadEnd2end(gym.Env):
         ego_y = self.ego_dynamics['y']
         ego_phi = self.ego_dynamics['phi']
         ego_feature = [ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi]
-        self.ego_info_dim = 6
         return np.array(ego_feature, dtype=np.float32)
 
     def _construct_veh_vector_short(self, exit_='D'):
@@ -383,11 +374,6 @@ class CrossroadEnd2end(gym.Env):
                     lr.append(v)
                 elif start == name_setting['lo'] and end == name_setting['di']:
                     ld.append(v)
-            if self.training_task != 'right':
-                if (v_light != 0 and ego_y < -CROSSROAD_SIZE/2) \
-                        or (self.virtual_red_light_vehicle and ego_y < -CROSSROAD_SIZE/2):
-                    dl.append(dict(x=LANE_WIDTH/2, y=-CROSSROAD_SIZE/2+2.5, v=0., phi=90, l=5, w=2.5, route=None))
-                    du.append(dict(x=LANE_WIDTH*1.5, y=-CROSSROAD_SIZE/2+2.5, v=0., phi=90, l=5, w=2.5, route=None))
 
             # fetch veh in range
             dl = list(filter(lambda v: v['x'] > -CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, dl))  # interest of left straight
@@ -500,7 +486,7 @@ class CrossroadEnd2end(gym.Env):
 
     def compute_reward(self, obs, action):
         obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
-        reward, _, _, _, _, reward_dict = \
+        reward, _, _, _, _, _, reward_dict = \
             self.env_model.compute_rewards(obses, actions)
         for k, v in reward_dict.items():
             reward_dict[k] = v.numpy()[0]
@@ -797,9 +783,9 @@ class CrossroadEnd2end(gym.Env):
 
 def test_end2end():
     env = CrossroadEnd2end(training_task='straight', num_future_data=0)
+    env_model = EnvironmentModel(training_task='straight', num_future_data=0)
     obs = env.reset()
     i = 0
-    done = 0
     while i < 100000:
         for j in range(80):
             # print(i)
@@ -808,9 +794,17 @@ def test_end2end():
             if obs[4]<-18:
                 action = np.array([0, 1], dtype=np.float32)
             else:
-                action = np.array([0.5, 0.33], dtype=np.float32)
+                action = np.array([0., 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
+            env_model.reset(obs[np.newaxis, :], env.ref_path.ref_index)
+            env_model.mode = 'testing'
+            for _ in range(3):
+                obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2line4training \
+                    = env_model.rollout_out(action[np.newaxis,:])
+                print(obses[:, 9])
             env.render()
+            # if done:
+            #     break
         done = 0
         obs = env.reset()
         env.render()
