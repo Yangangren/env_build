@@ -17,7 +17,7 @@ from tensorflow import logical_and
 
 # gym.envs.user_defined.toyota_env.
 from endtoend_env_utils import rotate_coordination, L, W, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, \
-    VEHICLE_MODE_LIST, EXPECTED_V
+    VEHICLE_MODE_LIST
 
 tf.config.threading.set_inter_op_parallelism_threads(1)
 tf.config.threading.set_intra_op_parallelism_threads(1)
@@ -99,7 +99,6 @@ class EnvironmentModel(object):  # all tensors
         self.ref_path = ReferencePath(self.task)
         self.ref_indexes = None
         self.num_future_data = num_future_data
-        self.exp_v = EXPECTED_V
         self.reward_info = None
         self.ego_info_dim = 6
         self.per_veh_info_dim = 4
@@ -551,8 +550,11 @@ class EnvironmentModel(object):  # all tensors
             plt.text(text_x, text_y_start - next(ge), r'ego_phi: ${:.2f}\degree$'.format(ego_phi))
             plt.text(text_x, text_y_start - next(ge), r'delta_phi: ${:.2f}\degree$'.format(delta_phi))
 
+            _, current_points = ReferencePath(self.task).find_closest_point(ego_x, ego_y)
+            exp_v = current_points[3]
+
             plt.text(text_x, text_y_start - next(ge), 'v_x: {:.2f}m/s'.format(ego_v_x))
-            plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(self.exp_v))
+            plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(exp_v))
             plt.text(text_x, text_y_start - next(ge), 'v_y: {:.2f}m/s'.format(ego_v_y))
             plt.text(text_x, text_y_start - next(ge), 'yaw_rate: {:.2f}rad/s'.format(ego_r))
 
@@ -582,7 +584,6 @@ def deal_with_phi_diff(phi_diff):
 
 class ReferencePath(object):
     def __init__(self, task, ref_index=None):
-        self.exp_v = EXPECTED_V
         self.task = task
         self.path_list = []
         self.path_len_list = []
@@ -628,7 +629,9 @@ class ReferencePath(object):
                     xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
                     phis_1 = np.arctan2(ys_2 - ys_1,
                                         xs_2 - xs_1) * 180 / pi
-                    planed_trj = xs_1, ys_1, phis_1
+                    vs_1 = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0])-1) + [8.33] * len(end_straight_line_x), dtype=np.float32)
+                    # EXPECTED_V = 8.33; 7.0; 8.33 (m/s)
+                    planed_trj = xs_1, ys_1, phis_1, vs_1
                     self.path_list.append(planed_trj)
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
 
@@ -660,7 +663,10 @@ class ReferencePath(object):
                     xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
                     phis_1 = np.arctan2(ys_2 - ys_1,
                                         xs_2 - xs_1) * 180 / pi
-                    planed_trj = xs_1, ys_1, phis_1
+                    vs_1 = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] * len(
+                        end_straight_line_x), dtype=np.float32)
+                    # EXPECTED_V = 8.33; 7.0; 8.33 (m/s)
+                    planed_trj = xs_1, ys_1, phis_1, vs_1
                     self.path_list.append(planed_trj)
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
 
@@ -695,7 +701,10 @@ class ReferencePath(object):
                     xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
                     phis_1 = np.arctan2(ys_2 - ys_1,
                                         xs_2 - xs_1) * 180 / pi
-                    planed_trj = xs_1, ys_1, phis_1
+                    vs_1 = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] * len(
+                        end_straight_line_x), dtype=np.float32)
+                    # EXPECTED_V = 8.33; 7.0; 8.33 (m/s)
+                    planed_trj = xs_1, ys_1, phis_1, vs_1
                     self.path_list.append(planed_trj)
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
 
@@ -728,9 +737,10 @@ class ReferencePath(object):
         indexs = tf.where(indexs < len(self.path[0]), indexs, len(self.path[0])-1)
         points = tf.gather(self.path[0], indexs), \
                  tf.gather(self.path[1], indexs), \
-                 tf.gather(self.path[2], indexs)
+                 tf.gather(self.path[2], indexs), \
+                 tf.gather(self.path[3], indexs)
 
-        return points[0], points[1], points[2]
+        return points[0], points[1], points[2], points[3]
 
     def tracking_error_vector(self, ego_xs, ego_ys, ego_phis, ego_vs, n):
         def two2one(ref_xs, ref_ys):
@@ -757,7 +767,7 @@ class ReferencePath(object):
 
         tracking_error = tf.stack([two2one(current_points[0], current_points[1]),
                                            deal_with_phi_diff(ego_phis - current_points[2]),
-                                           ego_vs - self.exp_v], 1)
+                                           ego_vs - current_points[3]], 1)
 
         final = tracking_error
         if n > 0:
