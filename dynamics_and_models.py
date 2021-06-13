@@ -101,8 +101,9 @@ class EnvironmentModel(object):  # all tensors
         self.num_future_data = num_future_data
         self.reward_info = None
         self.ego_info_dim = 6
+        self.track_info_dim = 3
         self.per_veh_info_dim = 4
-        self.per_tracking_info_dim = 3
+        self.per_path_info_dim = 4
         self.light_dim = 1
         self.light_flag = False
         self.light_cond = None
@@ -189,14 +190,13 @@ class EnvironmentModel(object):  # all tensors
     def compute_rewards(self, obses, actions):
         # obses = self.convert_vehs_to_abso(obses)
         with tf.name_scope('compute_reward') as scope:
-            ego_infos, tracking_infos, = obses[:, :self.ego_info_dim], \
-                                                   obses[:,
-                                                   self.ego_info_dim:self.ego_info_dim + self.per_tracking_info_dim * (
-                                                               self.num_future_data + 1)]
-
-            light_infos = obses[:, self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data + 1):
-                                   self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data + 1) + self.light_dim]
-            veh_infos = obses[:, self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data + 1) + self.light_dim:]
+            ego_infos = obses[:, :self.ego_info_dim]
+            track_infos = obses[:, self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
+            path_infos = obses[:, self.ego_info_dim + self.track_info_dim: self.ego_info_dim + self.track_info_dim +
+                                  self.per_path_info_dim * self.num_future_data]
+            light_infos = obses[:, self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data:
+                                   self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data + self.light_dim]
+            veh_infos = obses[:, self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data + self.light_dim:]
             veh_infos = tf.stop_gradient(veh_infos)
             steers, a_xs = actions[:, 0], actions[:, 1]
             # rewards related to action
@@ -207,9 +207,9 @@ class EnvironmentModel(object):  # all tensors
             punish_yaw_rate = -tf.square(ego_infos[:, 2])
 
             # rewards related to tracking error
-            devi_y = -tf.square(tracking_infos[:, 0])
-            devi_phi = -tf.cast(tf.square(tracking_infos[:, 1] * np.pi / 180.), dtype=tf.float32)
-            devi_v = -tf.square(tracking_infos[:, 2])
+            devi_y = -tf.square(track_infos[:, 0])
+            devi_phi = -tf.cast(tf.square(track_infos[:, 1] * np.pi / 180.), dtype=tf.float32)
+            devi_v = -tf.square(track_infos[:, 2])
 
             # rewards related to veh2veh collision
             ego_lws = (L - W) / 2.
@@ -343,15 +343,14 @@ class EnvironmentModel(object):  # all tensors
     def compute_next_obses(self, obses, actions):
         # obses = self.convert_vehs_to_abso(obses)
         self.light_flag = True
-        ego_infos, tracking_infos, = obses[:, :self.ego_info_dim], \
-                                     obses[:,
-                                     self.ego_info_dim:self.ego_info_dim + self.per_tracking_info_dim * (
-                                             self.num_future_data + 1)]
-
-        light_infos = obses[:, self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data + 1):
-                               self.ego_info_dim + self.per_tracking_info_dim * (
-                                           self.num_future_data + 1) + self.light_dim]
-        veh_infos = obses[:, self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data + 1) + self.light_dim:]
+        ego_infos = obses[:, :self.ego_info_dim]
+        track_infos = obses[:, self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
+        path_infos = obses[:, self.ego_info_dim + self.track_info_dim: self.ego_info_dim + self.track_info_dim +
+                                                                       self.per_path_info_dim * self.num_future_data]
+        light_infos = obses[:, self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data:
+                               self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data + self.light_dim]
+        veh_infos = obses[:,
+                    self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data + self.light_dim:]
 
         veh_infos = tf.stop_gradient(veh_infos)
         next_ego_infos = self.ego_predict(ego_infos, actions)
@@ -364,8 +363,8 @@ class EnvironmentModel(object):  # all tensors
                                                                       self.num_future_data)
         else:
             # next_tracking_infos = self.tracking_error_predict(ego_infos, tracking_infos, actions)
-            next_tracking_infos = tf.zeros(shape=(len(next_ego_infos),
-                                                  (self.num_future_data+1)*self.per_tracking_info_dim))
+            next_tracking_infos = tf.zeros(shape=(len(next_ego_infos), self.track_info_dim +
+                                                  self.num_future_data * self.per_path_info_dim))
             ref_indexes = tf.expand_dims(self.ref_indexes, axis=1)
             for ref_idx, path in enumerate(self.ref_path.path_list):
                 self.ref_path.path = path
@@ -799,7 +798,8 @@ class ReferencePath(object):
         if n > 0:
             future_points = tf.concat([tf.stack([ref_point[0] - ego_xs,
                                                  ref_point[1] - ego_ys,
-                                                 deal_with_phi_diff(ego_phis - ref_point[2])], 1)
+                                                 deal_with_phi_diff(ego_phis - ref_point[2]),
+                                                 ref_point[3]], 1)
                                        for ref_point in n_future_data], 1)
             final = tf.concat([final, future_points], 1)
 

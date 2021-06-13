@@ -76,8 +76,9 @@ class CrossroadEnd2end(gym.Env):
         self.done_type = 'not_done_yet'
         self.reward_info = None
         self.ego_info_dim = 6
+        self.track_info_dim = 3
         self.per_veh_info_dim = 4
-        self.per_tracking_info_dim = 3
+        self.per_path_info_dim = 4
         self.light_dim = 1
         self.mode = mode
         if not multi_display:
@@ -213,7 +214,7 @@ class CrossroadEnd2end(gym.Env):
             return 'not_done_yet', 0
 
     def _deviate_too_much(self):
-        delta_y, delta_phi, delta_v = self.obs[self.ego_info_dim:self.ego_info_dim+3]
+        delta_y, delta_phi, delta_v = self.obs[self.ego_info_dim:self.ego_info_dim+self.track_info_dim]
         return True if abs(delta_y) > 15 else False
 
     def _break_road_constrain(self):
@@ -685,11 +686,11 @@ class CrossroadEnd2end(gym.Env):
             draw_rotate_rec(ego_x, ego_y, ego_phi, ego_l, ego_w, 'red')
 
             # plot future data
-            tracking_info = self.obs[self.ego_info_dim:self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data+1)]
-            future_path = tracking_info[self.per_tracking_info_dim:]
+            tracking_info = self.obs[self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
+            future_path = self.obs[self.ego_info_dim + self.track_info_dim: self.ego_info_dim + self.track_info_dim +
+                                                                            self.per_path_info_dim * self.num_future_data]
             for i in range(self.num_future_data):
-                delta_x, delta_y, delta_phi = future_path[i*self.per_tracking_info_dim:
-                                                          (i+1)*self.per_tracking_info_dim]
+                delta_x, delta_y, delta_phi, exp_v = future_path[i*self.per_path_info_dim: (i+1)*self.per_path_info_dim]
                 path_x, path_y, path_phi = ego_x+delta_x, ego_y+delta_y, ego_phi-delta_phi
                 plt.plot(path_x, path_y, 'g.')
                 plot_phi_line(path_x, path_y, path_phi, 'g')
@@ -780,8 +781,8 @@ class CrossroadEnd2end(gym.Env):
 
 
 def test_end2end():
-    env = CrossroadEnd2end(training_task='straight', num_future_data=0)
-    env_model = EnvironmentModel(training_task='straight', num_future_data=0)
+    env = CrossroadEnd2end(training_task='straight', num_future_data=5)
+    env_model = EnvironmentModel(training_task='straight', num_future_data=5)
     obs = env.reset()
     i = 0
     while i < 100000:
@@ -794,8 +795,8 @@ def test_end2end():
             else:
                 action = np.array([0., 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
-            env_model.reset(obs[np.newaxis, :], env.ref_path.ref_index)
-            env_model.mode = 'testing'
+            env_model.reset(obs[np.newaxis, :], [env.ref_path.ref_index])
+            env_model.mode = 'training'
             for _ in range(3):
                 obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2line4training \
                     = env_model.rollout_out(action[np.newaxis,:])
