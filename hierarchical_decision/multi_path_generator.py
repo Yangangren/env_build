@@ -30,12 +30,14 @@ class MultiPathGenerator(object):
         self.ref_index = ref_index
         self.path_list = []
 
-    def generate_path(self, task):
-        self.path_list = []
+    def generate_path(self, task, light_phase):
+        self.path_list = {}
+        planed_trj = []
         for path_index in range(self.path_num):
-            ref = ReferencePath(task)
+            ref = ReferencePath(task, light_phase)
             ref.set_path(path_index)
-            self.path_list.append(ref)
+            self.path_list[ref.judge_traffic_light(light_phase)] = planed_trj.append(ref)
+            # self.path_list.append(ref)
         return self.path_list
 
 

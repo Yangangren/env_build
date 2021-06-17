@@ -44,6 +44,7 @@ def convert_observation_to_space(observation):
 class CrossroadEnd2end(gym.Env):
     def __init__(self,
                  training_task,  # 'left', 'straight', 'right'
+                 light_phase,
                  num_future_data=0,
                  mode='training',
                  multi_display=False,
@@ -51,12 +52,13 @@ class CrossroadEnd2end(gym.Env):
         self.dynamics = VehicleDynamics()
         self.interested_vehs = None
         self.training_task = training_task
-        self.ref_path = ReferencePath(self.training_task, **kwargs)
+        self.light_phase = light_phase
+        self.ref_path = ReferencePath(self.training_task, self.light_phase, **kwargs)
         self.detected_vehicles = None
         self.all_vehicles = None
         self.ego_dynamics = None
         self.num_future_data = num_future_data
-        self.env_model = EnvironmentModel(training_task, num_future_data)
+        self.env_model = EnvironmentModel(training_task, self.light_phase, num_future_data)
         self.init_state = {}
         self.action_number = 2
         self.ego_l, self.ego_w = L, W
@@ -97,7 +99,7 @@ class CrossroadEnd2end(gym.Env):
         return [seed]
 
     def reset(self, **kwargs):  # kwargs include three keys
-        self.ref_path = ReferencePath(self.training_task, **kwargs)
+        self.ref_path = ReferencePath(self.training_task, self.light_phase, **kwargs)
         self.init_state = self._reset_init_state()
         self.traffic.init_traffic(self.init_state)
         self.traffic.sim_step()
@@ -781,8 +783,8 @@ class CrossroadEnd2end(gym.Env):
 
 
 def test_end2end():
-    env = CrossroadEnd2end(training_task='straight', num_future_data=5)
-    env_model = EnvironmentModel(training_task='straight', num_future_data=5)
+    env = CrossroadEnd2end(training_task='straight', light_phase='0', num_future_data=5)
+    env_model = EnvironmentModel(training_task='straight', light_phase='0', num_future_data=5)
     obs = env.reset()
     i = 0
     while i < 100000:
@@ -796,7 +798,7 @@ def test_end2end():
                 action = np.array([0., 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
             env_model.reset(obs[np.newaxis, :], [env.ref_path.ref_index])
-            env_model.mode = 'training'
+            env_model.mode = 'testing'
             for _ in range(3):
                 obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2line4training \
                     = env_model.rollout_out(action[np.newaxis,:])

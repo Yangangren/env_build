@@ -88,7 +88,7 @@ class VehicleDynamics(object):
 
 
 class EnvironmentModel(object):  # all tensors
-    def __init__(self, training_task, num_future_data=0, mode='training'):
+    def __init__(self, training_task, light_phase, num_future_data=0, mode='training'):
         self.task = training_task
         self.mode = mode
         self.vehicle_dynamics = VehicleDynamics()
@@ -96,7 +96,8 @@ class EnvironmentModel(object):  # all tensors
         self.obses = None
         self.ego_params = None
         self.actions = None
-        self.ref_path = ReferencePath(self.task)
+        self.light_phase = light_phase
+        self.ref_path = ReferencePath(self.task, self.light_phase)
         self.ref_indexes = None
         self.num_future_data = num_future_data
         self.reward_info = None
@@ -575,7 +576,7 @@ class EnvironmentModel(object):  # all tensors
             plt.text(text_x, text_y_start - next(ge), r'ego_phi: ${:.2f}\degree$'.format(ego_phi))
             plt.text(text_x, text_y_start - next(ge), r'delta_phi: ${:.2f}\degree$'.format(delta_phi))
 
-            _, current_points = ReferencePath(self.task).find_closest_point(ego_x, ego_y)
+            _, current_points = ReferencePath(self.task, self.light_phase).find_closest_point(ego_x, ego_y)
             exp_v = current_points[3]
 
             plt.text(text_x, text_y_start - next(ge), 'v_x: {:.2f}m/s'.format(ego_v_x))
@@ -608,23 +609,35 @@ def deal_with_phi_diff(phi_diff):
 
 
 class ReferencePath(object):
-    def __init__(self, task, ref_index=None):
+    def __init__(self, task, light_phase, ref_index=None):
         self.task = task
-        self.path_list = []
+        self.path_list = {}
         self.path_len_list = []
         self.control_points = []
-        self._construct_ref_path(self.task)
-        self.ref_index = np.random.choice(len(self.path_list)) if ref_index is None else ref_index
-        self.path = self.path_list[self.ref_index]
+        self.light_phase = light_phase
+        self.traffic_light = self.judge_traffic_light(self.light_phase)
+        self._construct_ref_path(self.task, self.light_phase)
+        self.ref_index = np.random.choice(len(self.path_list[self.traffic_light])) if ref_index is None else ref_index
+        self.path = self.path_list[self.traffic_light][self.ref_index]
 
     def set_path(self, path_index=None):
         self.ref_index = path_index
-        self.path = self.path_list[self.ref_index]
+        self.path = self.path_list[self.traffic_light][self.ref_index]
 
-    def _construct_ref_path(self, task):
+    def judge_traffic_light(self, light_phase):
+        if light_phase == "0":
+            traffic_light = "green"
+        else:
+            traffic_light = "red"
+        # todo: "1"; yellow
+        return traffic_light
+
+    def _construct_ref_path(self, task, light_phase):
         sl = 40  # straight length
         meter_pointnum_ratio = 30
         control_ext = CROSSROAD_SIZE/3.
+        planed_trj_g = []
+        planed_trj_r = []
         if task == 'left':
             end_offsets = [LANE_WIDTH*(i+0.5) for i in range(LANE_NUMBER)]
             start_offsets = [LANE_WIDTH*0.5]
@@ -654,10 +667,23 @@ class ReferencePath(object):
                     xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
                     phis_1 = np.arctan2(ys_2 - ys_1,
                                         xs_2 - xs_1) * 180 / pi
-                    vs_1 = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0])-1) + [8.33] * len(end_straight_line_x), dtype=np.float32)
-                    # EXPECTED_V = 8.33; 7.0; 8.33 (m/s)
-                    planed_trj = xs_1, ys_1, phis_1, vs_1
-                    self.path_list.append(planed_trj)
+                    vs_1_green = []
+                    vs_1_red = []
+                    if self.judge_traffic_light(light_phase) == "green":
+                        vs_1_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0])-1) + [8.33] * len(end_straight_line_x), dtype=np.float32)
+                        # green light: EXPECTED_V = 8.33; 7.0; 8.33 (m/s)
+                    else:
+                        vs_1_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * 3), dtype=np.float32)
+                        vs_1_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * 3, endpoint=True, dtype=np.float32)
+                        vs_1_2 = np.array([7.0] * (len(trj_data[0])-1) + [8.33] * len(end_straight_line_x), dtype=np.float32)
+                        vs_1 = np.append(vs_1_0, vs_1_1)
+                        vs_1_red = np.append(vs_1, vs_1_2)
+                        # yellow or red light: EXPECTED_V = 8.33; 0.0(3m); 7.0; 8.33 (m/s) todo: 3m?
+                    planed_trj_green = xs_1, ys_1, phis_1, vs_1_green
+                    planed_trj_red = xs_1, ys_1, phis_1, vs_1_red
+                    planed_trj_g.append(planed_trj_green)
+                    planed_trj_r.append(planed_trj_red)
+                    self.path_list = {"green": planed_trj_g, "red": planed_trj_r}
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
 
         elif task == 'straight':
@@ -688,11 +714,27 @@ class ReferencePath(object):
                     xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
                     phis_1 = np.arctan2(ys_2 - ys_1,
                                         xs_2 - xs_1) * 180 / pi
-                    vs_1 = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] * len(
-                        end_straight_line_x), dtype=np.float32)
-                    # EXPECTED_V = 8.33; 7.0; 8.33 (m/s)
-                    planed_trj = xs_1, ys_1, phis_1, vs_1
-                    self.path_list.append(planed_trj)
+                    vs_1_green = []
+                    vs_1_red = []
+                    if self.judge_traffic_light(light_phase) == "green":
+                        vs_1_green = np.array(
+                            [8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] * len(
+                                end_straight_line_x), dtype=np.float32)
+                        # green light: EXPECTED_V = 8.33; 7.0; 8.33 (m/s)
+                    else:
+                        vs_1_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * 3),
+                                          dtype=np.float32)
+                        vs_1_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * 3, endpoint=True, dtype=np.float32)
+                        vs_1_2 = np.array([7.0] * (len(trj_data[0]) - 1) + [8.33] * len(end_straight_line_x),
+                                          dtype=np.float32)
+                        vs_1 = np.append(vs_1_0, vs_1_1)
+                        vs_1_red = np.append(vs_1, vs_1_2)
+                        # yellow or red light: EXPECTED_V = 8.33; 0.0(3m); 7.0; 8.33 (m/s) todo: 3m?
+                    planed_trj_green = xs_1, ys_1, phis_1, vs_1_green
+                    planed_trj_red = xs_1, ys_1, phis_1, vs_1_red
+                    planed_trj_g.append(planed_trj_green)
+                    planed_trj_r.append(planed_trj_red)
+                    self.path_list = {"green": planed_trj_g, "red": planed_trj_r}
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
 
         else:
@@ -726,11 +768,27 @@ class ReferencePath(object):
                     xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
                     phis_1 = np.arctan2(ys_2 - ys_1,
                                         xs_2 - xs_1) * 180 / pi
-                    vs_1 = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] * len(
-                        end_straight_line_x), dtype=np.float32)
-                    # EXPECTED_V = 8.33; 7.0; 8.33 (m/s)
-                    planed_trj = xs_1, ys_1, phis_1, vs_1
-                    self.path_list.append(planed_trj)
+                    vs_1_green = []
+                    vs_1_red = []
+                    if self.judge_traffic_light(light_phase) == "green":
+                        vs_1_green = np.array(
+                            [8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] * len(
+                                end_straight_line_x), dtype=np.float32)
+                        # green light: EXPECTED_V = 8.33; 7.0; 8.33 (m/s)
+                    else:
+                        vs_1_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * 3),
+                                          dtype=np.float32)
+                        vs_1_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * 3, endpoint=True, dtype=np.float32)
+                        vs_1_2 = np.array([7.0] * (len(trj_data[0]) - 1) + [8.33] * len(end_straight_line_x),
+                                          dtype=np.float32)
+                        vs_1 = np.append(vs_1_0, vs_1_1)
+                        vs_1_red = np.append(vs_1, vs_1_2)
+                        # yellow or red light: EXPECTED_V = 8.33; 0.0(3m); 7.0; 8.33 (m/s) todo: 3m?
+                    planed_trj_green = xs_1, ys_1, phis_1, vs_1_green
+                    planed_trj_red = xs_1, ys_1, phis_1, vs_1_red
+                    planed_trj_g.append(planed_trj_green)
+                    planed_trj_r.append(planed_trj_red)
+                    self.path_list = {"green": planed_trj_g, "red": planed_trj_r}
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
 
     def find_closest_point(self, xs, ys, ratio=10):
@@ -807,9 +865,9 @@ class ReferencePath(object):
 
     def plot_path(self, x, y):
         plt.axis('equal')
-        plt.plot(self.path_list[0][0], self.path_list[0][1], 'b')
-        plt.plot(self.path_list[1][0], self.path_list[1][1], 'r')
-        plt.plot(self.path_list[2][0], self.path_list[2][1], 'g')
+        plt.plot(self.path_list[self.traffic_light][0][0], self.path_list[self.traffic_light][0][1], 'b')
+        plt.plot(self.path_list[self.traffic_light][1][0], self.path_list[self.traffic_light][1][1], 'r')
+        plt.plot(self.path_list[self.traffic_light][2][0], self.path_list[self.traffic_light][2][1], 'g')
         print(self.path_len_list)
 
         index, closest_point = self.find_closest_point(np.array([x], np.float32),
@@ -820,12 +878,12 @@ class ReferencePath(object):
 
 
 def test_ref_path():
-    path = ReferencePath('right')
+    path = ReferencePath('right', '0')
     path.plot_path(1.875, 0)
 
 
 def test_future_n_data():
-    path = ReferencePath('straight')
+    path = ReferencePath('straight', '0')
     plt.axis('equal')
     current_i = 600
     plt.plot(path.path[0], path.path[1])
@@ -837,7 +895,7 @@ def test_future_n_data():
 
 
 def test_tracking_error_vector():
-    path = ReferencePath('straight')
+    path = ReferencePath('straight', "0")
     xs = np.array([1.875, 1.875, -10, -20], np.float32)
     ys = np.array([-20, 0, -10, -1], np.float32)
     phis = np.array([90, 135, 135, 180], np.float32)
@@ -850,7 +908,7 @@ def test_tracking_error_vector():
 def test_model():
     from endtoend import CrossroadEnd2end
     env = CrossroadEnd2end('left', 0)
-    model = EnvironmentModel('left', 0)
+    model = EnvironmentModel('left', '0', 0)
     obs_list = []
     obs = env.reset()
     done = 0
@@ -963,14 +1021,15 @@ def test_ref():
     # p3_fit = np.poly1d(z3)
     # plt.plot(p3, p3_fit(p3), 'b*')
 
-    ref = ReferencePath('straight')
-    path1, path2, path3, path4, path5, path6 = ref.path_list
+    ref = ReferencePath('left', '0')
+    # print(ref.path_list[ref.judge_traffic_light('0')])
+    path1, path2, path3 = ref.path_list[ref.judge_traffic_light('0')]
     path1, path2, path3 = [ite[1200:-1200] for ite in path1], \
                           [ite[1200:-1200] for ite in path2], \
                           [ite[1200:-1200] for ite in path3]
-    x1, y1, phi1 = path1
-    x2, y2, phi2 = path2
-    x3, y3, phi3 = path3
+    x1, y1, phi1, v1 = path1
+    x2, y2, phi2, v1 = path2
+    x3, y3, phi3, v1 = path3
 
     plt.plot(y1, x1, 'r')
     plt.plot(y2, x2, 'g')

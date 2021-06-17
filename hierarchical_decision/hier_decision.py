@@ -28,11 +28,12 @@ from utils.recorder import Recorder
 
 
 class HierarchicalDecision(object):
-    def __init__(self, task, train_exp_dir, ite, logdir=None):
+    def __init__(self, task, light_phase, train_exp_dir, ite, logdir=None):
         self.task = task
+        self.light_phase = light_phase
         self.policy = LoadPolicy('../utils/models/{}/{}'.format(task, train_exp_dir), ite)
-        self.env = CrossroadEnd2end(training_task=self.task, mode='testing')
-        self.model = EnvironmentModel(self.task, mode='selecting')
+        self.env = CrossroadEnd2end(training_task=self.task, light_phase=self.light_phase, mode='testing')
+        self.model = EnvironmentModel(self.task, self.light_phase, mode='selecting')
         self.recorder = Recorder()
         self.episode_counter = -1
         self.step_counter = -1
@@ -49,7 +50,7 @@ class HierarchicalDecision(object):
         plt.ion()
         self.hist_posi = []
         self.old_index = 0
-        self.path_list = self.stg.generate_path(self.task)
+        self.path_list = self.stg.generate_path(self.task, self.light_phase)
         # ------------------build graph for tf.function in advance-----------------------
         for i in range(3):
             obs = self.env.reset()
@@ -406,7 +407,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-03-15-16-39-00', 180000, logdir)
+    hier_decision = HierarchicalDecision('left', '0', 'experiment-2021-06-05-13-15-31', 180000, logdir)
 
     for i in range(300):
         done = 0
@@ -491,11 +492,11 @@ def plot_static_path():
              color='black', linewidth=2)
 
     for task in ['left', 'straight', 'right']:
-        path = ReferencePath(task)
+        path = ReferencePath(task, '0')
         path_list = path.path_list
         control_points = path.control_points
         color = ['blue', 'coral', 'darkcyan']
-        for i, (path_x, path_y, _) in enumerate(path_list):
+        for i, (path_x, path_y, _, _) in enumerate(path_list):
             plt.plot(path_x[600:-600], path_y[600:-600], color=color[i])
         for i, four_points in enumerate(control_points):
             for point in four_points:

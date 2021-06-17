@@ -300,7 +300,7 @@ def test_traffic():
     from dynamics_and_models import ReferencePath
 
     def _reset_init_state():
-        ref_path = ReferencePath('straight')
+        ref_path = ReferencePath('straight','0')
         random_index = int(np.random.random()*(900+500)) + 700
         x, y, phi = ref_path.indexs2points(random_index)
         v = 8 * np.random.random()
