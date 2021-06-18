@@ -51,7 +51,7 @@ class CrossroadEnd2end(gym.Env):
         self.dynamics = VehicleDynamics()
         self.interested_vehs = None
         self.training_task = training_task
-        self.ref_path = ReferencePath(self.training_task, **kwargs)
+        self.ref_path = None
         self.detected_vehicles = None
         self.all_vehicles = None
         self.ego_dynamics = None
@@ -67,7 +67,7 @@ class CrossroadEnd2end(gym.Env):
         self.step_length = 100  # ms
 
         self.step_time = self.step_length / 1000.0
-        self.init_state = self._reset_init_state()
+        self.init_state = None
         self.obs = None
         self.action = None
         self.veh_mode_dict = VEHICLE_MODE_DICT[self.training_task]
@@ -97,7 +97,9 @@ class CrossroadEnd2end(gym.Env):
         return [seed]
 
     def reset(self, **kwargs):  # kwargs include three keys
-        self.ref_path = ReferencePath(self.training_task, **kwargs)
+        self.traffic.init_light()
+        self.v_light = self.traffic.v_light
+        self.ref_path = ReferencePath(self.training_task, self.v_light, **kwargs)
         self.init_state = self._reset_init_state()
         self.traffic.init_traffic(self.init_state)
         self.traffic.sim_step()
@@ -800,7 +802,7 @@ def test_end2end():
             for _ in range(3):
                 obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2line4training \
                     = env_model.rollout_out(action[np.newaxis,:])
-                print(obses[:, 9])
+                print(obses[:, 29])
             env.render()
             # if done:
             #     break
