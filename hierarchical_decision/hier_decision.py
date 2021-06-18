@@ -50,12 +50,12 @@ class HierarchicalDecision(object):
         plt.ion()
         self.hist_posi = []
         self.old_index = 0
-        self.path_list = self.stg.generate_path(self.task)
+        self.path_list = self.stg.generate_path(self.task, self.env.v_light)
         # ------------------build graph for tf.function in advance-----------------------
         for i in range(3):
             obs = self.env.reset()
             obs = tf.convert_to_tensor(obs[np.newaxis, :], dtype=tf.float32)
-            self.is_safe(obs, i)
+            self.is_safe(obs, self.env.v_light, i)
         obs = self.env.reset()
         obs_with_specific_shape = np.tile(obs, (3, 1))
         self.policy.run_batch(obs_with_specific_shape)
@@ -88,8 +88,8 @@ class HierarchicalDecision(object):
     #     return False if veh2veh4real[0] > 0 else True
 
     # @tf.function   # todo
-    def is_safe(self, obs, path_index):
-        self.model.add_traj(obs, path_index)
+    def is_safe(self, obs, light, path_index):
+        self.model.add_traj(obs, light, path_index)
         punish = 0.
         for step in range(5):
             action = self.policy.run_batch(obs)
@@ -97,11 +97,11 @@ class HierarchicalDecision(object):
             punish += veh2veh4real[0]
         return False if punish > 0 else True
 
-    def safe_shield(self, real_obs, path_index):
+    def safe_shield(self, real_obs, light, path_index):
         action_safe_set = [[[0., -1.]]]
         real_obs = tf.convert_to_tensor(real_obs[np.newaxis, :], dtype=tf.float32)
         obs = real_obs
-        if not self.is_safe(obs, path_index):
+        if not self.is_safe(obs, light, path_index):
             print('SAFETY SHIELD STARTED!')
             return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), True
         else:
@@ -111,6 +111,7 @@ class HierarchicalDecision(object):
         self.step_counter += 1
         with self.step_timer:
             obs_list = []
+            self.path_list = self.stg.generate_path(self.task, self.env.v_light)
             # select optimal path
             for path in self.path_list:
                 self.env.set_traj(path)
@@ -127,7 +128,7 @@ class HierarchicalDecision(object):
 
             # obtain safe action
             with self.ss_timer:
-                safe_action, is_ss = self.safe_shield(self.obs_real, path_index)
+                safe_action, is_ss = self.safe_shield(self.obs_real, self.env.v_light, path_index)
             print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
         self.render(self.path_list, path_values, path_index)
         # obtain path_v
@@ -412,7 +413,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-06-17-15-38-36', 195000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-06-18-15-51-39', 195000, logdir)
 
     for i in range(300):
         done = 0

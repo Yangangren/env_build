@@ -26,7 +26,6 @@ class LoadPolicy(object):
             parser.add_argument("-" + key, default=val)
         self.args = parser.parse_args()
         env = CrossroadEnd2end(training_task=self.args.env_kwargs_training_task,
-                               light_phase=self.args.env_kwargs_light_phase,
                                num_future_data=self.args.env_kwargs_num_future_data)
         self.policy = Policy4Toyota(self.args)
         self.policy.load_weights(model_dir, iter)

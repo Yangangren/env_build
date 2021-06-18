@@ -115,9 +115,9 @@ class EnvironmentModel(object):  # all tensors
         self.reward_info = None
         self.light_flag = False
 
-    def add_traj(self, obses, path_index):
+    def add_traj(self, obses, light, path_index):
         self.obses = obses
-        self.ref_path.set_path(path_index)
+        self.ref_path.set_path(light, path_index)
 
     def rollout_out(self, actions):  # obses and actions are tensors, think of actions are in range [-1, 1]
         with tf.name_scope('model_step') as scope:
@@ -622,9 +622,9 @@ class ReferencePath(object):
         self.ref_index = np.random.choice(len(self.path_list[self.traffic_light])) if ref_index is None else ref_index
         self.path = self.path_list[self.traffic_light][self.ref_index]
 
-    def set_path(self, path_index=None):
+    def set_path(self, light, path_index=None):
         self.ref_index = path_index
-        self.path = self.path_list[self.traffic_light][self.ref_index]
+        self.path = self.path_list[LIGHT[light]][self.ref_index]
 
     def _construct_ref_path(self, task):
         sl = 40  # straight length
