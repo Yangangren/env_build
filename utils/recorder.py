@@ -19,14 +19,13 @@ WINDOWSIZE = 15
 
 
 class Recorder(object):
-    def __init__(self):
-        self.val2record = ['v_x', 'v_y', 'r', 'x', 'y', 'phi',
-                           'steer', 'a_x', 'delta_y', 'delta_v', 'delta_phi',
+    def __init__(self, args):
+        self.val2record = ['exp_v', 'v_x', 'v_y', 'r', 'x', 'y', 'phi',
+                           'steer', 'a_x', 'delta_y', 'delta_v', 'delta_phi', 'light',
                            'cal_time', 'ref_index', 'beta', 'path_values', 'ss_time', 'is_ss']
-        self.val2plot = ['v_x', 'r',
-                         'steer', 'a_x',
-                         'cal_time', 'ref_index', 'beta', 'path_values', 'is_ss']
-        self.key2label = dict(v_x='Velocity [m/s]',
+        self.val2plot = ['exp_v', 'v_x', 'r', 'steer', 'a_x', 'cal_time', 'ref_index', 'beta', 'path_values', 'is_ss']
+        self.key2label = dict(exp_v='Expected Velocity [m/s]',
+                              v_x='Velocity [m/s]',
                               r='Yaw rate [rad/s]',
                               steer='Steer angle [$\circ$]',
                               a_x='Acceleration [$\mathrm {m/s^2}$]',
@@ -40,8 +39,11 @@ class Recorder(object):
                             'delta_y', 'delta_v', 'delta_phi', 'adp_time', 'mpc_time', 'adp_ref', 'mpc_ref', 'beta']
 
         self.ego_info_dim = 6
-        self.per_tracking_info_dim = 3
-        self.num_future_data = 0
+        self.track_info_dim = 3
+        self.per_veh_info_dim = 4
+        self.per_path_info_dim = 4
+        self.light_dim = 1
+        self.num_future_data = args.env_kwargs_num_future_data
         self.data_across_all_episodes = []
         self.val_list_for_an_episode = []
         self.comp_list_for_an_episode = []
@@ -55,31 +57,32 @@ class Recorder(object):
         self.val_list_for_an_episode = []
         self.comp_list_for_an_episode = []
 
-    def record(self, obs, act, cal_time, ref_index, path_values, ss_time, is_ss):
-        ego_info, tracking_info, _ = obs[:self.ego_info_dim], \
-                                     obs[self.ego_info_dim:self.ego_info_dim + self.per_tracking_info_dim * (
-                                               self.num_future_data + 1)], \
-                                     obs[self.ego_info_dim + self.per_tracking_info_dim * (
-                                               self.num_future_data + 1):]
+    def record(self, path_v, obs, act, cal_time, ref_index, path_values, ss_time, is_ss):
+        ego_info = obs[:self.ego_info_dim]
+        track_info = obs[self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
+        light_info = obs[self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data:
+               self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data + self.light_dim]
+
         v_x, v_y, r, x, y, phi = ego_info
-        delta_y, delta_phi, delta_v = tracking_info[:3]
+        delta_y, delta_phi, delta_v = track_info
+        light = light_info
         steer, a_x = act[0]*0.4, act[1]*2.25 - 0.75
 
         # transformation
         beta = 0 if v_x == 0 else np.arctan(v_y/v_x) * 180 / math.pi
         steer = steer * 180 / math.pi
-        self.val_list_for_an_episode.append(np.array([v_x, v_y, r, x, y, phi, steer, a_x, delta_y,
-                                        delta_phi, delta_v, cal_time, ref_index, beta, path_values, ss_time, is_ss]))
+        self.val_list_for_an_episode.append(np.array([path_v, v_x, v_y, r, x, y, phi, steer, a_x, delta_y,
+                                        delta_phi, delta_v, light, cal_time, ref_index, beta, path_values, ss_time, is_ss]))
 
     # For comparison of MPC and ADP
     def record_compare(self, obs, adp_act, mpc_act, adp_time, mpc_time, adp_ref, mpc_ref, mode='ADP'):
-        ego_info, tracking_info, _ = obs[:self.ego_info_dim], \
-                                     obs[self.ego_info_dim:self.ego_info_dim + self.per_tracking_info_dim * (
-                                               self.num_future_data + 1)], \
-                                     obs[self.ego_info_dim + self.per_tracking_info_dim * (
-                                               self.num_future_data + 1):]
+        ego_info = obs[:self.ego_info_dim]
+        track_info = obs[self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
+        light_info = obs[self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data:
+                         self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data + self.light_dim]
+
         v_x, v_y, r, x, y, phi = ego_info
-        delta_y, delta_phi, delta_v = tracking_info[:3]
+        delta_y, delta_phi, delta_v = track_info[:3]
         adp_steer, adp_a_x = adp_act[0]*0.4, adp_act[1]*2.25 - 0.75
         mpc_steer, mpc_a_x = mpc_act[0], mpc_act[1]
 
@@ -121,11 +124,18 @@ class Recorder(object):
                     # ax.xaxis.set_major_locator(x_major_locator)
                     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
                 elif key == 'v_x':
-                    df = pd.DataFrame(dict(time=real_time, data=data_dict[key]))
-                    df['data_smo'] = df['data'].rolling(WINDOWSIZE, min_periods=1).mean()
+                    df = pd.DataFrame(dict(time=real_time, data=data_dict[key], name='Actual speed'))
+                    df = df.append(pd.DataFrame(dict(time=real_time, data=data_dict['exp_v'], name='Expect speed')),
+                                   ignore_index=True)
+                    # df['data_smo'] = df['data'].rolling(WINDOWSIZE, min_periods=1).mean()
                     ax = f.add_axes([0.11, 0.12, 0.88, 0.86])
-                    sns.lineplot('time', 'data_smo', linewidth=2,
-                                 data=df, palette="bright", color='indigo')
+                    if all([i == 0. for i in data_dict['light']]):
+                        palette = sns.color_palette(['xkcd:green', 'xkcd:black'])
+                    else:
+                        palette = sns.color_palette(['xkcd:red', 'xkcd:black'])
+                    ax = sns.lineplot('time', 'data', linewidth=2, hue='name', style='name', data=df, palette=palette)
+                    handles, labels = ax.get_legend_handles_labels()
+                    ax.legend(handles=handles, labels=labels, frameon=False)
                     plt.ylim([-0.5, 10.])
                 elif key == 'cal_time':
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key] * 1000))
@@ -194,7 +204,7 @@ class Recorder(object):
                 ax.set_xlabel("Time [s]", fontsize=15)
                 plt.yticks(fontsize=15)
                 plt.xticks(fontsize=15)
-                plt.savefig(save_dir + '/{}.pdf'.format(key))
+                plt.savefig(save_dir + '/{}.jpg'.format(key))
                 if not isshow:
                     plt.close(f)
                 i += 1

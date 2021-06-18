@@ -34,7 +34,7 @@ class HierarchicalDecision(object):
         self.args = self.policy.args
         self.env = CrossroadEnd2end(training_task=self.task, num_future_data=self.args.env_kwargs_num_future_data, mode='testing')
         self.model = EnvironmentModel(self.task, num_future_data=self.args.env_kwargs_num_future_data, mode='selecting')
-        self.recorder = Recorder()
+        self.recorder = Recorder(self.args)
         self.episode_counter = -1
         self.step_counter = -1
         self.obs = None
@@ -130,7 +130,12 @@ class HierarchicalDecision(object):
                 safe_action, is_ss = self.safe_shield(self.obs_real, path_index)
             print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
         self.render(self.path_list, path_values, path_index)
-        self.recorder.record(self.obs_real, safe_action, self.step_timer.mean,
+        # obtain path_v
+        ego_x = self.env.ego_dynamics['x']
+        ego_y = self.env.ego_dynamics['y']
+        indexs, points = self.env.ref_path.find_closest_point(np.array([ego_x], np.float32), np.array([ego_y], np.float32))
+        _, _, _, path_v = points[0][0].numpy(), points[1][0].numpy(), points[2][0].numpy(), points[3][0].numpy()
+        self.recorder.record(path_v, self.obs_real, safe_action, self.step_timer.mean,
                              path_index, path_values, self.ss_timer.mean, is_ss)
         self.obs, r, done, info = self.env.step(safe_action)
         return done
@@ -407,7 +412,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-06-14-17-05-59', 195000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-06-17-15-38-36', 195000, logdir)
 
     for i in range(300):
         done = 0
