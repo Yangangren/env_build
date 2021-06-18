@@ -18,6 +18,7 @@ CROSSROAD_SIZE = 50
 control_ext = 15
 sl = 40
 meter_pointnum_ratio = 30
+LIGHT = {0: 'green', 1: 'red', 2: 'red', 3: 'red'}
 
 
 class MultiPathGenerator(object):
@@ -36,7 +37,7 @@ class MultiPathGenerator(object):
         for path_index in range(self.path_num):
             ref = ReferencePath(task, light_phase)
             ref.set_path(path_index)
-            self.path_list[ref.judge_traffic_light(light_phase)] = planed_trj.append(ref)
+            self.path_list[LIGHT[light_phase]] = planed_trj.append(ref)
             # self.path_list.append(ref)
         return self.path_list
 

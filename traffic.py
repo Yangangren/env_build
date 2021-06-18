@@ -148,19 +148,25 @@ class Traffic(object):
 
         return random_traffic
 
+    def init_light(self):
+        if random.random() > 0.9:
+            self.training_light_phase = 3
+        else:
+            self.training_light_phase = 0
+        if self.training_task == 'right':
+            if random.random() > 0.5:
+                self.training_light_phase = 2
+        traci.trafficlight.setPhase('0', self.training_light_phase)
+        traci.simulationStep()
+        self._get_traffic_light()
+
     def init_traffic(self, init_n_ego_dict):
         self.sim_time = 0
         self.n_ego_vehicles = defaultdict(list)
         self.collision_flag = False
         self.n_ego_collision_flag = {}
         self.collision_ego_id = None
-        self.v_light = None
-        self.training_light_phase = 0
-        if self.training_task == 'right':
-            if random.random() > 0.5:
-                self.training_light_phase = 2
         self.n_ego_dict = init_n_ego_dict
-        traci.trafficlight.setPhase('0', self.training_light_phase)
         self.add_self_car(init_n_ego_dict)
         traci.simulationStep()
         random_traffic = self.generate_random_traffic()
