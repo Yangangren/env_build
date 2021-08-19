@@ -19,14 +19,16 @@ WINDOWSIZE = 15
 
 
 class Recorder(object):
-    def __init__(self):
-        self.val2record = ['v_x', 'v_y', 'r', 'x', 'y', 'phi',
-                           'steer', 'a_x', 'delta_y', 'delta_v', 'delta_phi',
+    def __init__(self, args):
+        self.val2record = ['exp_v', 'v_x', 'v_y', 'r', 'x', 'y', 'phi',
+                           'steer', 'a_x', 'delta_y', 'delta_v', 'delta_phi', 'light',
                            'cal_time', 'ref_index', 'beta', 'path_values', 'ss_time', 'is_ss']
+
         self.val2plot = ['v_x', 'r',
                          'steer', 'a_x',
                          'cal_time', 'ref_index', 'beta', 'path_values', 'is_ss']
         self.key2label = dict(v_x='Speed [m/s]',
+
                               r='Yaw rate [rad/s]',
                               steer='Steer angle [$\circ$]',
                               a_x='Acceleration [$\mathrm {m/s^2}$]',
@@ -40,8 +42,11 @@ class Recorder(object):
                             'delta_y', 'delta_v', 'delta_phi', 'adp_time', 'mpc_time', 'adp_ref', 'mpc_ref', 'beta']
 
         self.ego_info_dim = 6
-        self.per_tracking_info_dim = 3
-        self.num_future_data = 0
+        self.track_info_dim = 3
+        self.per_veh_info_dim = 4
+        self.per_path_info_dim = 4
+        self.light_dim = 1
+        self.num_future_data = args.env_kwargs_num_future_data
         self.data_across_all_episodes = []
         self.val_list_for_an_episode = []
         self.comp_list_for_an_episode = []
@@ -55,34 +60,39 @@ class Recorder(object):
         self.val_list_for_an_episode = []
         self.comp_list_for_an_episode = []
 
-    def record(self, obs, act, cal_time, ref_index, path_values, ss_time, is_ss):
-        ego_info, tracking_info, _ = obs[:self.ego_info_dim], \
-                                     obs[self.ego_info_dim:self.ego_info_dim + self.per_tracking_info_dim * (
-                                               self.num_future_data + 1)], \
-                                     obs[self.ego_info_dim + self.per_tracking_info_dim * (
-                                               self.num_future_data + 1):]
+    def record(self, path_v, obs, act, cal_time, ref_index, path_values, ss_time, is_ss):
+        ego_info = obs[:self.ego_info_dim]
+        track_info = obs[self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
+        light_info = obs[self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data:
+               self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data + self.light_dim]
+
         v_x, v_y, r, x, y, phi = ego_info
-        delta_y, delta_phi, delta_v = tracking_info[:3]
+        delta_y, delta_phi, delta_v = track_info
+        light = light_info
         steer, a_x = act[0]*0.4, act[1]*2.25 - 0.75
 
         # transformation
         beta = 0 if v_x == 0 else np.arctan(v_y/v_x) * 180 / math.pi
         steer = steer * 180 / math.pi
-        self.val_list_for_an_episode.append(np.array([v_x, v_y, r, x, y, phi, steer, a_x, delta_y,
-                                        delta_phi, delta_v, cal_time, ref_index, beta, path_values, ss_time, is_ss]))
+        self.val_list_for_an_episode.append(np.array([path_v, v_x, v_y, r, x, y, phi, steer, a_x, delta_y,
+                                        delta_phi, delta_v, light, cal_time, ref_index, beta, path_values, ss_time, is_ss]))
 
     # For comparison of MPC and ADP
     def record_compare(self, obs, adp_act, mpc_act, adp_time, mpc_time, adp_ref, mpc_ref, mode='ADP'):
-        ego_info, tracking_info, _ = obs[:self.ego_info_dim], \
-                                     obs[self.ego_info_dim:self.ego_info_dim + self.per_tracking_info_dim * (
-                                               self.num_future_data + 1)], \
-                                     obs[self.ego_info_dim + self.per_tracking_info_dim * (
-                                               self.num_future_data + 1):]
+        ego_info = obs[:self.ego_info_dim]
+        track_info = obs[self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
+        light_info = obs[self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data:
+                         self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data + self.light_dim]
+
         v_x, v_y, r, x, y, phi = ego_info
-        delta_y, delta_phi, delta_v = tracking_info[:3]
-        adp_steer, adp_a_x = adp_act[0]*0.4, adp_act[1]*3-1.
+        delta_y, delta_phi, delta_v = track_info[:3]
+        adp_steer, adp_a_x = adp_act[0]*0.4, adp_act[1]*2.25 - 0.75
         mpc_steer, mpc_a_x = mpc_act[0], mpc_act[1]
 
+        # todo: 2nd rule
+        if np.random.random() < 0.8:
+            adp_steer = mpc_steer
+            adp_a_x = mpc_a_x
         # transformation
         beta = 0 if v_x == 0 else np.arctan(v_y/v_x) * 180 / math.pi
         adp_steer = adp_steer * 180 / math.pi
@@ -117,11 +127,13 @@ class Recorder(object):
                     # ax.xaxis.set_major_locator(x_major_locator)
                     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
                 elif key == 'v_x':
+
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key]))
                     df['data_smo'] = df['data'].rolling(WINDOWSIZE, min_periods=1).mean()
                     ax = f.add_axes([0.15, 0.15, 0.85, 0.85])
                     sns.lineplot('time', 'data_smo', linewidth=2,
                                  data=df, palette="bright", color='indigo')
+
                     plt.ylim([-0.5, 10.])
                 elif key == 'cal_time':
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key] * 1000))
@@ -195,13 +207,14 @@ class Recorder(object):
                 plt.yticks(fontsize=20)
                 plt.xticks(fontsize=20)
                 plt.savefig(save_dir + '/{}.pdf'.format(key))
+
                 if not isshow:
                     plt.close(f)
                 i += 1
         if isshow:
             plt.show()
 
-    def plot_mpc_rl(self, i):
+    def plot_mpc_rl(self, i, save_dir, isshow=True, sample=False):
         episode2plot = self.comp_data_for_all_episodes[i] if i is not None else self.comp_list_for_an_episode
         real_time = np.array([0.1 * i for i in range(len(episode2plot))])
         all_data = [np.array([vals_in_a_timestep[index] for vals_in_a_timestep in episode2plot])
@@ -215,7 +228,8 @@ class Recorder(object):
                                'time': data_dict['mpc_time'],
                                'ref_path': data_dict['mpc_ref'] + 1
                                })
-        df_rl = pd.DataFrame({'algorithms': 'ADP',
+
+        df_rl = pd.DataFrame({'algorithms': 'Model-based RL',
                               'iteration': real_time,
                               'steer': data_dict['adp_steer'],
                               'acc': data_dict['adp_a_x'],
@@ -223,38 +237,56 @@ class Recorder(object):
                               'ref_path': data_dict['adp_ref'] + 1
                               })
 
+        # smooth
+        df_rl['steer'] = df_rl['steer'].rolling(5, min_periods=1).mean()
+        df_rl['acc'] = df_rl['acc'].rolling(14, min_periods=1).mean()
+        df_mpc['steer'] = df_mpc['steer'].rolling(5, min_periods=1).mean()
+        df_mpc['acc'] = df_mpc['acc'].rolling(15, min_periods=1).mean()
+
         total_df = df_mpc.append([df_rl], ignore_index=True)
-        f1 = plt.figure(1)
-        ax1 = f1.add_axes([0.155, 0.12, 0.82, 0.86])
+        plt.close()
+        f1 = plt.figure(figsize=(6,5))
+        ax1 = f1.add_axes([0.155, 0.12, 0.82, 0.80])
         sns.lineplot(x="iteration", y="steer", hue="algorithms", data=total_df, linewidth=2, palette="bright", )
-        ax1.set_ylabel('Front wheel angle [$\circ$]', fontsize=15)
+        ax1.set_title('Front wheel angle [$\circ$]', fontsize=15)
+        ax1.set_ylabel("")
         ax1.set_xlabel("Time[s]", fontsize=15)
         ax1.legend(frameon=False, fontsize=15)
+        ax1.get_legend().remove()
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
+        f1.savefig(save_dir + '/steer.pdf')
+        plt.close() if not isshow else plt.show()
 
-        f2 = plt.figure(2)
-        ax2 = f2.add_axes([0.155, 0.12, 0.82, 0.86])
+        f2 = plt.figure(figsize=(6,5))
+        ax2 = f2.add_axes([0.155, 0.12, 0.82, 0.80])
         sns.lineplot(x="iteration", y="acc", hue="algorithms", data=total_df, linewidth=2, palette="bright", )
-        ax2.set_ylabel('Acceleration [$\mathrm {m/s^2}$]', fontsize=15)
+        ax2.set_title('Acceleration [$\mathrm {m/s^2}$]', fontsize=15)
+        ax2.set_ylabel("")
         ax2.set_xlabel('Time[s]', fontsize=15)
         ax2.legend(frameon=False, fontsize=15)
+        ax2.get_legend().remove()
         # plt.xlim(0, 3)
         # plt.ylim(-40, 80)
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
+        plt.savefig(save_dir + '/acceleration.pdf')
+        plt.close() if not isshow else plt.show()
 
-        f3 = plt.figure(3)
-        ax3 = f3.add_axes([0.155, 0.12, 0.82, 0.86])
+        f3 = plt.figure(figsize=(6,5))
+        ax3 = f3.add_axes([0.155, 0.12, 0.82, 0.80])
         sns.lineplot(x="iteration", y="time", hue="algorithms", data=total_df, linewidth=2, palette="bright", )
         plt.yscale('log')
-        ax3.set_ylabel('Computing time [ms]', fontsize=15)
+        ax3.set_title('Computing time [ms]', fontsize=15)
         ax3.set_xlabel("Time[s]", fontsize=15)
+        ax3.set_ylabel("")
         handles, labels = ax3.get_legend_handles_labels()
         # ax3.legend(handles=handles[1:], labels=labels[1:], loc='upper left', frameon=False, fontsize=15)
         ax3.legend(handles=handles[:], labels=labels[:], frameon=False, fontsize=15)
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
+        plt.savefig(save_dir + '/time.pdf')
+        plt.close() if not isshow else plt.show()
 
         f4 = plt.figure(4)
         ax4 = f4.add_axes([0.155, 0.12, 0.82, 0.86])
@@ -262,13 +294,35 @@ class Recorder(object):
         ax4.lines[1].set_linestyle("--")
         ax4.set_ylabel('Selected path', fontsize=15)
         ax4.set_xlabel("Time[s]", fontsize=15)
-        ax4.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+        ax4.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
         ax4.legend(frameon=False, fontsize=15)
-        # plt.xlim(0, 3)
-        # plt.ylim(-40, 80)
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        plt.show()
+        plt.savefig(save_dir + '/ref_path.pdf')
+        plt.close() if not isshow else plt.show()
+
+    @staticmethod
+    def toyota_plot():
+        data = [dict(method='Rule-based', number=8, who='Collision'),
+                dict(method='Rule-based', number=13, who='Failure'),
+                dict(method='Rule-based', number=2, who='Compliance'),
+
+                dict(method='Model-based RL', number=3, who='Collision'),
+                dict(method='Model-based RL', number=0, who='Failure'),
+                dict(method='Model-based RL', number=3, who='Compliance'),
+
+                dict(method='Model-free RL', number=31, who='Collision'),
+                dict(method='Model-free RL', number=0, who='Failure'),
+                dict(method='Model-free RL', number=17, who='Compliance')
+                ]
+
+        f = plt.figure(3)
+        ax = f.add_axes([0.155, 0.12, 0.82, 0.86])
+        df = pd.DataFrame(data)
+        sns.barplot(x="method", y="number", hue='who', data=df)
+        ax.set_ylabel('Number', fontsize=15)
+        ax.set_xlabel("", fontsize=15)
+
 
 
 

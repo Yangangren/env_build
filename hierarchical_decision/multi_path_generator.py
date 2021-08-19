@@ -18,23 +18,23 @@ CROSSROAD_SIZE = 50
 control_ext = 15
 sl = 40
 meter_pointnum_ratio = 30
+LIGHT = {0: 'green', 1: 'red', 2: 'red', 3: 'red'}
 
 
 class MultiPathGenerator(object):
     def __init__(self, ref_index=3):
         # state: [v_x, v_y, r, x, y, phi(°)]
         self.path_num = 3                                   # number of trajectories
-        self.exp_v = 8.
         self.order = [0 for _ in range(self.path_num)]
         self.ego_info_dim = 6
         self.ref_index = ref_index
         self.path_list = []
 
-    def generate_path(self, task):
+    def generate_path(self, task, light_phase):
         self.path_list = []
         for path_index in range(self.path_num):
-            ref = ReferencePath(task)
-            ref.set_path(path_index)
+            ref = ReferencePath(task, light_phase)
+            ref.set_path(light_phase, path_index)
             self.path_list.append(ref)
         return self.path_list
 
