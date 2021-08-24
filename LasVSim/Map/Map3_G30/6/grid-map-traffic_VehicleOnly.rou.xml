@@ -1,0 +1,39 @@
+<?xml version="1.0" ?><routes>
+	<vType accel="2.6" apparentDecel="4.5" carFollowModel="Krauss" color="191,62,255" decel="4.5" emergencyDecel="4.5" guiShape="passenger" id="car_1" impatience="0" laneChangeModel="SL2015" latAlignment="center" lcKeepRight="0" lcLaneDiscipline="0.0" lcSigma="0.0" lcSpeedGain="1" lcSpeedGainRight="1" length="5.087" maxSpeed="40" maxSpeedLat="1" minGap="1" minGapLat="0.1" sigma="0." speedFactor="normc(0.745,0.1,0.66,0.83)" tau="1" vClass="passenger" width="1.868"/><!--BMW 5xi/>-->
+
+	<vType accel="2.6" apparentDecel="4.5" carFollowModel="Krauss" color="191,62,255" decel="4.5" emergencyDecel="4.5" guiShape="passenger" id="car_2" impatience="0" laneChangeModel="SL2015" latAlignment="center" lcKeepRight="0" lcLaneDiscipline="0.0" lcSigma="0.0" lcSpeedGain="1" lcSpeedGainRight="1" length="5.087" maxSpeed="40" maxSpeedLat="1" minGap="1" minGapLat="0.1" sigma="0." speedFactor="normc(0.745,0.1,0.66,0.83)" tau="1" vClass="passenger" width="1.868"/><!--BMW 5xi/>-->
+
+	<vType accel="2.6" apparentDecel="4.5" carFollowModel="Krauss" color="232,232,232" decel="4.5" emergencyDecel="4.5" guiShape="passenger/sedan" id="car_3" impatience="0" laneChangeModel="SL2015" latAlignment="center" lcKeepRight="0" lcLaneDiscipline="0.0" lcSigma="0.0" lcSpeedGain="1" lcSpeedGainRight="1" length="4.753" maxSpeed="40" maxSpeedLat="1" minGap="1" minGapLat="0.1" sigma="0." speedFactor="normc(0.745,0.1,0.66,0.83)" tau="1" vClass="passenger" width="1.800"/><!--dazhong suteng/>-->
+
+	<vType accel="2.6" apparentDecel="4.5" carFollowModel="Krauss" color="232,232,232" decel="4.5" emergencyDecel="4.5" guiShape="passenger/sedan" id="car_4" impatience="0" laneChangeModel="SL2015" latAlignment="center" lcKeepRight="0" lcLaneDiscipline="0.0" lcSigma="0.0" lcSpeedGain="1" lcSpeedGainRight="1" length="4.753" maxSpeed="40" maxSpeedLat="1" minGap="1" minGapLat="0.1" sigma="0." speedFactor="normc(0.745,0.1,0.66,0.833)" tau="1" vClass="passenger" width="1.800"/><!--dazhong suteng/>-->
+
+	<vType accel="2.6" apparentDecel="4.5" carFollowModel="Krauss" color="210,105,30" decel="4.5" emergencyDecel="4.5" guiShape="passenger/hatchback" id="car_5" impatience="0" laneChangeModel="SL2015" latAlignment="center" lcKeepRight="0" lcLaneDiscipline="0.0" lcSigma="0.0" lcSpeedGain="1" lcSpeedGainRight="1" length="3.975" maxSpeed="40" maxSpeedLat="1" minGap="1" minGapLat="0.1" sigma="0." speedFactor="normc(0.70,0.1,0.66,0.75)" tau="1" vClass="passenger" width="1.709"/><!--fute jianianhua/>-->
+
+
+
+	<vType accel="2" apparentDecel="4.5" carFollowModel="Krauss" color="255,0,0" decel="4.5" emergencyDecel="4.5" guiShape="truck" id="truck_1" impatience="0" laneChangeModel="SL2015" latAlignment="center" lcKeepRight="0" lcLaneDiscipline="0.0" lcSigma="0.0" lcSpeedGain="1" lcSpeedGainRight="1" length="6.8" maxSpeed="28" maxSpeedLat="1" minGap="1" minGapLat="0.1" sigma="0." speedFactor="normc(0.66,0.16,0.5,0.8333)" tau="1" vClass="truck" width="2.55"/><!--yiqijiefang J6L/>-->
+	<vType accel="2.6" apparentDecel="4.5" carFollowModel="Krauss" color="255, 165, 0" decel="4.5" emergencyDecel="4.5" guiShape="motorcycle" id="motorbike_1" impatience="0" laneChangeModel="SL2015" latAlignment="left" lcKeepRight="0" lcLaneDiscipline="0.0" lcSigma="0.0" lcSpeedGain="1" lcSpeedGainRight="1" length="2.1" maxSpeed="28" maxSpeedLat="1" minGap="1" minGapLat="0.1" sigma="0." speedFactor="normc(0.745,0.1,0.66,0.833)" tau="1" vClass="motorcycle" width="0.875"/><!--Zongshen RA1ZS150-58/>-->
+	<vType accel="2.6" apparentDecel="4.5" carFollowModel="Krauss" color="255, 165, 0" decel="4.5" emergencyDecel="4.5" guiShape="motorcycle" id="motorbike_2" impatience="0" laneChangeModel="SL2015" latAlignment="left" lcKeepRight="0" lcLaneDiscipline="0.0" lcSigma="0.0" lcSpeedGain="1" lcSpeedGainRight="1" length="2.1" maxSpeed="28" maxSpeedLat="1" minGap="1" minGapLat="0.1" sigma="0." speedFactor="normc(0.66,0.16,0.5,0.8333)" tau="1" vClass="motorcycle" width="0.875"/><!--Zongshen RA1ZS150-58/>-->
+
+
+
+	<vType accel="3.5" color="0,255,0" decel="4.2" guiShape="passenger/wagon" id="self_car" length="4.5" maxSpeed="40" sigma="0.0" width="1.916"/>
+
+	<route edges="Route_0" id="self_route"/>
+
+
+	<flow begin="0" departLane="3" departPos="26106.38252176736" departSpeed="25.042801617552094" end="9000000" from="Route_0" id="carflow_1ane_3_1" period="3.9526866562682983" to="Route_0" type="car_1"/>
+	<flow begin="0" departLane="2" departPos="26166.8356267006" departSpeed="27.660320623026898" end="9000000" from="Route_0" id="carflow_1ane_2_1" period="3.9526866562682983" to="Route_0" type="car_2"/>
+	<flow begin="0" departLane="1" departPos="26053.203664488272" departSpeed="25.76880422899926" end="9000000" from="Route_0" id="carflow_1ane_1_1" period="3.9526866562682983" to="Route_0" type="car_4"/>
+	<flow begin="0" departLane="0" departPos="26091.025046768707" departSpeed="16.851036988267083" end="9000000" from="Route_0" id="carflow_1ane_0_1" period="3.9526866562682983" to="Route_0" type="car_5"/>
+
+	<flow begin="1.9763433281341491" departLane="3" departPos="26142.133603157985" departSpeed="23.490263326781452" end="9000000" from="Route_0" id="carflow_1ane_3_2" period="3.9526866562682983" to="Route_0" type="car_1"/>
+	<flow begin="1.9763433281341491" departLane="2" departPos="26125.00282376647" departSpeed="22.664927313423746" end="9000000" from="Route_0" id="carflow_1ane_2_2" period="3.9526866562682983" to="Route_0" type="car_3"/>
+	<flow begin="1.9763433281341491" departLane="1" departPos="26126.077002613096" departSpeed="24.974368206034313" end="9000000" from="Route_0" id="carflow_1ane_1_2" period="3.9526866562682983" to="Route_0" type="car_5"/>
+	<flow begin="1.9763433281341491" departLane="0" departPos="26167.495123362696" departSpeed="21.13044412996026" end="9000000" from="Route_0" id="carflow_1ane_0_2" period="3.9526866562682983" to="Route_0" type="truck_1"/>
+
+	<flow begin="3.9526866562682983" departLane="1" departPos="26060.28900054402" departSpeed="23.015455838677347" end="9000000" from="Route_0" id="carflow_1ane_1_3" period="11.858059968804895" to="Route_0" type="motorbike_1"/>
+	<flow begin="3.9526866562682983" departLane="0" departPos="26076.93470189566" departSpeed="25.993705922931536" end="9000000" from="Route_0" id="carflow_1ane_0_3" period="11.858059968804895" to="Route_0" type="motorbike_2"/>
+
+
+</routes>

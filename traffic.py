@@ -87,7 +87,7 @@ class Traffic(object):
                                                 traci.constants.VAR_ANGLE,
                                                 traci.constants.VAR_SIGNALS,
                                                 traci.constants.VAR_SPEED,
-                                                # traci.constants.VAR_TYPE,
+                                                traci.constants.VAR_TYPE,
                                                 # traci.constants.VAR_EMERGENCY_DECEL,
                                                 # traci.constants.VAR_LANE_INDEX,
                                                 # traci.constants.VAR_LANEPOSITION,
@@ -214,8 +214,9 @@ class Traffic(object):
                     # transfer x,y,a in car coord
                     x, y, a = _convert_sumo_coord_to_car_coord(x_in_sumo, y_in_sumo, a_in_sumo, length)
                     v = veh_info_dict[veh][traci.constants.VAR_SPEED]
+                    type = veh_info_dict[veh][traci.constants.VAR_TYPE]
                     self.n_ego_vehicles[egoID].append(dict(x=x, y=y, v=v, phi=a, l=length,
-                                                           w=width, route=route))
+                                                           w=width, route=route, type=type))
 
     def _get_traffic_light(self):
         self.v_light = traci.trafficlight.getPhase('0')

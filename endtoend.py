@@ -11,11 +11,13 @@ import warnings
 from collections import OrderedDict
 from math import cos, sin, pi
 from random import choice
-
+import matplotlib.patches as mpatch
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
 from gym.utils import seeding
+from LasVSim.sensor_module import *
+from LasVSim.simulator import Settings
 
 # gym.envs.user_defined.toyota_env.
 from dynamics_and_models import VehicleDynamics, ReferencePath, EnvironmentModel
@@ -78,6 +80,12 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
         self.per_path_info_dim = 4
         self.light_dim = 1
         self.mode = mode
+        """Load sensor module."""
+        self.settings = Settings(file_path='LasVSim/Scenario/G30/simulation_setting_file.xml')
+        step_length = (self.settings.step_length *
+                       self.settings.sensor_frequency)
+        self.sensors = Sensors(step_length=step_length,
+                               sensor_info=self.settings.sensors)
         if not multi_display:
             self.traffic = Traffic(self.step_length,
                                    mode=self.mode,
@@ -338,7 +346,6 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
     def _construct_veh_vector_short(self, exit_='D'):
         ego_x = self.ego_dynamics['x']
         ego_y = self.ego_dynamics['y']
-        v_light = self.v_light
         vehs_vector = []
 
         name_settings = dict(D=dict(do='1o', di='1i', ro='2o', ri='2i', uo='3o', ui='3i', lo='4o', li='4i'),
@@ -347,6 +354,13 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                              L=dict(do='4o', di='4i', ro='1o', ri='1i', uo='2o', ui='2i', lo='3o', li='3i'))
 
         name_setting = name_settings[exit_]
+
+        ego_state = [self.ego_dynamics['x'], self.ego_dynamics['y'], self.ego_dynamics['v_x'], self.ego_dynamics['phi']]
+        all_vehicles = list(filter(lambda v: CROSSROAD_SIZE/2 + 40 > v['x'] > -CROSSROAD_SIZE/2 - 40 and
+                                             CROSSROAD_SIZE/2 + 40 > v['y'] > -CROSSROAD_SIZE/2 - 40, self.all_vehicles))
+        self.sensors.update(pos=ego_state, vehicles=all_vehicles)
+        self.detected_vehicles = self.sensors.getVisibleVehicles()
+        self.surrounding_objects_numbers = len(self.detected_vehicles)
 
         def filter_interested_vehicles(vs, task):
             dl, du, dr, rd, rl, ru, ur, ud, ul, lu, lr, ld = [], [], [], [], [], [], [], [], [], [], [], []
@@ -383,25 +397,25 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                     ld.append(v)
 
             # fetch veh in range
-            dl = list(filter(lambda v: v['x'] > -CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, dl))  # interest of left straight
-            du = list(filter(lambda v: ego_y-2 < v['y'] < CROSSROAD_SIZE/2+10 and v['x'] < ego_x+5, du))  # interest of left straight
-
-            dr = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] > ego_y, dr))  # interest of right
-
-            rd = rd  # not interest in case of traffic light
-            rl = rl  # not interest in case of traffic light
-            ru = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2+10, ru))  # interest of straight
-
-            if task == 'straight':
-                ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < CROSSROAD_SIZE/2+10, ur))  # interest of straight
-            elif task == 'right':
-                ur = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2, ur))  # interest of right
-            ud = list(filter(lambda v: max(ego_y-2, -CROSSROAD_SIZE/2) < v['y'] < CROSSROAD_SIZE/2 and ego_x > v['x'], ud))  # interest of left
-            ul = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < ego_x and v['y'] < CROSSROAD_SIZE/2, ul))  # interest of left
-
-            lu = lu  # not interest in case of traffic light
-            lr = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < CROSSROAD_SIZE/2+10, lr))  # interest of right
-            ld = ld  # not interest in case of traffic light
+            # dl = list(filter(lambda v: v['x'] > -CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, dl))  # interest of left straight
+            # du = list(filter(lambda v: ego_y-2 < v['y'] < CROSSROAD_SIZE/2+10 and v['x'] < ego_x+5, du))  # interest of left straight
+            #
+            # dr = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] > ego_y, dr))  # interest of right
+            #
+            # rd = rd  # not interest in case of traffic light
+            # rl = rl  # not interest in case of traffic light
+            # ru = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2+10, ru))  # interest of straight
+            #
+            # if task == 'straight':
+            #     ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < CROSSROAD_SIZE/2+10, ur))  # interest of straight
+            # elif task == 'right':
+            #     ur = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2, ur))  # interest of right
+            # ud = list(filter(lambda v: max(ego_y-2, -CROSSROAD_SIZE/2) < v['y'] < CROSSROAD_SIZE/2 and ego_x > v['x'], ud))  # interest of left
+            # ul = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < ego_x and v['y'] < CROSSROAD_SIZE/2, ul))  # interest of left
+            #
+            # lu = lu  # not interest in case of traffic light
+            # lr = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < CROSSROAD_SIZE/2+10, lr))  # interest of right
+            # ld = ld  # not interest in case of traffic light
 
             # sort
             dl = sorted(dl, key=lambda v: (v['y'], -v['x']))
@@ -446,14 +460,13 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
             return tmp
 
         list_of_interested_veh_dict = []
-        self.interested_vehs = filter_interested_vehicles(self.all_vehicles, self.training_task)
+        self.interested_vehs = filter_interested_vehicles(self.detected_vehicles, self.training_task)
         for part in list(self.interested_vehs.values()):
             list_of_interested_veh_dict.extend(part)
 
         for veh in list_of_interested_veh_dict:
             veh_x, veh_y, veh_v, veh_phi = veh['x'], veh['y'], veh['v'], veh['phi']
             vehs_vector.extend([veh_x, veh_y, veh_v, veh_phi])
-        self.per_veh_info_dim = 4
         return np.array(vehs_vector, dtype=np.float32)
 
     def recover_orig_position_fn(self, transformed_x, transformed_y, x, y, d):  # x, y, d are used to transform
@@ -620,21 +633,35 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                 else:
                     return False
 
-            def draw_rotate_rec(x, y, a, l, w, color, linestyle='-'):
-                RU_x, RU_y, _ = rotate_coordination(l / 2, w / 2, 0, -a)
-                RD_x, RD_y, _ = rotate_coordination(l / 2, -w / 2, 0, -a)
-                LU_x, LU_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
-                LD_x, LD_y, _ = rotate_coordination(-l / 2, -w / 2, 0, -a)
-                ax.plot([RU_x + x, RD_x + x], [RU_y + y, RD_y + y], color=color, linestyle=linestyle)
-                ax.plot([RU_x + x, LU_x + x], [RU_y + y, LU_y + y], color=color, linestyle=linestyle)
-                ax.plot([LD_x + x, RD_x + x], [LD_y + y, RD_y + y], color=color, linestyle=linestyle)
-                ax.plot([LD_x + x, LU_x + x], [LD_y + y, LU_y + y], color=color, linestyle=linestyle)
+            def draw_rotate_rec(x, y, a, l, w, c, facecolor='white'):
+                bottom_left_x, bottom_left_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
+                ax.add_patch(plt.Rectangle((x + bottom_left_x, y + bottom_left_y), w, l, edgecolor=c,
+                                           facecolor=facecolor, angle=-(90 - a), zorder=50))
+
+            # def draw_rotate_rec(x, y, a, l, w, color, linestyle='-'):
+            #     RU_x, RU_y, _ = rotate_coordination(l / 2, w / 2, 0, -a)
+            #     RD_x, RD_y, _ = rotate_coordination(l / 2, -w / 2, 0, -a)
+            #     LU_x, LU_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
+            #     LD_x, LD_y, _ = rotate_coordination(-l / 2, -w / 2, 0, -a)
+            #     ax.plot([RU_x + x, RD_x + x], [RU_y + y, RD_y + y], color=color, linestyle=linestyle)
+            #     ax.plot([RU_x + x, LU_x + x], [RU_y + y, LU_y + y], color=color, linestyle=linestyle)
+            #     ax.plot([LD_x + x, RD_x + x], [LD_y + y, RD_y + y], color=color, linestyle=linestyle)
+            #     ax.plot([LD_x + x, LU_x + x], [LD_y + y, LU_y + y], color=color, linestyle=linestyle)
 
             def plot_phi_line(x, y, phi, color):
                 line_length = 5
                 x_forw, y_forw = x + line_length * cos(phi*pi/180.),\
                                  y + line_length * sin(phi*pi/180.)
                 plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
+
+            def draw_sensor_range(x_ego, y_ego, a_ego, l_bias, w_bias, angle_bias, angle_range, dist_range, color):
+                x_sensor = x_ego + l_bias * cos(a_ego) - w_bias * sin(a_ego)
+                y_sensor = y_ego + l_bias * sin(a_ego) + w_bias * cos(a_ego)
+                theta1 = a_ego + angle_bias - angle_range / 2
+                theta2 = a_ego + angle_bias + angle_range / 2
+                sensor = mpatch.Wedge([x_sensor, y_sensor], dist_range, theta1=theta1 * 180 / pi,
+                                       theta2=theta2 * 180 / pi, fc=color, alpha=0.2)
+                ax.add_patch(sensor)
 
             # plot cars
             for veh in self.all_vehicles:
@@ -662,21 +689,7 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                         plot_phi_line(veh_x, veh_y, veh_phi, 'black')
                         task = MODE2TASK[mode]
                         color = task2color[task]
-                        draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
-
-            # plot own car
-            # dict(v_x=ego_dict['v_x'],
-            #      v_y=ego_dict['v_y'],
-            #      r=ego_dict['r'],
-            #      x=ego_dict['x'],
-            #      y=ego_dict['y'],
-            #      phi=ego_dict['phi'],
-            #      l=ego_dict['l'],
-            #      w=ego_dict['w'],
-            #      Corner_point=self.cal_corner_point_of_ego_car(ego_dict)
-            #      alpha_f_bound=alpha_f_bound,
-            #      alpha_r_bound=alpha_r_bound,
-            #      r_bound=r_bound)
+                        draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, facecolor=color)
 
             ego_v_x = self.ego_dynamics['v_x']
             ego_v_y = self.ego_dynamics['v_y']
@@ -694,6 +707,21 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
 
             plot_phi_line(ego_x, ego_y, ego_phi, 'red')
             draw_rotate_rec(ego_x, ego_y, ego_phi, ego_l, ego_w, 'red')
+
+            # plot sensors
+            draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=ego_l/2, w_bias=0, angle_bias=0,
+                                                     angle_range=120 * pi / 180, dist_range=80, color='gray')
+            draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=ego_l/2, w_bias=0, angle_bias=0,
+                                                     angle_range=38 * pi / 180, dist_range=100, color="purple")
+
+            # plot vehicles from sensors
+            # for veh in self.detected_vehicles:
+            #     veh_x = veh['x']
+            #     veh_y = veh['y']
+            #     veh_phi = veh['phi']
+            #     veh_l = veh['l']
+            #     veh_w = veh['w']
+            #     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'fuchsia')
 
             # plot future data
             tracking_info = self.obs[self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
@@ -801,6 +829,8 @@ def test_end2end():
             i += 1
             # action=2*np.random.random(2)-1
             if obs[4]<-18:
+                action = np.array([0, 1], dtype=np.float32)
+            elif obs[3]<-22:
                 action = np.array([0, 1], dtype=np.float32)
             else:
                 action = np.array([0.5, 0.33], dtype=np.float32)
