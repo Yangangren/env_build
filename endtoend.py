@@ -25,6 +25,7 @@ from endtoend_env_utils import shift_coordination, rotate_coordination, rotate_a
     L, W, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, judge_feasible, MODE2TASK, VEHICLE_MODE_DICT, VEH_NUM, EXPECTED_V, \
     TASK_DICT
 from traffic import Traffic
+import os
 
 warnings.filterwarnings("ignore")
 
@@ -81,7 +82,8 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
         self.light_dim = 1
         self.mode = mode
         """Load sensor module."""
-        self.settings = Settings(file_path='LasVSim/Scenario/G30/simulation_setting_file.xml')
+        setting_dir = os.path.dirname(__file__)
+        self.settings = Settings(file_path=setting_dir + '/LasVSim/Scenario/G30/simulation_setting_file.xml')
         step_length = (self.settings.step_length *
                        self.settings.sensor_frequency)
         self.sensors = Sensors(step_length=step_length,
@@ -105,8 +107,8 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
         self.v_light = self.traffic.v_light
         self.training_task = 'left'                        # self.training_task = choice(['left', 'straight', 'right'])
         self.task_idx = TASK_DICT[self.training_task]
-        light_vector = self.v_light if self.v_light == 0 else 1
-        self.ref_path = ReferencePath(self.training_task, light_vector, **kwargs)
+        self.light_vector = self.v_light if self.v_light == 0 else 1
+        self.ref_path = ReferencePath(self.training_task, self.light_vector, **kwargs)
         self.env_model = EnvironmentModel(self.training_task, self.num_future_data)
         self.veh_mode_dict = VEHICLE_MODE_DICT[self.training_task]
         self.veh_num = VEH_NUM[self.training_task]
@@ -301,9 +303,9 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                                                              np.array([ego_phi], dtype=np.float32),
                                                              np.array([ego_v_x], dtype=np.float32),
                                                              self.num_future_data).numpy()[0]
-        light_vector = np.array([self.v_light if self.v_light == 0 else 1], dtype=np.float32)
+        self.light_vector = self.v_light if self.v_light == 0 else 1
         task_vector = np.array([self.task_idx], dtype=np.float32)
-        vector = np.concatenate((ego_vector, tracking_error, light_vector, task_vector, vehs_vector), axis=0)
+        vector = np.concatenate((ego_vector, tracking_error, [self.light_vector], task_vector, vehs_vector), axis=0)
         vector = vector.astype(np.float32)
         # vector = self.convert_vehs_to_rela(vector)
 

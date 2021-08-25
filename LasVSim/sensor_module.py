@@ -155,6 +155,8 @@ class Sensors(object):
                                             l=l,
                                             w=w,
                                             route=route))
+            self.detect_cars[i].object_x_detected = 99999
+            self.detect_cars[i].object_y_detected = 99999
         return visible_vehicles
 
 

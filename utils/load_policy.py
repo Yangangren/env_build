@@ -33,9 +33,10 @@ class LoadPolicy(object):
                                          gamma=self.args.gamma)
         # self.preprocessor.load_params(load_dir)
         init_obs = env.reset()[np.newaxis, :]
-        init_obs_ego = init_obs[:, :env.ego_info_dim + env.per_tracking_info_dim * (env.num_future_data+1)+env.task_info_dim]
-        init_obs_other = np.reshape(init_obs[:, env.ego_info_dim + env.per_tracking_info_dim *
-                                            (env.num_future_data+1) + env.task_info_dim:], [-1, env.per_veh_info_dim])
+        init_obs_ego = init_obs[:, :env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data +
+                                  env.light_dim + env.task_info_dim]
+        init_obs_other = np.reshape(init_obs[:, env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data +
+                                  env.light_dim + env.task_info_dim:], [-1, env.per_veh_info_dim])
         self.run_batch(init_obs_ego, init_obs_other, [env.veh_num])
         self.obj_value_batch(init_obs_ego, init_obs_other, [env.veh_num])
 
@@ -51,14 +52,14 @@ class LoadPolicy(object):
     #     value = self.policy.compute_obj_v(processed_obs[np.newaxis, :])
     #     return value
 
-    # @tf.function
+    @tf.function
     def run_batch(self, obses_ego, obses_other, start_veh_num):
         processed_obs_ego, processed_obs_other = self.preprocessor.tf_process_obses_PI(obses_ego, obses_other)
         processed_obs = self.get_states(processed_obs_ego, processed_obs_other, start_veh_num, grad=False)
         actions, _ = self.policy.compute_action(processed_obs)
         return actions
 
-    # @tf.function
+    @tf.function
     def obj_value_batch(self, obses_ego, obses_other, start_veh_num):
         processed_obs_ego, processed_obs_other = self.preprocessor.tf_process_obses_PI(obses_ego, obses_other)
         processed_obs = self.get_states(processed_obs_ego, processed_obs_other, start_veh_num, grad=False)

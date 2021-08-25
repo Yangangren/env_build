@@ -11,6 +11,7 @@ import datetime
 import shutil
 import time
 import json
+import matplotlib.patches as mpatch
 import os
 from math import cos, sin, pi
 
@@ -33,7 +34,8 @@ class HierarchicalDecision(object):
         self.policy = LoadPolicy('../utils/models/{}/{}'.format(task, train_exp_dir), ite)
         self.args = self.policy.args
         self.env = CrossroadEnd2endPiIntegrate(mode='testing', num_future_data=self.args.env_kwargs_num_future_data)
-        self.env_state_ego = self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1) + self.env.task_info_dim
+        self.env_state_ego = self.env.ego_info_dim + self.env.track_info_dim + self.env.per_path_info_dim * self.env.num_future_data \
+                              + self.env.light_dim + self.env.task_info_dim
         self.env_per_state_other = self.env.per_veh_info_dim
         self.recorder = Recorder()
         self.episode_counter = -1
@@ -54,10 +56,10 @@ class HierarchicalDecision(object):
         # ------------------build graph for tf.function in advance-----------------------
         for i in range(LANE_NUMBER):
             obs = self.env.reset()[np.newaxis, :]
-            self.path_list = self.stg.generate_path(self.env.training_task)
-            self.model = EnvironmentModel(self.env.training_task, mode='selecting')
             obs_ego = obs[:, :self.env_state_ego]
             obs_other = np.reshape(obs[:, self.env_state_ego:], [-1, self.env_per_state_other])
+            self.path_list = self.stg.generate_path(self.env.training_task, self.env.light_vector)
+            self.model = EnvironmentModel(self.env.training_task, num_future_data=self.args.env_kwargs_num_future_data, mode='selecting')
             self.is_safe(obs_ego, obs_other, i)
         obs = self.env.reset()[np.newaxis, :]
         obs_ego = obs[:, :self.env_state_ego]
@@ -71,8 +73,8 @@ class HierarchicalDecision(object):
 
     def reset(self,):
         self.obs = self.env.reset()
-        self.path_list = self.stg.generate_path(self.env.training_task)
-        self.model = EnvironmentModel(self.env.training_task, mode='selecting')
+        self.path_list = self.stg.generate_path(self.env.training_task, self.env.light_vector)
+        self.model = EnvironmentModel(self.env.training_task, num_future_data=self.args.env_kwargs_num_future_data, mode='selecting')
         self.recorder.reset()
         self.old_index = 0
         self.hist_posi = []
@@ -95,13 +97,13 @@ class HierarchicalDecision(object):
     #     veh2veh4real = self.model.ss(obs, action, lam=0.1)
     #     return False if veh2veh4real[0] > 0 else True
 
-    @tf.function
+    # @tf.function
     def is_safe(self, obs_ego, obs_other, path_index):
-        self.model.add_traj(obs_ego, obs_other, [self.env.veh_num], path_index)
+        self.model.add_traj(obs_ego, obs_other, self.env.light_vector, [self.env.veh_num], path_index)
         punish = 0.
         for step in range(5):
             action = self.policy.run_batch(obs_ego, obs_other, [self.env.veh_num])
-            obs_ego, obs_other, _, _, _, veh2veh4real, _ = self.model.rollout_out(action)
+            obs_ego, obs_other, _, _, _, veh2veh4real, _, _ = self.model.rollout_out(action)
             punish += veh2veh4real[0]
         return False if punish > 0 else True
 
@@ -264,6 +266,15 @@ class HierarchicalDecision(object):
                              y + line_length * sin(phi * pi / 180.)
             plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
 
+        def draw_sensor_range(x_ego, y_ego, a_ego, l_bias, w_bias, angle_bias, angle_range, dist_range, color):
+            x_sensor = x_ego + l_bias * cos(a_ego) - w_bias * sin(a_ego)
+            y_sensor = y_ego + l_bias * sin(a_ego) + w_bias * cos(a_ego)
+            theta1 = a_ego + angle_bias - angle_range / 2
+            theta2 = a_ego + angle_bias + angle_range / 2
+            sensor = mpatch.Wedge([x_sensor, y_sensor], dist_range, theta1=theta1 * 180 / pi,
+                                   theta2=theta2 * 180 / pi, fc=color, alpha=0.2)
+            ax.add_patch(sensor)
+
         # plot cars
         for veh in self.env.all_vehicles:
             veh_x = veh['x']
@@ -310,6 +321,12 @@ class HierarchicalDecision(object):
         draw_rotate_rec(ego_x, ego_y, ego_phi, ego_l, ego_w, 'fuchsia')
         self.hist_posi.append((ego_x, ego_y))
 
+        # plot sensors
+        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=ego_l / 2, w_bias=0, angle_bias=0,
+                          angle_range=120 * pi / 180, dist_range=80, color='gray')
+        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=ego_l / 2, w_bias=0, angle_bias=0,
+                          angle_range=38 * pi / 180, dist_range=100, color="purple")
+
         # plot history
         xs = [pos[0] for pos in self.hist_posi]
         ys = [pos[1] for pos in self.hist_posi]
@@ -317,19 +334,19 @@ class HierarchicalDecision(object):
 
 
         # plot future data
-        tracking_info = self.obs[
-                        self.env.ego_info_dim:self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data + 1)]
-        future_path = tracking_info[self.env.per_tracking_info_dim:]
+        tracking_info = self.obs[self.env.ego_info_dim:self.env.ego_info_dim + self.env.track_info_dim]
+        future_path = self.obs[self.env.ego_info_dim + self.env.track_info_dim: self.env.ego_info_dim + self.env.track_info_dim +
+                      self.env.num_future_data * self.env.per_path_info_dim]
+
         for i in range(self.env.num_future_data):
-            delta_x, delta_y, delta_phi = future_path[i * self.env.per_tracking_info_dim:
-                                                      (i + 1) * self.env.per_tracking_info_dim]
+            delta_x, delta_y, delta_phi, exp_v = future_path[i * self.env.per_path_info_dim: (i + 1) * self.env.per_path_info_dim]
             path_x, path_y, path_phi = ego_x + delta_x, ego_y + delta_y, ego_phi - delta_phi
             plt.plot(path_x, path_y, 'g.')
             plot_phi_line(path_x, path_y, path_phi, 'g')
 
         delta_, _, _ = tracking_info[:3]
         indexs, points = self.env.ref_path.find_closest_point(np.array([ego_x], np.float32), np.array([ego_y], np.float32))
-        path_x, path_y, path_phi = points[0][0], points[1][0], points[2][0]
+        path_x, path_y, path_phi, path_v = points[0][0], points[1][0], points[2][0], points[3][0]
         # plt.plot(path_x, path_y, 'g.')
         delta_x, delta_y, delta_phi = ego_x - path_x, ego_y - path_y, ego_phi - path_phi
 
@@ -361,7 +378,7 @@ class HierarchicalDecision(object):
         plt.text(text_x, text_y_start - next(ge), r'path_phi: ${:.2f}\degree$'.format(path_phi))
         plt.text(text_x, text_y_start - next(ge), r'delta_phi: ${:.2f}\degree$'.format(delta_phi))
         plt.text(text_x, text_y_start - next(ge), 'v_x: {:.2f}m/s'.format(ego_v_x))
-        plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(self.env.exp_v))
+        plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(path_v))
         plt.text(text_x, text_y_start - next(ge), 'v_y: {:.2f}m/s'.format(ego_v_y))
         plt.text(text_x, text_y_start - next(ge), 'yaw_rate: {:.2f}rad/s'.format(ego_r))
         plt.text(text_x, text_y_start - next(ge), 'yaw_rate bound: [{:.2f}, {:.2f}]'.format(-r_bound, r_bound))
@@ -418,7 +435,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('unify', 'experiment-2021-06-01-13-09-13', 180000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-08-24-19-33-46', 180000, logdir)
 
     for i in range(300):
         done = 0
