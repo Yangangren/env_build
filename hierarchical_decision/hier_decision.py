@@ -83,11 +83,11 @@ class HierarchicalDecision(object):
             os.makedirs(self.logdir + '/episode{}/figs'.format(self.episode_counter))
             self.step_counter = -1
             self.recorder.save(self.logdir)
-            if self.episode_counter >= 1:
-                select_and_rename_snapshots_of_an_episode(self.logdir, self.episode_counter-1, 12)
-                self.recorder.plot_and_save_ith_episode_curves(self.episode_counter-1,
-                                                               self.logdir + '/episode{}/figs'.format(self.episode_counter-1),
-                                                               isshow=False)
+            # if self.episode_counter >= 1:
+            #     select_and_rename_snapshots_of_an_episode(self.logdir, self.episode_counter-1, 12)
+            #     self.recorder.plot_and_save_ith_episode_curves(self.episode_counter-1,
+            #                                                    self.logdir + '/episode{}/figs'.format(self.episode_counter-1),
+            #                                                    isshow=False)
         return self.obs
 
     # @tf.function
@@ -255,10 +255,10 @@ class HierarchicalDecision(object):
             else:
                 return False
 
-        def draw_rotate_rec(x, y, a, l, w, c):
+        def draw_rotate_rec(x, y, a, l, w, c, facecolor='white'):
             bottom_left_x, bottom_left_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
             ax.add_patch(plt.Rectangle((x + bottom_left_x, y + bottom_left_y), w, l, edgecolor=c,
-                                       facecolor='white', angle=-(90 - a), zorder=50))
+                                       facecolor=facecolor, angle=-(90 - a), zorder=50))
 
         def plot_phi_line(x, y, phi, color):
             line_length = 3
@@ -286,6 +286,15 @@ class HierarchicalDecision(object):
                 plot_phi_line(veh_x, veh_y, veh_phi, 'black')
                 draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
+        # plot vehicles from sensors
+        for veh in self.env.detected_vehicles:
+            veh_x = veh['x']
+            veh_y = veh['y']
+            veh_phi = veh['phi']
+            veh_l = veh['l']
+            veh_w = veh['w']
+            draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'red')
+
         # plot_interested vehs
         for mode, num in self.env.veh_mode_dict.items():
             for i in range(num):
@@ -301,7 +310,7 @@ class HierarchicalDecision(object):
                     plot_phi_line(veh_x, veh_y, veh_phi, 'black')
                     task = MODE2TASK[mode]
                     color = task2color[task]
-                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color)
+                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, facecolor=color)
 
         ego_v_x = self.env.ego_dynamics['v_x']
         ego_v_y = self.env.ego_dynamics['v_y']
@@ -435,7 +444,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-08-24-19-33-46', 180000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-08-25-19-46-13', 195000, logdir)
 
     for i in range(300):
         done = 0
