@@ -381,42 +381,60 @@ class CrossroadEnd2endPiFixLight(gym.Env):
                     ld.append(v)
 
             # fetch veh in range
-            dl = list(filter(lambda v: v['x'] > -CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, dl))  # interest of left straight
-            du = list(filter(lambda v: ego_y-2 < v['y'] < CROSSROAD_SIZE/2+10 and v['x'] < ego_x+5, du))  # interest of left straight
+            if task == 'left':
+                dl = list(filter(lambda v: v['x'] > -CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, dl))
+                ud = list(filter(lambda v: max(ego_y-2, -CROSSROAD_SIZE/2) < v['y'] < CROSSROAD_SIZE/2 and ego_x > v['x'], ud))
+                ul = list(filter(lambda v: -CROSSROAD_SIZE / 2 - 10 < v['x'] < ego_x and v['y'] < CROSSROAD_SIZE / 2, ul))
+                rd = list(filter(lambda v: ego_x - 2 < v['x'] < min(ego_x + 10, CROSSROAD_SIZE / 2) and v['y'] > ego_y - 2, rd))
+                rl = list(filter(lambda v: max(-CROSSROAD_SIZE/2 - 10, ego_x - 20) < v['x'] < min(ego_x + 20, CROSSROAD_SIZE / 2) and v['y'] > ego_y - 2, rl))
+                lr = list(filter(lambda v: -CROSSROAD_SIZE / 2 < v['x'] < ego_x + 2 and v['y'] > ego_y, lr))
+                lu = list(filter(lambda v: -CROSSROAD_SIZE / 2 < v['x'] < ego_x + 6 and v['y'] > ego_y-4, lu))
 
-            dr = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] > ego_y, dr))  # interest of right
+                # sort
+                dl = sorted(dl, key=lambda v: (v['y'], -v['x']))
+                ud = sorted(ud, key=lambda v: v['y'])
+                ul = sorted(ul, key=lambda v: (v['y'], v['x']))
+                rd = sorted(rd, key=lambda v: (v['y'], v['x']))
+                rl = sorted(rl, key=lambda v: v['x'])
+                lr = sorted(lr, key=lambda v: -v['x'])
+                lu = sorted(lu, key=lambda v: (v['x'], v['y']))
 
-            rd = rd  # not interest in case of traffic light
-            rl = rl  # not interest in case of traffic light
-            ru = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2+10, ru))  # interest of straight
+            elif task == 'straight':
 
-            if task == 'straight':
-                ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < CROSSROAD_SIZE/2+10, ur))  # interest of straight
-            elif task == 'right':
-                ur = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2, ur))  # interest of right
-            ud = list(filter(lambda v: max(ego_y-2, -CROSSROAD_SIZE/2) < v['y'] < CROSSROAD_SIZE/2 and ego_x > v['x'], ud))  # interest of left
-            ul = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < ego_x and v['y'] < CROSSROAD_SIZE/2, ul))  # interest of left
+                du = list(filter(lambda v: ego_y-2 < v['y'] < CROSSROAD_SIZE/2+10 and v['x'] < ego_x+5, du))  # interest of left straight
 
-            lu = lu  # not interest in case of traffic light
-            lr = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < CROSSROAD_SIZE/2+10, lr))  # interest of right
-            ld = ld  # not interest in case of traffic light
+                dr = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] > ego_y, dr))  # interest of right
 
-            # sort
-            dl = sorted(dl, key=lambda v: (v['y'], -v['x']))
-            du = sorted(du, key=lambda v: v['y'])
-            dr = sorted(dr, key=lambda v: (v['y'], v['x']))
+                rd = list(filter(lambda v: v['x'] > -CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, rd))  # in case of traffic light
+                ru = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2+10, ru))  # interest of straight
 
-            ru = sorted(ru, key=lambda v: (-v['x'], v['y']), reverse=True)
+                if task == 'straight':
+                    ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < CROSSROAD_SIZE/2+10, ur))  # interest of straight
+                elif task == 'right':
+                    ur = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2, ur))  # interest of right
+                ud = list(filter(lambda v: max(ego_y-2, -CROSSROAD_SIZE/2) < v['y'] < CROSSROAD_SIZE/2 and ego_x > v['x'], ud))  # interest of left
+                ul = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < ego_x and v['y'] < CROSSROAD_SIZE/2, ul))  # interest of left
 
-            if task == 'straight':
-                ur = sorted(ur, key=lambda v: v['y'])
-            elif task == 'right':
-                ur = sorted(ur, key=lambda v: (-v['y'], v['x']), reverse=True)
+                lu = lu  # not interest in case of traffic light
+                lr = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < CROSSROAD_SIZE/2+10, lr))  # interest of right
+                ld = ld  # not interest in case of traffic light
 
-            ud = sorted(ud, key=lambda v: v['y'])
-            ul = sorted(ul, key=lambda v: (-v['y'], -v['x']), reverse=True)
+                # sort
+                dl = sorted(dl, key=lambda v: (v['y'], -v['x']))
+                du = sorted(du, key=lambda v: v['y'])
+                dr = sorted(dr, key=lambda v: (v['y'], v['x']))
 
-            lr = sorted(lr, key=lambda v: -v['x'])
+                ru = sorted(ru, key=lambda v: (-v['x'], v['y']), reverse=True)
+
+                if task == 'straight':
+                    ur = sorted(ur, key=lambda v: v['y'])
+                elif task == 'right':
+                    ur = sorted(ur, key=lambda v: (-v['y'], v['x']), reverse=True)
+
+                ud = sorted(ud, key=lambda v: v['y'])
+                ul = sorted(ul, key=lambda v: (-v['y'], -v['x']), reverse=True)
+
+                lr = sorted(lr, key=lambda v: -v['x'])
 
             # slice or fill to some number
             def slice_or_fill(sorted_list, fill_value, num):
@@ -428,14 +446,18 @@ class CrossroadEnd2endPiFixLight(gym.Env):
                     return sorted_list
 
             mode2fillvalue = dict(
-                dl=dict(x=LANE_WIDTH/2, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '4i')),
-                du=dict(x=LANE_WIDTH*1.5, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '3i')),
-                dr=dict(x=LANE_WIDTH*(LANE_NUMBER-0.5), y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '2i')),
-                ru=dict(x=(CROSSROAD_SIZE/2+15), y=LANE_WIDTH*(LANE_NUMBER-0.5), v=0, phi=180, w=2.5, l=5, route=('2o', '3i')),
-                ur=dict(x=-LANE_WIDTH/2, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '2i')),
-                ud=dict(x=-LANE_WIDTH*1.5, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '1i')),
-                ul=dict(x=-LANE_WIDTH*(LANE_NUMBER-0.5), y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '4i')),
-                lr=dict(x=-(CROSSROAD_SIZE/2+20), y=-LANE_WIDTH*1.5, v=0, phi=0, w=2.5, l=5, route=('4o', '2i')))
+                dl=dict(x=LANE_WIDTH*(LANE_NUMBER-2.5), y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.0, l=4.8, route=('1o', '4i')),
+                du=dict(x=LANE_WIDTH*(LANE_NUMBER-1.5), y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.0, l=4.8, route=('1o', '3i')),
+                dr=dict(x=LANE_WIDTH*(LANE_NUMBER-0.5), y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.0, l=4.8, route=('1o', '2i')),
+                rd=dict(x=(CROSSROAD_SIZE/2+30), y=LANE_WIDTH*(LANE_NUMBER-2.5), v=0, phi=180, w=2.0, l=4.8, route=('2o', '1i')),
+                rl=dict(x=(CROSSROAD_SIZE/2+30), y=LANE_WIDTH*(LANE_NUMBER-1.5), v=0, phi=180, w=2.0, l=4.8, route=('2o', '2i')),
+                ru=dict(x=(CROSSROAD_SIZE/2+30), y=LANE_WIDTH*(LANE_NUMBER-0.5), v=0, phi=180, w=2.0, l=4.8, route=('2o', '3i')),
+                ud=dict(x=-LANE_WIDTH*(LANE_NUMBER-1.5), y=(CROSSROAD_SIZE/2+30), v=0, phi=-90, w=2.0, l=4.8, route=('3o', '1i')),
+                ur=dict(x=-LANE_WIDTH*(LANE_NUMBER-2.5), y=(CROSSROAD_SIZE/2+30), v=0, phi=-90, w=2.0, l=4.8, route=('3o', '2i')),
+                ul=dict(x=-LANE_WIDTH*(LANE_NUMBER-0.5), y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.0, l=4.8, route=('3o', '4i')),
+                ld=dict(x=-(CROSSROAD_SIZE/2+30), y=-LANE_WIDTH*(LANE_NUMBER-0.5), v=0, phi=0, w=2.0, l=4.8, route=('4o', '1i')),
+                lr=dict(x=-(CROSSROAD_SIZE/2+30), y=-LANE_WIDTH*(LANE_NUMBER-1.5), v=0, phi=0, w=2.0, l=4.8, route=('4o', '2i')),
+                lu=dict(x=-(CROSSROAD_SIZE/2+30), y=-LANE_WIDTH*(LANE_NUMBER-2.5), v=0, phi=0, w=2.0, l=4.8, route=('4o', '3i')))
 
             tmp = OrderedDict()
             for mode, num in VEHICLE_MODE_DICT[task].items():
@@ -784,7 +806,7 @@ def test_end2end():
     obs = env.reset()
     i = 0
     while i < 100000:
-        for j in range(40):
+        for j in range(70):
             i += 1
             # action=2*np.random.random(2)-1
             if obs[4] < -18:
@@ -792,7 +814,7 @@ def test_end2end():
             elif obs[3] <= -18:
                 action = np.array([0, 0], dtype=np.float32)
             else:
-                action = np.array([-0.3, 0.33], dtype=np.float32)
+                action = np.array([0.1, 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
             obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
             obses_ego = obses[:, :env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data +
