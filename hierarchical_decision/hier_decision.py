@@ -11,6 +11,7 @@ import datetime
 import shutil
 import time
 import json
+import matplotlib.patches as mpatch
 import os
 from math import cos, sin, pi
 
@@ -19,7 +20,7 @@ import numpy as np
 import tensorflow as tf
 
 from dynamics_and_models import EnvironmentModel, ReferencePath
-from endtoend import CrossroadEnd2endPiFix
+from endtoend import CrossroadEnd2endPiFixLight
 from endtoend_env_utils import rotate_coordination, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, MODE2TASK
 from hierarchical_decision.multi_path_generator import MultiPathGenerator
 from utils.load_policy import LoadPolicy
@@ -31,8 +32,12 @@ class HierarchicalDecision(object):
     def __init__(self, task, train_exp_dir, ite, logdir=None):
         self.task = task
         self.policy = LoadPolicy('../utils/models/{}/{}'.format(task, train_exp_dir), ite)
-        self.env = CrossroadEnd2endPiFix(training_task=self.task, mode='testing')
-        self.model = EnvironmentModel(self.task, mode='selecting')
+        self.args = self.policy.args
+        self.env = CrossroadEnd2endPiFixLight(training_task=self.task, mode='testing', num_future_data=self.args.env_kwargs_num_future_data)
+        self.model = EnvironmentModel(self.task, num_future_data=self.args.env_kwargs_num_future_data, mode='selecting')
+        self.env_state_ego = self.env.ego_info_dim + self.env.track_info_dim + self.env.per_path_info_dim * self.env.num_future_data \
+                              + self.env.light_dim + self.env.task_info_dim
+        self.env_per_state_other = self.env.per_veh_info_dim
         self.recorder = Recorder()
         self.episode_counter = -1
         self.step_counter = -1
@@ -49,18 +54,17 @@ class HierarchicalDecision(object):
         plt.ion()
         self.hist_posi = []
         self.old_index = 0
-        self.path_list = self.stg.generate_path(self.task)
         # ------------------build graph for tf.function in advance-----------------------
         for i in range(LANE_NUMBER):
             obs = self.env.reset()[np.newaxis, :]
-            obs_ego = obs[:, :self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1)]
-            obs_other = np.reshape(obs[:, self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1):],
-                                   [-1, self.env.per_veh_info_dim])
+            obs_ego = obs[:, :self.env_state_ego]
+            obs_other = np.reshape(obs[:, self.env_state_ego:], [-1, self.env_per_state_other])
+            self.path_list = self.stg.generate_path(self.env.training_task, self.env.light_vector)
+            self.model = EnvironmentModel(self.env.training_task, num_future_data=self.args.env_kwargs_num_future_data, mode='selecting')
             self.is_safe(obs_ego, obs_other, i)
         obs = self.env.reset()[np.newaxis, :]
-        obs_ego = obs[:, :self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data + 1)]
-        obs_other = np.reshape(obs[:, self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1):],
-                               [-1, self.env.per_veh_info_dim])
+        obs_ego = obs[:, :self.env_state_ego]
+        obs_other = np.reshape(obs[:, self.env_state_ego:], [-1, self.env.per_veh_info_dim])
         obs_ego_with_specific_shape = np.tile(obs_ego, (LANE_NUMBER, 1))
         obs_other_with_specific_shape = np.tile(obs_other, (LANE_NUMBER, 1))
         self.policy.run_batch(obs_ego_with_specific_shape, obs_other_with_specific_shape, [self.env.veh_num]*LANE_NUMBER)
@@ -78,11 +82,11 @@ class HierarchicalDecision(object):
             os.makedirs(self.logdir + '/episode{}/figs'.format(self.episode_counter))
             self.step_counter = -1
             self.recorder.save(self.logdir)
-            if self.episode_counter >= 1:
-                select_and_rename_snapshots_of_an_episode(self.logdir, self.episode_counter-1, 12)
-                self.recorder.plot_and_save_ith_episode_curves(self.episode_counter-1,
-                                                               self.logdir + '/episode{}/figs'.format(self.episode_counter-1),
-                                                               isshow=False)
+            # if self.episode_counter >= 1:
+            #     select_and_rename_snapshots_of_an_episode(self.logdir, self.episode_counter-1, 12)
+            #     self.recorder.plot_and_save_ith_episode_curves(self.episode_counter-1,
+            #                                                    self.logdir + '/episode{}/figs'.format(self.episode_counter-1),
+            #                                                    isshow=False)
         return self.obs
 
     # @tf.function
@@ -94,20 +98,19 @@ class HierarchicalDecision(object):
 
     @tf.function
     def is_safe(self, obs_ego, obs_other, path_index):
-        self.model.add_traj(obs_ego, obs_other, [self.env.veh_num], path_index)
+        self.model.add_traj(obs_ego, obs_other, self.env.light_vector, [self.env.veh_num], path_index)
         punish = 0.
         for step in range(5):
             action = self.policy.run_batch(obs_ego, obs_other, [self.env.veh_num])
-            obs_ego, obs_other, _, _, _, veh2veh4real, _ = self.model.rollout_out(action)
+            obs_ego, obs_other, _, _, _, veh2veh4real, _, _ = self.model.rollout_out(action)
             punish += veh2veh4real[0]
         return False if punish > 0 else True
 
     def safe_shield(self, real_obs, path_index):
         action_safe_set = [[[0., -1.]]]
         real_obs = tf.convert_to_tensor(real_obs[np.newaxis, :], dtype=tf.float32)
-        real_obs_ego = real_obs[:, :self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1)]
-        real_obs_other = tf.reshape(real_obs[:, self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1):],
-                                    [-1, self.env.per_veh_info_dim])
+        real_obs_ego = real_obs[:, :self.env_state_ego]
+        real_obs_other = tf.reshape(real_obs[:, self.env_state_ego:], [-1, self.env_per_state_other])
         if not self.is_safe(real_obs_ego, real_obs_other, path_index):
             print('SAFETY SHIELD STARTED!')
             return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), True
@@ -116,6 +119,7 @@ class HierarchicalDecision(object):
 
     def step(self):
         self.step_counter += 1
+        self.path_list = self.stg.generate_path(self.env.training_task, self.env.light_vector)
         with self.step_timer:
             obs_list = []
             # select optimal path
@@ -123,9 +127,8 @@ class HierarchicalDecision(object):
                 self.env.set_traj(path)
                 obs_list.append(self.env._get_obs())
             all_obs = tf.stack(obs_list, axis=0)
-            all_obs_ego = all_obs[:, :self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data + 1)]
-            all_obs_other = tf.reshape(all_obs[:, self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data + 1):],
-                                       [-1, self.env.per_veh_info_dim])
+            all_obs_ego = all_obs[:, :self.env_state_ego]
+            all_obs_other = tf.reshape(all_obs[:, self.env_state_ego:], [-1, self.env_per_state_other])
             path_values = self.policy.obj_value_batch(all_obs_ego, all_obs_other, [self.env.veh_num]*all_obs.shape[0]).numpy()
             old_value = path_values[self.old_index]
             new_index, new_value = int(np.argmin(path_values)), min(path_values)  # value is to approximate (- sum of reward)
@@ -252,10 +255,10 @@ class HierarchicalDecision(object):
             else:
                 return False
 
-        def draw_rotate_rec(x, y, a, l, w, c):
+        def draw_rotate_rec(x, y, a, l, w, c, facecolor='white'):
             bottom_left_x, bottom_left_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
             ax.add_patch(plt.Rectangle((x + bottom_left_x, y + bottom_left_y), w, l, edgecolor=c,
-                                       facecolor='white', angle=-(90 - a), zorder=50))
+                                       facecolor=facecolor, angle=-(90 - a), zorder=50))
 
         def plot_phi_line(x, y, phi, color):
             line_length = 3
@@ -289,7 +292,7 @@ class HierarchicalDecision(object):
                     plot_phi_line(veh_x, veh_y, veh_phi, 'black')
                     task = MODE2TASK[mode]
                     color = task2color[task]
-                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color)
+                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, facecolor=color)
 
         ego_v_x = self.env.ego_dynamics['v_x']
         ego_v_y = self.env.ego_dynamics['v_y']
@@ -316,19 +319,19 @@ class HierarchicalDecision(object):
 
 
         # plot future data
-        tracking_info = self.obs[
-                        self.env.ego_info_dim:self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data + 1)]
-        future_path = tracking_info[self.env.per_tracking_info_dim:]
+        tracking_info = self.obs[self.env.ego_info_dim:self.env.ego_info_dim + self.env.track_info_dim]
+        future_path = self.obs[self.env.ego_info_dim + self.env.track_info_dim: self.env.ego_info_dim + self.env.track_info_dim +
+                      self.env.num_future_data * self.env.per_path_info_dim]
+
         for i in range(self.env.num_future_data):
-            delta_x, delta_y, delta_phi = future_path[i * self.env.per_tracking_info_dim:
-                                                      (i + 1) * self.env.per_tracking_info_dim]
+            delta_x, delta_y, delta_phi, exp_v = future_path[i * self.env.per_path_info_dim: (i + 1) * self.env.per_path_info_dim]
             path_x, path_y, path_phi = ego_x + delta_x, ego_y + delta_y, ego_phi - delta_phi
             plt.plot(path_x, path_y, 'g.')
             plot_phi_line(path_x, path_y, path_phi, 'g')
 
         delta_, _, _ = tracking_info[:3]
         indexs, points = self.env.ref_path.find_closest_point(np.array([ego_x], np.float32), np.array([ego_y], np.float32))
-        path_x, path_y, path_phi = points[0][0], points[1][0], points[2][0]
+        path_x, path_y, path_phi, path_v = points[0][0], points[1][0], points[2][0], points[3][0]
         # plt.plot(path_x, path_y, 'g.')
         delta_x, delta_y, delta_phi = ego_x - path_x, ego_y - path_y, ego_phi - path_phi
 
@@ -360,7 +363,7 @@ class HierarchicalDecision(object):
         plt.text(text_x, text_y_start - next(ge), r'path_phi: ${:.2f}\degree$'.format(path_phi))
         plt.text(text_x, text_y_start - next(ge), r'delta_phi: ${:.2f}\degree$'.format(delta_phi))
         plt.text(text_x, text_y_start - next(ge), 'v_x: {:.2f}m/s'.format(ego_v_x))
-        plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(self.env.exp_v))
+        plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(path_v))
         plt.text(text_x, text_y_start - next(ge), 'v_y: {:.2f}m/s'.format(ego_v_y))
         plt.text(text_x, text_y_start - next(ge), 'yaw_rate: {:.2f}rad/s'.format(ego_r))
         plt.text(text_x, text_y_start - next(ge), 'yaw_rate bound: [{:.2f}, {:.2f}]'.format(-r_bound, r_bound))
@@ -417,7 +420,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-05-28-08-50-50', 200000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-08-27-12-06-56', 390000, logdir)
     # for PI fix env
     # 'left', 'experiment-2021-05-28-08-50-50', 200000
     for i in range(300):

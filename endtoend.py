@@ -79,6 +79,7 @@ class CrossroadEnd2endPiFixLight(gym.Env):
         self.ego_info_dim = 6
         self.track_info_dim = 3
         self.per_veh_info_dim = 4
+        self.task_info_dim = 0
         self.per_path_info_dim = 4
         self.light_dim = 1
         self.mode = mode

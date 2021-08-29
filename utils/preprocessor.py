@@ -74,9 +74,8 @@ class Preprocessor(object):
         self.epsilon = epsilon
         self.num_agent = None
         self.args = args
-        self.obs_ego_scale = np.array([0.2, 1., 2., 1 / 30., 1 / 30, 1 / 180.] +
-                                      [1., 1 / 15., 0.2] + [1., 1., 1 / 15.] * self.args.env_kwargs_num_future_data)
-        self.obs_other_scale = np.array([1 / 30., 1 / 30., 0.2, 1 / 180.])
+        self.obs_ego_scale = self.args.obs_ego_scale
+        self.obs_other_scale = self.args.obs_other_scale
         if 'num_agent' in kwargs.keys():
             self.ret = np.zeros(kwargs['num_agent'])
             self.num_agent = kwargs['num_agent']
