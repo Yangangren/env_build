@@ -1,9 +1,10 @@
 # coding=utf-8
-# 该文件下代码可直接与gui相替换
 from __future__ import print_function
 from ctypes import *
 from _ctypes import FreeLibrary
-
+import logging
+# logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 """Simulation Setting Value"""
 DECISION_OUTPUT_TYPE = ['spatio-temporal trajectory',
@@ -24,14 +25,16 @@ DYNAMIC_OUTPUT = 2
 KINEMATIC_OUTPUT = 1
 SPATIO_TEMPORAL_TRAJECTORY = 0
 
-CAR_TYPE = ['CVT Car', 'AMT Car', 'Truck'] # 不能更改顺序
+CAR_TYPE = ['CVT Car', 'AMT Car', 'Truck', 'EV'] # 不能更改顺序
 CVT_CAR = 0
 AMT_CAR = 1
 TRUCK = 2
+EV = 3
 CVT_MODEL_FILE_PATH = "Modules/CarModel_CVT.dll"
 AMT_MODEL_FILE_PATH = "Modules/CarModel_AMT.dll"
 TRUCK_MODEL_FILE_PATH = "Modules/CarModel_Truck.dll"
-CAR_LIB = [CVT_MODEL_FILE_PATH, AMT_MODEL_FILE_PATH, TRUCK_MODEL_FILE_PATH] # 不能更改顺序
+EV_MODEL_FILE_PATH = "Modules/CarModel_EV.dll"
+CAR_LIB = [CVT_MODEL_FILE_PATH, AMT_MODEL_FILE_PATH, TRUCK_MODEL_FILE_PATH, EV_MODEL_FILE_PATH] # 不能更改顺序
 
 TRAFFIC_TYPE = ['No Traffic', 'Mixed Traffic', 'Vehicle Only Traffic'] # 不能更改顺序
 NO_TRAFFIC = 0
@@ -51,11 +54,12 @@ C_DLL_FILE = 0
 PYTHON_FILE = 1
 FILE_TYPE = ['C/C++ DLL', 'Python Module'] # 不能更改顺序
 
-MAPS = ['Map1_Urban Road', 'Map2_Highway', 'Map3_G30',
-        'Map4_Beijing Changping', 'Map5_Mcity', 'Map3_Highway_v3']  # 不能更改顺序
+MAPS = ['Map1_Urban Road', 'Map2_Highway', 'Map3_Shanghai Anting',
+        'Map4_Beijing Changping', 'Map5_Mcity']  # 不能更改顺序
 
 """sumo 相关参数"""
 SUMO_RETURN_RANGE = 200.0  # sumo返回交通流的范围，以自车为中心的圆形范围半径，单位m
+
 
 class CarParameter(Structure):
     """
@@ -90,9 +94,7 @@ class RoadParameter(Structure):
 
 
 class VehicleInfo(Structure):
-    """
-    Car Position Structure for C/C++ interface
-    """
+    """车辆动力学参数结构体"""
     _fields_ = [
         ("AV_Eng", c_float),
         ("AV_Y", c_float),
@@ -101,7 +103,7 @@ class VehicleInfo(Structure):
         ("A", c_float),
         ("Beta", c_float),
         ("Bk_Pressure", c_float),
-        ("Mfuel", c_float),
+        ("Mfuel", c_float),  # 累计，g
         ("M_EngOut", c_float),
         ("Rgear_Tr", c_float),
         ("Steer_SW", c_float),
@@ -110,16 +112,16 @@ class VehicleInfo(Structure):
         ("Throttle", c_float),
         ("Vx", c_float),
         ("Vy", c_float),
-        ("Yaw", c_float),
-        ("Qfuel", c_float),
-        ("Mileage", c_float)]
+        ("Yaw", c_float),  # 偏航角, rad
+        ("Qfuel", c_float),  # rate,g/s
+        ("Mileage", c_float)]  # 里程, m
 
 
 class VehInfo(Structure):
     """周车信息结构体
     """
     _fields_ = [
-        ("veh_turn_signal", c_int),  # 车辆转向信号灯（0 无信号灯 1 左转灯 2 右转灯）
+        ("veh_turn_signal", c_int),  # 车辆转向信号灯（0 不亮 1 亮）
         ("veh_brake_signal", c_bool),  # 车辆制动信号灯（0 无信号灯 1 制动灯）
         ("veh_emergency_signal", c_bool),  # 车辆紧急信号灯（0 无信号灯 1 双闪）
         ("veh_type", c_int),  # 车辆类型（0 小客车 1 卡车/巴士 2 摩托车/自行车/电瓶车）
@@ -129,7 +131,7 @@ class VehInfo(Structure):
         ("veh_height", c_float),  # 车辆高度，m
         ("veh_x", c_float),  # 车辆形心x坐标，m
         ("veh_y", c_float),  # 车辆形心y坐标，m
-        ("veh_z", c_float),  # 车 辆形心z坐标，m
+        ("veh_z", c_float),  # 车辆形心z坐标，m
         ("veh_dx", c_float),  # 车辆形心dx，m/s
         ("veh_dy", c_float),  # 车辆形心dy，m/s
         ("veh_dz", c_float),  # 车辆形心dz，m/s
@@ -143,5 +145,11 @@ class VehInfo(Structure):
         ("max_acc", c_float),
         ("max_dec", c_float),
         ("render_flag", c_bool),
-        ("turn_state", c_int),
+        ("turn_state", c_int),  # 车辆转向状态 0 直行 1 左转 2 右转
         ("winker_time", c_float)]
+
+if __name__ == "__main__":
+    a = VehInfo(veh_x=2)
+    print(a.veh_x)
+
+

@@ -1,7 +1,7 @@
 <configuration>
 	<input>
-	<net-file value="grid-map-4lane.net.xml"/>
-	<route-files value="grid-map-traffic_VehicleOnly_dense.rou.xml"/>
+	<net-file value="grid-map.net.xml"/>
+	<route-files value="grid-map-traffic_VehicleOnly_500.rou.xml"/>
 </input>
 <processing>
 	 <step-length value="0.1"/>

@@ -39,7 +39,7 @@ class Map:
     """
 
     def __init__(self, map=None):
-        self.lasvsim_version = 'package'
+        self.lasvsim_version = 'gui'
         if map is None:
             self.map_type = 'Urban Road'
         else:
@@ -49,7 +49,7 @@ class Map:
         """
         get crossing center position
         """
-        cx,cy=cross
+        cx, cy = cross
         return (float(cx)*MAP_REGION_LEN,
                 float(cy)*MAP_REGION_LEN)
 
@@ -59,13 +59,13 @@ class Map:
         """
         cx, cy = source
         if direction == 'N':
-            cy=cy+1
+            cy = cy+1
         elif direction == 'S':
-            cy=cy-1
+            cy = cy-1
         elif direction == 'E':
-            cx=cx+1
+            cx = cx+1
         elif direction == 'W':
-            cx=cx-1
+            cx = cx-1
         else:
             return None
         if cx<-1 or cx>1 or cy<-1 or cy>1:
@@ -109,7 +109,7 @@ class Map:
             return 'S'
         return None
 
-    def map_position(self,x,y):
+    def map_position(self, x, y):
         """Get position status for point (x,y).
 
         Returns:
@@ -149,7 +149,9 @@ class Map:
                 lane='L'
             else:
                 lane='R'
-            return (MAP_IN_ROAD,dict(source=source,target=target,direction=direction,lane=lane))
+            return (MAP_IN_ROAD,
+                    dict(source=source, target=target,
+                         direction=direction, lane=lane))
         elif x>=0 and x<=MAP_ROAD_WIDTH:
             direction='N'
             if y>0:
@@ -204,8 +206,8 @@ class Map:
         """
         if self.lasvsim_version == 'gui':
             heading = -heading + 90.0
-        x,y=render_center
-        pos_status,pos_data=self.map_position(x,y)
+        x, y = render_center
+        pos_status, pos_data = self.map_position(x,y)
         if pos_status == MAP_IN_ROAD:
             direction=pos_data['direction']
             return (x,y),-self.direction_to_angle(direction)
@@ -267,7 +269,7 @@ class Map:
 
         return dict(center=h_pos,source=v_source,target=v_target)
 
-    def is_same_road(self,r1,r2):
+    def is_same_road(self, r1, r2):
         return (r1['source'] == r2['source'] and r1['target'] == r2['target'] and
                 r1['direction'] == r2['direction'])
 
@@ -388,7 +390,7 @@ class Map:
         """
         get nearest road lane for mission edit
         """
-        region_x,region_y=0,0
+        region_x, region_y = 0, 0
         if x>MAP_REGION_LEN/2:
             region_x=1
         elif x<-MAP_REGION_LEN/2:
@@ -491,7 +493,7 @@ class Mission:
         """
         mission initialization with map, source, and target
         """
-        self.lasvsim_version = 'package'
+        self.lasvsim_version = 'gui'
         self.map = None
         self.cross_list = []
         self.pos = None
@@ -504,7 +506,7 @@ class Mission:
         self.next_direction = None
         self.engine_state = (0, 0, 1)  # acc m/s^2, engSpeed r/s, gearRatio
         self.control_input = (
-        0, 0, 0)  # engTorque N*m, brakePressure N, steerWheel deg
+            0, 0, 0)  # engTorque N*m, brakePressure N, steerWheel deg
         self.has_path = True
         self.mission_type = type
         self.points = points_input
@@ -560,11 +562,11 @@ class Mission:
             self.speed_limit = 60.0/3.6
 
     def get_cross_path(self,source,target,source_dir,target_dir):
-        """Get mission route.
+        """计算两个节点之间的最短路径
 
-        Returns:
-            A list consists of several intersection's index.
+        --
         """
+
         if source is None or target is None:
             return None
         G=nx.DiGraph()
@@ -602,7 +604,7 @@ class Mission:
                 count_left=count
         return best_path
 
-    def get_lane(self,dir1,dir2):
+    def get_lane(self, dir1, dir2):
         """Get road lane type for route plan.
 
         Returns:
@@ -728,15 +730,15 @@ class Mission:
                             return
                         self.current_task=(MISSION_TURNTO_ROAD,next_road)
                         direction=next_road['direction']
-                    if self.current_lane['direction']==direction:
-                        self.speed_limit=60.0/3.6
-                        self.cross_task='S'
+                    if self.current_lane['direction'] == direction:
+                        self.speed_limit = 60.0/3.6
+                        self.cross_task = 'S'
                     else:
-                        self.speed_limit=20.0/3.6
-                        if self.current_lane['lane']==MISSION_LEFT_LANE:
-                            self.cross_task='L'
+                        self.speed_limit = 20.0/3.6
+                        if self.current_lane['lane'] == MISSION_LEFT_LANE:
+                            self.cross_task = 'L'
                         else:
-                            self.cross_task='R'
+                            self.cross_task = 'R'
 
     def get_current_task(self):
         return self.current_task

@@ -1,9 +1,9 @@
 # coding=utf-8
 """
 @author: Chason Xu
-@file: traffic_model.py
-@time: 2019.12.26 14:00
-@file_desc: traffic module for LasVSim-package 0.2.1.191211_alpha
+@file: traffic_module.py
+@time: 2019.12.13 14:45
+@file_desc: traffic module for LasVSim-gui 0.2.1.191211_alpha
 """
 import math
 import optparse
@@ -14,8 +14,6 @@ import copy
 from LasVSim.data_structures import *
 from LasVSim.math_lib import degree_fix
 import logging
-import sumolib
-from traci.exceptions import FatalTraCIError
 try:
     sys.path.append(os.path.join(os.path.dirname(
         __file__), '..', '..', '..', '..', "tools"))
@@ -31,13 +29,32 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
 VEHICLE_COUNT = 0  # 总车数，包括自车，会随不同交通流类型而改变
-WINKER_PERIOD=0.5  # 转向灯闪烁周期，s
-_TLS={'6': 'gneJ7', '7': 'gneJ4', '8': 'gneJ8', '11': 'gneJ0', '12': 'gneJ1', '13': 'gneJ2',
-     '16':'gneJ6','17':'gneJ3','18':'gneJ9', '0':'gneJ9','1':'gneJ9',
-     '2':'gneJ9','3':'gneJ9','4':'gneJ9','5':'gneJ9','9':'gneJ9','10':'gneJ9',
-     '14':'gneJ9','15':'gneJ9', '19':'gneJ9','20':'gneJ9','21':'gneJ9',
-     '22':'gneJ9','23':'gneJ9','24':'gneJ9'}  # Urban Road地图信号灯id
+WINKER_PERIOD = 0.5  # 转向灯闪烁周期，s
+_TLS = {'6': 'gneJ7', '7': 'gneJ4', '8': 'gneJ8', '11': 'gneJ0', '12': 'gneJ1', '13': 'gneJ2',
+       '16':'gneJ6','17':'gneJ3','18':'gneJ9', '0':'gneJ9','1':'gneJ9',
+       '2':'gneJ9','3':'gneJ9','4':'gneJ9','5':'gneJ9','9':'gneJ9','10':'gneJ9',
+       '14':'gneJ9','15':'gneJ9', '19':'gneJ9','20':'gneJ9','21':'gneJ9',
+       '22':'gneJ9','23':'gneJ9','24':'gneJ9'}  # Urban Road地图信号灯id
 MAX_TRAFFIC = 400  # 交通流的最大数量
+
+class TrafficSignInfo(Structure):
+    """
+    交通标志信息结构体
+    """
+    _fields_ = [
+        # static
+        ("TS_type", c_int),
+        ("TS_length", c_float),
+        ("TS_height", c_float),
+        ("TS_value", c_int),
+        # dynamic
+        ("TS_x", c_float),
+        ("TS_y", c_float),
+        ("TS_z", c_float),
+        ("TS_heading", c_float),
+        ("TS_range", c_float),
+    ]
+
 
 class VehicleModelsReader(object):  # 该部分可直接与gui相替换
     """用于读取不同车辆模型信息文件的类
@@ -55,13 +72,13 @@ class VehicleModelsReader(object):  # 该部分可直接与gui相替换
 
     def __init__(self, model_path):
         """
-                VehicleModelsReader类构造函数
+        VehicleModelsReader类构造函数
 
-                Args:
-                    model_path(string): 文件路径
-                """
-        self.__type_array = [0, 1, 2, 3, 7, 100, 1000, 200, 2000]
-        self.__lasvsim_version = 'package'
+        Args:
+            model_path(string): 文件路径
+        """
+        self.__type_array = (0, 1, 2, 3, 7, 100, 1000, 200, 2000, 300, 301, 302, 500)
+        self.__lasvsim_version = 'gui'
         self.__info = dict()
         self.__read_file(model_path)
 
@@ -103,7 +120,7 @@ class VehicleModelsReader(object):  # 该部分可直接与gui相替换
         """
         return self.__type_array
 
-    def get_vehicle(self,type):
+    def get_vehicle(self, type):
         """
         返回输入车辆类型的长、宽、车一侧到原点的距离、车头到原点的距离和渲染图片
         的保存路径。
@@ -119,11 +136,12 @@ class VehicleModelsReader(object):  # 该部分可直接与gui相替换
 
         """
         if type not in self.__info:
-            type=0
+            type = 0
         return self.__info[type]
 
-HISTORY_TRAFFIC_SETTING = ['Traffic Type', 'Traffic Density',
-                           'Map']  # 上次仿真的交通流配置
+
+HISTORY_TRAFFIC_SETTING = ['Traffic Type',
+                           'Traffic Density', 'Map']  # 上次仿真的交通流配置
 RANDOM_TRAFFIC = {}  # 随机交通流分布信息
 
 
@@ -171,9 +189,8 @@ class Traffic(object):
         current_edge: 自车当前所在道路的id
         current_traffic_density: 自车当前所在车道的交通密度
     """
-
     def __init__(self, step_length, settings, map_type=None, traffic_type=None,
-                 traffic_density=None, simu_method=False,init_traffic=None, isLearner=None):
+                 traffic_density=None, init_traffic=None, isLearner=None):
         """
         交通流类的构造函数
 
@@ -185,6 +202,10 @@ class Traffic(object):
             init_traffic(dict): 初始交通流数据，{car1_id: {var1_id: value, var2_id: value...}...} （全局坐标系2下）
             settings(Settings obj): LasVSim的Settings类的一个实例
         """
+        #汤凯明毕业用
+        self.id_encoder={}
+        self.id_encode_num=0
+        ##
         # <editor-fold desc="变量及参数初始化">
         self.__own_x = 0.0
         self.__own_y = 0.0
@@ -195,8 +216,10 @@ class Traffic(object):
         self.traffic_change_flag = True
         self.veh_type = {'car_1': 0, 'car_2': 1, 'car_3': 2, 'truck_1': 100,
                          'motorbike_1': 200, 'motorbike_2': 200,
-                         'motorbike_3': 200}
-        #self.vehicles = [{}] * MAX_TRAFFIC
+                         'motorbike_3': 200, 'person_1':300, 'person_2':301,
+                         'person_3': 302, 'bicycle_1': 500, 'bicycle_2': 500,
+                         'bicycle_3': 500} #car1:0;car3:2
+        self.vehicles = [{}] * MAX_TRAFFIC
         self.sim_time = 0.0
         self.veh_dict = {}
         self.veh_name = []
@@ -211,72 +234,58 @@ class Traffic(object):
         self.car_x = 0.0
         self.car_y = 0.0
         self.car_heading = 0.0
+        self.car_yaw = 0.0
         self.traffic_range = 0.0
-        self.lasvsim_version = 'package'
+        self.lasvsim_version = 'gui'
         self.current_edge = ''
         self.current_traffic_density = -1
+        self.traffic_light_nums = 36
+        lights_info = TrafficSignInfo * self.traffic_light_nums
+        self.light_info = lights_info()
         # </editor-fold>
 
         # <editor-fold desc="读取仿真配置">
         self.__map_type = map_type
-        self.density = traffic_density
-        if simu_method == False:
-            direction = self.density
-        else:
-            direction = self.density +'_'+str(simu_method)
         if self.lasvsim_version == 'package':
-            module_path = os.path.dirname(__file__)
-            self.__path = module_path.replace('\\', '/') + "/Map/" + map_type + "/"+direction+"/"
+            self.__path = "LasVSim/Map/" + map_type + "/"
         else:
-            self.__path = "Map/" + map_type + "/"+ "/"+direction+"/"
+            self.__path = "Map/" + map_type + "/"
         self.type = traffic_type  # For example: Normal
-
-        if self.density=="simu":
-            self.long_dist_block = 30
-            self.lat_dist_block = 3.75
-            self.step_length = 600
-        elif self.density=='100':
-            self.long_dist_block = 8
-            self.lat_dist_block = 2
-            self.step_length = 400
-        else:
-            self.long_dist_block = 8
-            self.lat_dist_block = 2
-            self.step_length = 200
+        self.density = traffic_density  # For example: Middle
         self.__step_length = str(float(step_length)/1000)
         self.ego_length = settings.car_length
         self.ego_width = settings.car_width
         # </editor-fold>
 
-        # if isLearner:
-        #     self.random_traffic = self.__generate_random_traffic()
-        # else:
-        #     global VEHICLE_COUNT, HISTORY_TRAFFIC_SETTING, RANDOM_TRAFFIC
-        #     if traffic_type == 'No Traffic':
-        #         VEHICLE_COUNT = 1
-        #         self.vehicleName = ['ego']
-        #         self.random_traffic = {}
-        #     else:
-        #         if init_traffic is not None:  # 载入仿真项目时已有初始交通流分布数据
-        #             self.random_traffic = init_traffic
-        #             RANDOM_TRAFFIC = copy.deepcopy(self.random_traffic)
-        #             HISTORY_TRAFFIC_SETTING = [traffic_type, traffic_density, map_type]
-        #             self.traffic_change_flag = False
-        #         elif (HISTORY_TRAFFIC_SETTING[0] != traffic_type or
-        #                 HISTORY_TRAFFIC_SETTING[1] != traffic_density or
-        #                 HISTORY_TRAFFIC_SETTING[2] != map_type):
-        #             self.random_traffic = self.__generate_random_traffic()
-        #             # RANDOM_TRAFFIC = copy.deepcopy(self.random_traffic)
-        #             # HISTORY_TRAFFIC_SETTING = [traffic_type, traffic_density, map_type]
-        #             self.traffic_change_flag = True
-        #         else:
-        #             # 本次仿真的交通流配置与上次仿真一致则不用重新初始化随机交通流
-        #             self.random_traffic = RANDOM_TRAFFIC
-        #             self.traffic_change_flag = False
-        #
-        #         self.vehicleName = ['ego'] + list(self.random_traffic.keys())
-        #         VEHICLE_COUNT = len(self.vehicleName)
-        #     VEHICLE_COUNT = 0  # TODO(Chason): VEHICLE_COUNT表示仿真每一步从sumo获得的周车数量，其值会变，因此此处给值无效，后期检查后应该删去
+        if isLearner:
+            self.random_traffic = self.__generate_random_traffic()
+        else:
+            global VEHICLE_COUNT, HISTORY_TRAFFIC_SETTING, RANDOM_TRAFFIC
+            if traffic_type == 'No Traffic':
+                VEHICLE_COUNT = 1
+                self.vehicleName = ['ego']
+                self.random_traffic = {}
+            else:
+                if init_traffic is not None:  # 载入仿真项目时已有初始交通流分布数据
+                    self.random_traffic = init_traffic
+                    RANDOM_TRAFFIC = copy.deepcopy(self.random_traffic)
+                    HISTORY_TRAFFIC_SETTING = [traffic_type, traffic_density, map_type]
+                    self.traffic_change_flag = False
+                elif (HISTORY_TRAFFIC_SETTING[0] != traffic_type or
+                        HISTORY_TRAFFIC_SETTING[1] != traffic_density or
+                        HISTORY_TRAFFIC_SETTING[2] != map_type):
+                    self.random_traffic = self.__generate_random_traffic()
+                    RANDOM_TRAFFIC = copy.deepcopy(self.random_traffic)
+                    HISTORY_TRAFFIC_SETTING = [traffic_type, traffic_density, map_type]
+                    self.traffic_change_flag = True
+                else:
+                    # 本次仿真的交通流配置与上次仿真一致则不用重新初始化随机交通流
+                    self.random_traffic = RANDOM_TRAFFIC
+                    self.traffic_change_flag = False
+
+                self.vehicleName = ['ego'] + list(self.random_traffic.keys())
+                VEHICLE_COUNT = len(self.vehicleName)
+            VEHICLE_COUNT = 0  # TODO(Chason): VEHICLE_COUNT表示仿真每一步从sumo获得的周车数量，其值会变，因此此处给值无效，后期检查后应该删去
 
     def __del__(self):
         """
@@ -290,7 +299,7 @@ class Traffic(object):
 
     def init(self, ego_position):
         """交通流模块初始化函数
-
+        
         Args:
             ego_position(list): 自车位姿数据. [x, y, v, a](m, m, m/s, deg)
             （package版在全局坐标系1下，gui版在全局坐标系2下）
@@ -300,97 +309,34 @@ class Traffic(object):
 
         """
         if self.lasvsim_version == "package":
-            SUMO_BINARY =checkBinary('sumo') #checkBinary('sumo-gui')#
-        else:
             SUMO_BINARY = checkBinary('sumo-gui')
+        else:
+            SUMO_BINARY = checkBinary('sumo')
         if self.__map_type == MAPS[0]:  # 城市道路场景为封闭交通流
             traci.start(
                 [SUMO_BINARY, "-c", self.__path + "configuration.sumocfg",
                  "--step-length", self.__step_length,
-                 "--lateral-resolution", "0.375", "--start", "--no-warnings","--no-step-log",
-                 "--random", "false",
-                 "--seed", "711",])
-        elif self.__map_type == MAPS[1] or self.__map_type == MAPS[2]:  # 高速公路场景为开放交通流
+                 "--lateral-resolution", "0.4", "--start", "--no-warnings",
+                 "--random", "false", "--quit-on-end",
+                 "--seed", "711"])
+        elif self.__map_type == MAPS[1]:  # 高速公路场景为开放交通流
             if self.type == 'No Traffic':
                 traci.start([SUMO_BINARY, "-c",
                              self.__path+"configuration.sumocfg",
                              "--step-length", self.__step_length,
                              "--quit-on-end",
-                             "--no-warnings",
-                             "--no-step-log",
-                             ])
+                             "--no-warnings"])
             else:
-                try:
-                    traci.start([SUMO_BINARY, "-c",
-                                 self.__path+"traffic_generation_"+self.type+".sumocfg",
-                                 "--step-length", "0.25",
-                                 #"--quit-on-end",
-                                 "--lateral-resolution", "0.375",
-                                 "--random",
-                                 "--no-warnings",
-                                 "--no-step-log",
-                                 ])
-                except FatalTraCIError:
-                    print('Retry by other port')
-                    port = sumolib.miscutils.getFreeSocketPort()
-                    traci.start([SUMO_BINARY, "-c",
-                                 self.__path+"traffic_generation_"+self.type+".sumocfg",
-                                 "--step-length", "0.25",
-                                 #"--quit-on-end",
-                                 "--lateral-resolution", "0.375",
-                                 "--random",
-                                 "--no-warnings",
-                                 "--no-step-log",
-                                 ],port=port)
-
+                traci.start([SUMO_BINARY, "-c",
+                             self.__path+"traffic_generation_"+self.type+"_"+
+                             self.density+".sumocfg",
+                             "--step-length", self.__step_length,
+                             "--quit-on-end",
+                             "--lateral-resolution", "3.75",
+                             "--random",
+                             "--no-warnings"])
         else:
             raise Exception(self.__map_type + ' 该地图还未开放')
-
-        traci.junction.subscribeContext(
-            objectID='Jun_0', domain=traci.constants.CMD_GET_VEHICLE_VARIABLE,
-            dist=500000.0, varIDs=[traci.constants.VAR_POSITION,
-                                   traci.constants.VAR_ANGLE,
-                                   traci.constants.VAR_TYPE,
-                                   traci.constants.VAR_SPEED,
-                                   traci.constants.VAR_LENGTH,
-                                   traci.constants.VAR_WIDTH,
-                                   traci.constants.VAR_LANE_INDEX,
-                                   traci.constants.VAR_ROAD_ID,
-                                   ],
-            begin=0.0, end=2147483647.0)
-        # while traci.simulation.getArrivedNumber() < 1:
-        #     traci.simulationStep()
-        time_index = 0
-        while time_index < self.step_length:
-            traci.simulationStep()
-            time_index += 1
-        self.random_traffic = traci.junction.getContextSubscriptionResults('Jun_0')
-
-        traci.close()
-
-        try:
-            traci.start([SUMO_BINARY, "-c",
-                         self.__path + "traffic_generation_" + self.type + ".sumocfg",
-                         "--step-length", self.__step_length,
-                         # "--quit-on-end",
-                         "--lateral-resolution", "0.375",
-                         "--random",
-                         "--no-warnings",
-                         "--no-step-log",
-                         ])
-        except FatalTraCIError:
-            print('Retry by other port')
-            port = sumolib.miscutils.getFreeSocketPort()
-            traci.start([SUMO_BINARY, "-c",
-                         self.__path + "traffic_generation_" + self.type + ".sumocfg",
-                         "--step-length", self.__step_length,
-                         # "--quit-on-end",
-                         "--lateral-resolution", "0.375",
-                         "--random",
-                         "--no-warnings",
-                         "--no-step-log",
-                         ], port=port)
-
         # 在sumo的交通流模型中插入自车,通过subscribeContext抓取交通流数据
         self.__own_x, self.__own_y, self.__own_v, self.__own_a = ego_position
         if self.lasvsim_version == 'gui':  # TODO(Chason): gui版本传入位姿在全局坐标系2下，后期应统一改为全局坐标系1
@@ -399,48 +345,35 @@ class Traffic(object):
         traci.vehicle.addLegacy(vehID='ego', routeID='self_route',
                                 depart=0, pos=0, lane=-6, speed=0,
                                 typeID='self_car')
-
-
-        traci.vehicle.subscribeContext(objectID='ego',
-                                       domain=traci.constants.CMD_GET_VEHICLE_VARIABLE,
-                                       dist=SUMO_RETURN_RANGE,
-                                       varIDs=[traci.constants.VAR_POSITION,
+        traci.vehicle.subscribeContext('ego',
+                                       traci.constants.CMD_GET_VEHICLE_VARIABLE,
+                                       SUMO_RETURN_RANGE,
+                                       [traci.constants.VAR_POSITION,
                                         traci.constants.VAR_LENGTH,
                                         traci.constants.VAR_WIDTH,
                                         traci.constants.VAR_ANGLE,
                                         traci.constants.VAR_SIGNALS,
                                         traci.constants.VAR_SPEED,
+                                        traci.constants.VAR_SPEED_LAT,
                                         traci.constants.VAR_TYPE,
                                         traci.constants.VAR_EMERGENCY_DECEL,
                                         traci.constants.VAR_LANE_INDEX,
-                                        traci.constants.VAR_LANEPOSITION,
-                                        traci.constants.VAR_ROAD_ID,
-                                        traci.constants.VAR_LANEPOSITION_LAT,
-                                        traci.constants.VAR_ALLOWED_SPEED,],
-                                       begin=0, end=2147483647)
-
+                                        traci.constants.VAR_LANEPOSITION],
+                                       0, 2147483647)
+        self.__initiate_traffic()
         # 设置自车长宽及初始位姿
-        # traci.vehicle.setLength('ego', self.ego_length)  # Sumo function
-        # traci.vehicle.setWidth('ego', self.ego_width)  # Sumo function
-        traci.vehicle.moveToXY(vehID='ego', edgeID='Route_0',lane=-6, x=self.__own_x +
+        traci.vehicle.setLength('ego', self.ego_length)  # Sumo function
+        traci.vehicle.setWidth('ego', self.ego_width)  # Sumo function
+        traci.vehicle.moveToXY('ego', 'gneE12', 0, self.__own_x +
                                self.ego_length / 2 *
                                math.cos(math.radians(self.__own_a)),
-                               y= self.__own_y + self.ego_length / 2 *math.sin(math.radians(self.__own_a)),
-                               angle=-self.__own_a + 90, keepRoute=0)
-
-        # traci.vehicle.moveToXY(vehID='ego', edgeID='Nan',lane=-6, x=31836,
-        #                        y= 9223,
-        #                        angle=-self.__own_a + 90, keepRoute=0)
-
-
-        # 无法通过getContextSubscriptionResults获取route信息，但需要
-        # 每辆车的route信息来初始化交通流，因此加入getRoute来获取每
-        # 辆车的route。TODO(Chason): 该bug可改正
-        self.__initiate_traffic()
+                               self.__own_y + self.ego_length / 2 *
+                               math.sin(math.radians(self.__own_a)),
+                               -self.__own_a + 90, 0)
         traci.simulationStep()
-        #_logger.info('random traffic initialized')
+        _logger.info('random traffic initialized')
 
-    def get_vehicles(self):
+    def get_vehicles(self, veh_info=None):
         """Get all vehicles' information including ego vehicle.
 
         Args:
@@ -459,10 +392,7 @@ class Traffic(object):
         """
         # 通过getContextSubscriptionResults函数获取sumo中的交通流数据
         self.veh_info_dict = traci.vehicle.getContextSubscriptionResults('ego')
-
-
         # 更新自车所在位置信息（当前车道的限速，距离当前车道停止线的距离）
-        self.veh_info_dict['ego'][traci.constants.VAR_SIGNALS]=0b0000
         if self.__map_type == MAPS[0]:
             self.__own_lane_speed_limit = [5.56, 5.56, 16.67, 16.67][
                 self.veh_info_dict['ego'][traci.constants.VAR_LANE_INDEX]]
@@ -471,17 +401,16 @@ class Traffic(object):
                     traci.constants.VAR_LANEPOSITION]
             else:
                 self.__own_lane_pos = 9999.9
-        elif self.__map_type == MAPS[1] or  self.__map_type == MAPS[2]:
-            self.__own_lane_speed_limit = [27.78, 27.78,33.33, 33.33][
+        elif self.__map_type == MAPS[1]:
+            self.__own_lane_speed_limit = [27.77777, 33.3333][
                 self.veh_info_dict['ego'][traci.constants.VAR_LANE_INDEX]]
             self.__own_lane_pos = 9999.9
         else:
             raise Exception(self.__map_type + ' 该地图还未开放')
         # 将周车列表转换为平台使用的数据格式
-
         del self.veh_info_dict['ego']  # 删去自车信息
-        #self.__update_veh_list(self.veh_info_dict)
-        self.__get_other_car_info(self.veh_info_dict)
+        self.__update_veh_list(self.veh_info_dict)
+        self.__get_other_car_info(self.veh_info_dict, self.veh_dict, veh_info)
         return self.vehicles
 
     def get_vehicle_num(self):
@@ -513,10 +442,22 @@ class Traffic(object):
         if traffic_light == 0:
             h = 1
             v = 0
-        else:
+        elif traffic_light == 1:
+            h = 1
+            v = 0
+        elif traffic_light == 2:
+            h = 2
+            v = 0
+        elif traffic_light == 3:
             h = 0
             v = 1
-        s = ['red', 'green', 'yellow']
+        elif traffic_light == 4:
+            h = 0
+            v = 1
+        else:
+            h = 0
+            v = 2
+        s = ['red', 'green', 'yellow'] # 0:red 1:green 2:yellow
         return dict(h=s[h], v=s[v])
 
     def get_light_values(self):
@@ -539,10 +480,66 @@ class Traffic(object):
         if traffic_light == 0:
             h = 1
             v = 0
-        else:
+        elif traffic_light == 1:
+            h = 1
+            v = 0
+        elif traffic_light == 2:
+            h = 2
+            v = 0
+        elif traffic_light == 3:
             h = 0
             v = 1
+        elif traffic_light == 4:
+            h = 0
+            v = 1
+        else:
+            h = 0
+            v = 2
         return h, v
+
+    def get_light_info(self):
+        index = self.__getcenterindex(self.__own_x, self.__own_y)
+        if self.__map_type == MAPS[0]:
+            trafficLight = traci.trafficlight.getPhase(_TLS[str(int(index))])
+        elif self.__map_type == MAPS[1]:
+            trafficLight = 0
+        if trafficLight == 0:
+            h = 0 # 0-Green, 2-red
+            v = 2
+        else:
+            h = 2
+            v = 0
+        dx = 9.0
+        dy = 18.0
+        for i in range(-1,2):
+            for j in range(-1,2):
+                cross=(622.0*i,622.0*j)
+                nums = 4 * (3 * i + j + 4)
+                self.light_info[nums].TS_x = cross[0] + dx
+                self.light_info[nums].TS_y = cross[1] - dy
+                self.light_info[nums].TS_heading = 270.0
+                self.light_info[nums].TS_value = v
+                self.light_info[nums + 1].TS_x = cross[0] - dx
+                self.light_info[nums + 1].TS_y = cross[1] + dy
+                self.light_info[nums + 1].TS_heading = 90.0
+                self.light_info[nums + 1].TS_value = v
+                self.light_info[nums + 2].TS_x = cross[0] - dy
+                self.light_info[nums + 2].TS_y = cross[1] - dx
+                self.light_info[nums + 2].TS_heading = 180.0
+                self.light_info[nums + 2].TS_value = h
+                self.light_info[nums + 3].TS_x = cross[0] + dy
+                self.light_info[nums + 3].TS_y = cross[1] + dx
+                self.light_info[nums + 3].TS_heading = 0.0
+                self.light_info[nums + 3].TS_value = h
+                for k in range(nums, nums + 4):
+                    self.light_info[k].TS_type = 0
+                    self.light_info[k].TS_length = 2.0
+                    self.light_info[k].TS_width = 0.5
+                    self.light_info[k].TS_height = 0.5
+                    self.light_info[k].TS_z = 0.0
+                    self.light_info[k].TS_range = 150.0
+        # print ("light Phase",trafficLight,"light info", h, v)
+        return self.light_info
 
     def get_traffic_density(self):
         """返回当前车道上的车流数量
@@ -559,12 +556,11 @@ class Traffic(object):
                 self.current_traffic_density = -1
             else:
                 self.current_traffic_density = (
-                    traci.edge.getLastStepVehicleNumber(
-                        self.current_edge) / 1.176
+                    traci.edge.getLastStepVehicleNumber(self.current_edge)/1.176
                 )
-        elif self.__map_type == MAPS[1] or  self.__map_type == MAPS[2]:
+        elif self.__map_type == MAPS[1]:
             self.current_traffic_density = (
-                traci.edge.getLastStepVehicleNumber(self.current_edge) / 3.688
+                    traci.edge.getLastStepVehicleNumber(self.current_edge)/3.688
             )
         else:
             raise Exception(self.__map_type + ' 该地图还未开放')
@@ -581,7 +577,6 @@ class Traffic(object):
         self.sim_time += float(self.__step_length)
         traci.simulationStep()
 
-
     def set_own_car(self, x, y, v, a):
         """将自车的位姿数据传入sumo
 
@@ -592,15 +587,13 @@ class Traffic(object):
             a: Ego vehicle's current heading angle under base coordinate, deg.（全局坐标系1）
         """
         self.__own_x, self.__own_y, self.__own_v, self.__own_a = x, y, v, a
-        traci.vehicle.moveToXY(vehID='ego',edgeID='Route_0', lane=-6, x=self.__own_x +
+        traci.vehicle.moveToXY('ego', 'gneE12', 0, self.__own_x +
                                self.ego_length / 2 *
                                math.cos(math.radians(self.__own_a)),
-                               y=self.__own_y + self.ego_length / 2 *math.sin(math.radians(self.__own_a)),
-                               angle=-self.__own_a + 90.0, keepRoute =0)
+                               self.__own_y + self.ego_length / 2 *
+                               math.sin(math.radians(self.__own_a)),
+                               -self.__own_a+90.0, 0)
 
-        # traci.vehicle.moveToXY(vehID='ego', edgeID='Nan',lane=-6, x=31836,
-        #                        y= 9223,
-        #                        angle=-self.__own_a + 90, keepRoute=0)
     def get_current_lane_speed_limit(self):
         """
         获取当前车道的限速
@@ -629,24 +622,7 @@ class Traffic(object):
               float(m)
 
         """
-
-
         return traci.vehicle.getLateralLanePosition('ego')
-
-    def get_egolane_index(self):  # 此处与gui不同 左正右负
-        return traci.vehicle.getLaneIndex('ego')
-
-    def get_road_related_info_of_ego(self):
-        egolane_index = traci.vehicle.getLaneIndex('ego')
-        dis2center_line = traci.vehicle.getLateralLanePosition('ego')
-        own_lane_speed_limit = self.get_current_lane_speed_limit()
-        #current_distance_to_stopline = self.get_current_distance_to_stopline()
-        #vertical_light_value = self.get_light_values()[1]
-        return dict(dist2current_lane_center=dis2center_line,
-                    egolane_index=egolane_index,
-                    current_lane_speed_limit=own_lane_speed_limit,
-                    RoadID = traci.vehicle.getRoadID('ego'),
-                    )
 
     def __generate_random_traffic(self):
         """
@@ -659,14 +635,14 @@ class Traffic(object):
 
         """
         #  调用sumo
-        SUMO_BINARY = checkBinary('sumo-gui')
+        SUMO_BINARY = checkBinary('sumo')
         traci.start([SUMO_BINARY, "-c",
-                     self.__path + "traffic_generation_" + self.type + ".sumocfg",
+                     self.__path+"traffic_generation_"+self.type+"_" +
+                     self.density+".sumocfg",
                      "--step-length", "1",
+                     "--lateral-resolution", "0.4",
                      "--random",
-                     "--no-warnings",
-                     "--no-step-log",
-                     ])
+                     "--no-warnings"])
         if self.__map_type == MAPS[0]:
             #  等待所有车辆都进入路网
             #  如果1000步之内都没有新的交通流进入路网，则认为交通流已经全部插入
@@ -695,7 +671,7 @@ class Traffic(object):
                 random_traffic[veh][87] = traci.vehicle.getRoute(vehID=veh)
             # getContextSubscriptionResults返回的车辆同时包括自车，需要删去。
             del random_traffic['ego']
-        elif self.__map_type == MAPS[1] or MAPS[5]:
+        elif self.__map_type == MAPS[1]:
             # 当第一辆车跑完路网的时候开始计时，取500步以后的交通流分布作为仿真
             # 的初始交通流分布保存下来
             # TODO：高速公路采用junction获取交通流数据，因此不需要插入自车,，后期应该将Urban地图也改为同样的方式
@@ -705,13 +681,14 @@ class Traffic(object):
                                        traci.constants.VAR_ANGLE,
                                        traci.constants.VAR_TYPE,
                                        traci.constants.VAR_SPEED,
+                                       traci.constants.VAR_SPEED_LAT,
                                        traci.constants.VAR_LENGTH,
                                        traci.constants.VAR_WIDTH],
                 begin=0.0, end=2147483647.0)
-            # while traci.simulation.getArrivedNumber() < 1:
-            #     traci.simulationStep()
+            while traci.simulation.getArrivedNumber() < 1:
+                traci.simulationStep()
             time_index = 0
-            while time_index < 10:
+            while time_index < 500:
                 traci.simulationStep()
                 time_index += 1
             random_traffic = traci.junction.getContextSubscriptionResults('10')
@@ -722,6 +699,7 @@ class Traffic(object):
                 random_traffic[veh][87] = traci.vehicle.getRoute(vehID=veh)
         else:
             raise Exception(self.__map_type + ' 该地图还未开放')
+
         traci.close()  # 获得初始交通流后即可关闭sumo
         _logger.info('random traffic generated')
         return random_traffic
@@ -736,7 +714,7 @@ class Traffic(object):
         """
         if self.__map_type == MAPS[0]:
             init_speed = 0.0  # TODO(Chason): 后期改正，交通流的初始速度待定
-        elif self.__map_type == MAPS[1] or self.__map_type == MAPS[2]:
+        elif self.__map_type == MAPS[1]:
             init_speed = 20.0  # TODO(Chason): 后期改正，交通流的初始速度待定
         else:
             raise Exception(self.__map_type + ' 该地图还未开放')
@@ -748,36 +726,32 @@ class Traffic(object):
                               - self.__own_x) < 20
                     and (math.fabs((self.random_traffic[veh]
                                     [traci.constants.VAR_POSITION][1])
-                                   - self.__own_y) < 1.7)):
-                    traci._vehicle.remove(vehID=veh)
+                                   - self.__own_y) < 20)):
+                    continue
             # 高速下的重叠判断范围更大一些
-            elif self.__map_type == MAPS[1] or self.__map_type == MAPS[2]:
+            elif self.__map_type == MAPS[1]:
                 if (math.fabs((self.random_traffic[veh]
                                [traci.constants.VAR_POSITION][0])
-                              - self.__own_x) < self.long_dist_block
+                              - self.__own_x) < 50
                     and (math.fabs((self.random_traffic[veh]
                                     [traci.constants.VAR_POSITION][1])
-                                   - self.__own_y) < self.lat_dist_block)):
-
-                    #traci.vehicle.remove(vehID=veh)
+                                   - self.__own_y) < 50)):
                     continue
             else:
                 raise Exception(self.__map_type + '  该地图还未开放')
-
-            traci.vehicle.addLegacy(vehID=veh+'init',
-                                    routeID="self_route",
-                                    depart=0,
+            traci.vehicle.addLegacy(vehID=veh,
+                                    routeID='self_route',
+                                    depart=2,
                                     pos=0,
-                                    lane=self.random_traffic[veh][traci.constants.VAR_LANE_INDEX],
-                                    speed=self.random_traffic[veh][traci.constants.VAR_SPEED],
+                                    lane=-6,
+                                    speed=init_speed,
                                     typeID=(self.random_traffic[veh]
                                             [traci.constants.VAR_TYPE]))
-            # traci.vehicle.setRoute(vehID=veh,
-            #                        edgeList=self.random_traffic[veh][traci.constants.VAR_ROAD_ID])
-
-            traci.vehicle.moveToXY(vehID=veh+'init',
-                                   edgeID=self.random_traffic[veh][traci.constants.VAR_ROAD_ID],
-                                   lane=self.random_traffic[veh][traci.constants.VAR_LANE_INDEX],
+            traci.vehicle.setRoute(vehID=veh,
+                                   edgeList=self.random_traffic[veh][87])
+            traci.vehicle.moveToXY(vehID=veh,
+                                   edgeID='gneE12',
+                                   lane=0,
                                    x=(self.random_traffic[veh]
                                       [traci.constants.VAR_POSITION][0]),
                                    y=(self.random_traffic[veh]
@@ -794,7 +768,7 @@ class Traffic(object):
               None
 
         """
-        traci.vehicle.addLegacy(vehID='ego', routeID='Nan',
+        traci.vehicle.addLegacy(vehID='ego', routeID='self_route',
                                 depart=0, pos=0, lane=-6, speed=0,
                                 typeID='self_car')
         traci.vehicle.subscribeContext('ego',
@@ -803,6 +777,7 @@ class Traffic(object):
                                                 traci.constants.VAR_ANGLE,
                                                 traci.constants.VAR_TYPE,
                                                 traci.constants.VAR_SPEED,
+                                                traci.constants.VAR_SPEED_LAT,
                                                 traci.constants.VAR_LENGTH,
                                                 traci.constants.VAR_WIDTH],
                                        0, 2147483647)
@@ -819,10 +794,8 @@ class Traffic(object):
 
         """
         global VEHICLE_COUNT
-
         self.veh_name_enter = []
         self.veh_name_exit = []
-
         for veh in self.veh_dict:
             if veh not in sumo_vehs_dict:  # 该车跑出仿真范围
                 self.veh_name_exit.append(veh)
@@ -830,15 +803,13 @@ class Traffic(object):
             if veh not in self.veh_dict:
                 self.veh_name_enter.append(veh)  # 该车刚进入仿真范围
 
-        if len(self.veh_name_enter) > len(
-                self.veh_name_exit):  # 进入的车数比离开的车数多，周车列表需要增加长度
+        if len(self.veh_name_enter) > len(self.veh_name_exit):  # 进入的车数比离开的车数多，周车列表需要增加长度
             self.index_mid = len(self.veh_name_exit)
             for i in range(self.index_mid):  # 将离开的车的id赋给进入的车
                 self.veh_dict[self.veh_name_enter[i]] = self.veh_dict[
                     self.veh_name_exit[i]]
                 del self.veh_dict[self.veh_name_exit[i]]
-            for i in range(self.index_mid,
-                           len(self.veh_name_enter)):  # 对剩余进入的车赋给新的id
+            for i in range(self.index_mid, len(self.veh_name_enter)):  # 对剩余进入的车赋给新的id
                 if len(self.id_mid) > 0:  # 优先将未被占用的id赋给新的车辆
                     self.veh_dict[self.veh_name_enter[i]] = self.id_mid[-1]
                     self.id_mid.pop()
@@ -849,7 +820,6 @@ class Traffic(object):
         else:  # 离开的车数比进入的车数多，周车列表需要减少长度
             self.index_mid = len(self.veh_name_enter)
             for i in range(self.index_mid):  # 将离开的车的id赋给进入的车
-
                 self.veh_dict[self.veh_name_enter[i]] = self.veh_dict[
                     self.veh_name_exit[i]]
                 del self.veh_dict[self.veh_name_exit[i]]
@@ -858,7 +828,7 @@ class Traffic(object):
                 del self.veh_dict[self.veh_name_exit[i]]
                 VEHICLE_COUNT -= 1
 
-    def __get_other_car_info(self, othercar_dict):
+    def __get_other_car_info(self, othercar_dict, veh_dict, veh_info):
         """
         将sumo返回的周车数据转换为平台的数据格式
 
@@ -871,18 +841,18 @@ class Traffic(object):
               None
 
         """
-        self.vehicles =dict()
-
-        # for i in range(VEHICLE_COUNT):
-        #     self.vehicles[i]['render'] = False
-        #     veh_info[i].render_flag = False
-        index=0
-        for veh in othercar_dict:
+        for i in range(MAX_TRAFFIC):
+            self.vehicles[i]['render'] = False
+            veh_info[i].render_flag = False
+        #print("veh_dict",veh_dict)
+        for veh in veh_dict:
             self.car_x, self.car_y = othercar_dict[veh][
                 traci.constants.VAR_POSITION]
-            self.car_heading = degree_fix(-othercar_dict[veh][
-                traci.constants.VAR_ANGLE] + 90.0)  # 转换到平台坐标系下
+            self.car_yaw = math.degrees(
+                math.atan2(traci.vehicle.getLateralSpeed(veh), self.random_traffic[veh][traci.constants.VAR_SPEED]))
 
+            self.car_heading = degree_fix(-othercar_dict[veh][
+                    traci.constants.VAR_ANGLE] + 90.0) + math.degrees(math.atan2(traci.vehicle.getLateralSpeed(veh),traci.vehicle.getSpeed(veh)))  # 转换到全局坐标系1下
             # sumo中车辆的位置由车辆车头中心表示，
             # 因此要计算根据sumo给的坐标换算车辆中心的坐标。
             self.car_x = self.car_x - (
@@ -891,79 +861,84 @@ class Traffic(object):
             self.car_y = self.car_y - (
                 math.sin(self.car_heading / 180 * math.pi) *
                 othercar_dict[veh][traci.constants.VAR_LENGTH] / 2)
+            
+            veh_info[veh_dict[veh]].veh_x = self.car_x
+            veh_info[veh_dict[veh]].veh_y = self.car_y
+            veh_info[veh_dict[veh]].veh_width = othercar_dict[veh][
+                traci.constants.VAR_WIDTH]
+            veh_info[veh_dict[veh]].veh_length = othercar_dict[veh][
+                traci.constants.VAR_LENGTH]
+            veh_info[veh_dict[veh]].veh_heading = self.car_heading
+            veh_info[veh_dict[veh]].max_dec = othercar_dict[veh][
+                    traci.constants.VAR_EMERGENCY_DECEL]
+            veh_info[veh_dict[veh]].veh_dx = othercar_dict[veh][
+                traci.constants.VAR_SPEED]
+            # print("以上没问题")
+            # print(othercar_dict[veh][traci.constants.VAR_TYPE])
+            if othercar_dict[veh][traci.constants.VAR_TYPE] == "DEFAULT_PEDTYPE":
+                othercar_dict[veh][traci.constants.VAR_TYPE] = "person_1"
+                veh_info[veh_dict[veh]].veh_type = self.veh_type[
+                    othercar_dict[veh][traci.constants.VAR_TYPE]]
+                # print(othercar_dict[veh][traci.constants.VAR_TYPE])
+                # print("查看有无变化000000000000000")
+            elif othercar_dict[veh][traci.constants.VAR_TYPE] == "DEFAULT_BIKETYPE":
+                # other_car_dict = othercar_dict[veh][traci.constants.VAR_TYPE]
+                othercar_dict[veh][traci.constants.VAR_TYPE] = "bicycle_1"
+                veh_info[veh_dict[veh]].veh_type = self.veh_type[
+                    othercar_dict[veh][traci.constants.VAR_TYPE]]
+                # print(othercar_dict[veh][traci.constants.VAR_TYPE])
+                # print("查看有无变化11111111111")
+            else:
+                veh_info[veh_dict[veh]].veh_type = self.veh_type[
+                    othercar_dict[veh][traci.constants.VAR_TYPE]]
+                # print(othercar_dict[veh][traci.constants.VAR_TYPE])
+                # print("查看有无变化2222")
+            # print("***********************************************")
 
-            # veh_info[veh_dict[veh]].veh_x = self.car_x
-            # veh_info[veh_dict[veh]].veh_y = self.car_y
-            # veh_info[veh_dict[veh]].veh_type = self.veh_type[
-            #     othercar_dict[veh][traci.constants.VAR_TYPE]]
-            # veh_info[veh_dict[veh]].veh_width = othercar_dict[veh][
-            #     traci.constants.VAR_WIDTH]
-            # veh_info[veh_dict[veh]].veh_length = othercar_dict[veh][
-            #     traci.constants.VAR_LENGTH]
-            # veh_info[veh_dict[veh]].veh_heading = self.car_heading
-            # veh_info[veh_dict[veh]].max_dec = othercar_dict[veh][
-            #     traci.constants.VAR_EMERGENCY_DECEL]
-            # veh_info[veh_dict[veh]].veh_dx = othercar_dict[veh][
-            #     traci.constants.VAR_SPEED]
-            #
-            # # 获取车辆信号灯状态
-            # if ((othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b0011) ==
-            #         veh_info[veh_dict[veh]].turn_state):
-            #     if (self.sim_time - veh_info[veh_dict[veh]].winker_time >
-            #             WINKER_PERIOD):
-            #         veh_info[veh_dict[veh]].veh_turn_signal -= 1
-            #         veh_info[veh_dict[veh]].winker_time = self.sim_time
-            # else:
-            #     veh_info[veh_dict[veh]].veh_turn_signal = 1
-            #     veh_info[veh_dict[veh]].winker_time = self.sim_time
-            # if othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b0001:
-            #     veh_info[veh_dict[veh]].turn_state = 2
-            # elif othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b0010:
-            #     veh_info[veh_dict[veh]].turn_state = 1
-            # else:
-            #     veh_info[veh_dict[veh]].turn_state = 0
-            # veh_info[veh_dict[veh]].veh_brake_signal = (
-            #     othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b1000)
-            # veh_info[veh_dict[veh]].veh_emergency_signal = (
-            #     othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b0100)
-            # veh_info[veh_dict[veh]].render_flag = True
 
+            # 获取车辆信号灯状态
+            if ((othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b0011) ==
+                    veh_info[veh_dict[veh]].turn_state):
+                if (self.sim_time - veh_info[veh_dict[veh]].winker_time >
+                        WINKER_PERIOD):
+                    veh_info[veh_dict[veh]].veh_turn_signal -= 1
+                    veh_info[veh_dict[veh]].winker_time = self.sim_time
+            else:
+                veh_info[veh_dict[veh]].veh_turn_signal = 1
+                veh_info[veh_dict[veh]].winker_time = self.sim_time
             if othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b0001:
-                steer_signal = 1 #right
+                veh_info[veh_dict[veh]].turn_state = 1  #上一个版本写的2？
             elif othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b0010:
-                steer_signal = -1 #left
+                veh_info[veh_dict[veh]].turn_state = 1
             else:
-                steer_signal = 0
+                veh_info[veh_dict[veh]].turn_state = 0
+            veh_info[veh_dict[veh]].veh_brake_signal = (
+                othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b1000)
+            veh_info[veh_dict[veh]].veh_emergency_signal = (
+                othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b0100)
+            veh_info[veh_dict[veh]].render_flag = True
 
-            if othercar_dict[veh][traci.constants.VAR_SIGNALS] & 0b0100:
-                brake_signal = 1
+            #汤凯明毕业用
+            if (veh not in self.id_encoder):
+                self.id_encoder[veh]=self.id_encode_num
+                i_d =self.id_encoder[veh]
+                self.id_encode_num=self.id_encode_num+1
             else:
-                brake_signal = 0
-
-
-            self.vehicles[veh]=dict(order=index,
-                type=othercar_dict[veh][traci.constants.VAR_TYPE]
-                , x=self.car_x, y=self.car_y, heading=self.car_heading,
+                i_d=self.id_encoder[veh]
+            self.vehicles[veh_dict[veh]] = dict(
+                id=i_d,
+                type=self.veh_type[othercar_dict[veh][traci.constants.VAR_TYPE]]
+                , x=self.car_x, y=self.car_y, angle=self.car_heading,
                 v=othercar_dict[veh][traci.constants.VAR_SPEED],
-                turn_signal=steer_signal,
-                brake_signal=brake_signal,
+                rotation=othercar_dict[veh][traci.constants.VAR_SIGNALS],
+                winker=0,
+                winker_time=0,
+                render=True,
                 length=othercar_dict[veh][traci.constants.VAR_LENGTH],
                 width=othercar_dict[veh][traci.constants.VAR_WIDTH],
                 lane_index=othercar_dict[veh][traci.constants.VAR_LANE_INDEX],
-                route_id=othercar_dict[veh][traci.constants.VAR_ROAD_ID],
-                dist2center=othercar_dict[veh][traci.constants.VAR_LANEPOSITION_LAT],
-                allowedspeed=othercar_dict[veh][traci.constants.VAR_ALLOWED_SPEED],)
-
-            index+=1
-            # self.vehicles.append(dict(
-            #     type=othercar_dict[veh][traci.constants.VAR_TYPE]
-            #     , x=self.car_x, y=self.car_y, heading=self.car_heading,
-            #     v=othercar_dict[veh][traci.constants.VAR_SPEED],
-            #     turn_signal=steer_signal,
-            #     brake_signal=brake_signal,
-            #     length=othercar_dict[veh][traci.constants.VAR_LENGTH],
-            #     width=othercar_dict[veh][traci.constants.VAR_WIDTH],
-            #     lane_index=othercar_dict[veh][traci.constants.VAR_LANE_INDEX],))
+                max_decel=othercar_dict[veh][
+                    traci.constants.VAR_EMERGENCY_DECEL])
 
     def __getcenterindex(self, x, y):
         """Get current intersection's id according to current position: (x,y).
@@ -1012,7 +987,6 @@ class Traffic(object):
         else:
             index = round((x + 1244) / 622) + round((y + 1244) / 622) * 5
         return index
-
 
 if __name__ == "__main__":
     """__update_veh_list单元测试"""

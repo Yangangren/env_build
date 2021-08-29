@@ -1,9 +1,9 @@
 # coding=utf-8
 """
-@author:
+@author: Chenxiang Xu
 @file: data_module.py
-@time: 2020/1/3 20:19
-@file_desc: Data module for LasVSim-package 0.2.1.191226_alpha
+@time: 2020/1/2 15:28
+@file_desc: Data module for LasVSim-gui 0.2.1.191211_alpha
 """
 import _struct as struct
 from LasVSim import data_structures
@@ -524,8 +524,10 @@ class TrafficData:
             fmt = 'i'
             self.file.write(struct.pack(fmt, *[name_length]))
             fmt = str(name_length)+'s'
+            # 将字符串先转成utf-8的编码，再转为字节类型
+            # 修改前为：self.file.write(struct.pack(fmt, *[traffic[veh][79]]))
             self.file.write(struct.pack(fmt,
-                                        *[traffic[veh][79]]))
+                                        bytes(str(*[traffic[veh][79]]).encode('utf-8'))))
             name_length = len(traffic[veh][87])
             fmt = 'i'
             self.file.write(struct.pack(fmt, *[name_length]))
@@ -534,7 +536,7 @@ class TrafficData:
                 fmt = 'i'
                 self.file.write(struct.pack(fmt, *[name_length]))
                 fmt = str(name_length) + 's'
-                self.file.write(struct.pack(fmt, *[route]))
+                self.file.write(struct.pack(fmt, bytes(str(*[route]).encode('utf-8'))))
         self.file.close()
 
     def load_traffic(self, path):

@@ -83,7 +83,7 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
         self.mode = mode
         """Load sensor module."""
         setting_dir = os.path.dirname(__file__)
-        self.settings = Settings(file_path=setting_dir + '/LasVSim/Scenario/G30/simulation_setting_file.xml')
+        self.settings = Settings(file_path=setting_dir + '/LasVSim/Library/default_simulation_setting.xml')
         step_length = (self.settings.step_length *
                        self.settings.sensor_frequency)
         self.sensors = Sensors(step_length=step_length,
@@ -485,6 +485,7 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
         else:
             random_index = int(np.random.random()*(420+500)) + 700
 
+        random_index = 900
         x, y, phi, exp_v = self.ref_path.indexs2points(random_index)
         v = exp_v * np.random.random()
         if self.training_task == 'left':
@@ -677,21 +678,21 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
             # plot_interested vehs
-            for mode, num in self.veh_mode_dict.items():
-                for i in range(num):
-                    veh = self.interested_vehs[mode][i]
-                    veh_x = veh['x']
-                    veh_y = veh['y']
-                    veh_phi = veh['phi']
-                    veh_l = veh['l']
-                    veh_w = veh['w']
-                    task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
-
-                    if is_in_plot_area(veh_x, veh_y):
-                        plot_phi_line(veh_x, veh_y, veh_phi, 'black')
-                        task = MODE2TASK[mode]
-                        color = task2color[task]
-                        draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, facecolor=color)
+            # for mode, num in self.veh_mode_dict.items():
+            #     for i in range(num):
+            #         veh = self.interested_vehs[mode][i]
+            #         veh_x = veh['x']
+            #         veh_y = veh['y']
+            #         veh_phi = veh['phi']
+            #         veh_l = veh['l']
+            #         veh_w = veh['w']
+            #         task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
+            #
+            #         if is_in_plot_area(veh_x, veh_y):
+            #             plot_phi_line(veh_x, veh_y, veh_phi, 'black')
+            #             task = MODE2TASK[mode]
+            #             color = task2color[task]
+            #             draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, facecolor=color)
 
             ego_v_x = self.ego_dynamics['v_x']
             ego_v_y = self.ego_dynamics['v_y']
@@ -717,13 +718,13 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                                                      angle_range=38 * pi / 180, dist_range=100, color="purple")
 
             # plot vehicles from sensors
-            # for veh in self.detected_vehicles:
-            #     veh_x = veh['x']
-            #     veh_y = veh['y']
-            #     veh_phi = veh['phi']
-            #     veh_l = veh['l']
-            #     veh_w = veh['w']
-            #     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'fuchsia')
+            for veh in self.detected_vehicles:
+                veh_x = veh['x']
+                veh_y = veh['y']
+                veh_phi = veh['phi']
+                veh_l = veh['l']
+                veh_w = veh['w']
+                draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'fuchsia')
 
             # plot future data
             tracking_info = self.obs[self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
@@ -827,7 +828,7 @@ def test_end2end():
     obs = env.reset()
     i = 0
     while i < 100000:
-        for j in range(40):
+        for j in range(60):
             i += 1
             # action=2*np.random.random(2)-1
             if obs[4]<-18:

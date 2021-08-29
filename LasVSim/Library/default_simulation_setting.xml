@@ -69,8 +69,8 @@
 	</Dynamic>
 	<Router>
 		<OutputType>spatio-temporal trajectory</OutputType>
-		<Type>Map1_XinLong Planner</Type>
-		<Lib>Modules/DecisionModule/Map1_XinLong.dll</Lib>
+		<Type>Map1_Chenxiang Planner</Type>
+		<Lib>Modules/DecisionModule/Map1_Chenxiang.dll</Lib>
 		<Frequency>2</Frequency>
 		<FileType>DLL</FileType>
 	</Router>
@@ -82,65 +82,33 @@
 			<id>0</id>
 			<type>4</type>
 			<detection_angle>360</detection_angle>
-			<detection_range>40.0</detection_range>
+			<detection_range>80.0</detection_range>
 			<installation_lateral_bias>0.000</installation_lateral_bias>
 			<installation_longitudinal_bias>0.000</installation_longitudinal_bias>
 			<installation_orientation_angle>0</installation_orientation_angle>
-			<accuracy_velocity>3.00</accuracy_velocity>
-			<accuracy_location>0.50</accuracy_location>
-			<accuracy_heading>2.00</accuracy_heading>
-			<accuracy_width>0.10</accuracy_width>
-			<accuracy_length>0.12</accuracy_length>
-			<accuracy_height>0.1</accuracy_height>
-			<accuracy_radius>0.1</accuracy_radius>
+			<accuracy_velocity>0.45</accuracy_velocity>
+			<accuracy_location>0.42</accuracy_location>
+			<accuracy_heading>3</accuracy_heading>
+			<accuracy_width>0.054</accuracy_width>
+			<accuracy_length>0.054</accuracy_length>
+			<accuracy_height>0.054</accuracy_height>
+			<accuracy_radius>0.054</accuracy_radius>
 		</Sensor>
 		<Sensor>
 			<id>1</id>
 			<type>9</type>
 			<detection_angle>38</detection_angle>
-			<detection_range>80.0</detection_range>
+			<detection_range>100.0</detection_range>
 			<installation_lateral_bias>0.000</installation_lateral_bias>
 			<installation_longitudinal_bias>3.300</installation_longitudinal_bias>
 			<installation_orientation_angle>0</installation_orientation_angle>
-			<accuracy_velocity>3.00</accuracy_velocity>
-			<accuracy_location>1.00</accuracy_location>
-			<accuracy_heading>4.00</accuracy_heading>
-			<accuracy_width>0.12</accuracy_width>
-			<accuracy_length>0.14</accuracy_length>
-			<accuracy_height>0.15</accuracy_height>s
-			<accuracy_radius>0.15</accuracy_radius>
-		</Sensor>
-		<Sensor>
-			<id>2</id>
-			<type>0</type>
-			<detection_angle>90</detection_angle>
-			<detection_range>60.0</detection_range>
-			<installation_lateral_bias>0.000</installation_lateral_bias>
-			<installation_longitudinal_bias>3.300</installation_longitudinal_bias>
-			<installation_orientation_angle>0</installation_orientation_angle>
-			<accuracy_velocity>1.40</accuracy_velocity>
-			<accuracy_location>0.10</accuracy_location>
-			<accuracy_heading>8.00</accuracy_heading>
-			<accuracy_width>0.20</accuracy_width>
-			<accuracy_length>0.30</accuracy_length>
-			<accuracy_height>0.25</accuracy_height>
-			<accuracy_radius>0.25</accuracy_radius>
-		</Sensor>
-		<Sensor>
-			<id>3</id>
-			<type>1</type>
-			<detection_angle>20</detection_angle>
-			<detection_range>174.0</detection_range>
-			<installation_lateral_bias>0.000</installation_lateral_bias>
-			<installation_longitudinal_bias>3.300</installation_longitudinal_bias>
-			<installation_orientation_angle>0</installation_orientation_angle>
-			<accuracy_velocity>1.40</accuracy_velocity>
-			<accuracy_location>0.10</accuracy_location>
-			<accuracy_heading>8.00</accuracy_heading>
-			<accuracy_width>0.20</accuracy_width>
-			<accuracy_length>0.30</accuracy_length>
-			<accuracy_height>0.25</accuracy_height>
-			<accuracy_radius>0.25</accuracy_radius>
+			<accuracy_velocity>4.20</accuracy_velocity>
+			<accuracy_location>1.44</accuracy_location>
+			<accuracy_heading>3</accuracy_heading>
+			<accuracy_width>0.06</accuracy_width>
+			<accuracy_length>0.06</accuracy_length>
+			<accuracy_height>0.06</accuracy_height>
+			<accuracy_radius>0.06</accuracy_radius>
 		</Sensor>
 	</Sensors>
 </Simulation>

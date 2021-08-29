@@ -1,23 +1,22 @@
 # coding=utf-8
-"""
-@author: Xu Chenxiang
-@file: agent_module.py
-@time: 2019/12/27 13:41
-@file_desc: Agent module for LasVSim-package 0.2.1.191226_alpha
-"""
 import logging
+from LasVSim.map_module import *
+from LasVSim.decision_module import *
 from LasVSim.sensor_module import *
 from LasVSim.controller_module import *
 from LasVSim.dynamic_module import *
-from LasVSim.traffic_module import *
-from LasVSim.decision_module import *
-from LasVSim.map_module import *
-from LasVSim.data_structures import *
-import threading
+# from LasVSim.filters import KalmanFiltertkm,AOFFilter
 
+import datetime
+import time
+
+import threading
+import numpy as np
 
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
+
+
 _WINKER_PERIOD=0.5
 
 
@@ -116,7 +115,8 @@ def control_thread(agent):
     agent.dynamic.set_control_input(eng_torque, brake_pressure, steer_wheel)
 
 
-def sensor_thread(agent, other_vehicles):
+
+def sensor_thread(agent, other_vehicles,traffic_sign):
     """
     传感器模块线程
 
@@ -137,10 +137,71 @@ def sensor_thread(agent, other_vehicles):
         return
     agent.sensors.update([agent.dynamic.ego_x, agent.dynamic.ego_y,
                           agent.dynamic.ego_vel, agent.dynamic.ego_heading],
-                         other_vehicles)
-    agent.detected_objects = agent.sensors.getVisibleVehicles()
+                         other_vehicles,traffic_sign)
+    agent.detected_objects,agent.detected_man,agent.detected_traffic_sign = agent.sensors.getVisibleVehicles()
     agent.surrounding_objects_numbers = len(agent.detected_objects)
+    #汤凯明毕业用
+    tmp_veh, tmp_man,detection_keys = agent.sensors.getVisibleVehiclesGT()
+    tmp_detection = [tmp_veh, tmp_man]
+    agent.detection.append(tmp_detection)
+    Error = agent.sensors.getDetectPair()
+    agent.errors.append(Error)
+    veh_result, man_result = agent.sensors.getFusionResult()
+    tmp_result = [veh_result, man_result]
+    agent.fusion_result.append(tmp_result)
 
+
+    if agent.experiment2==True:
+        tmp_fusion_result_exp2_AOF = {}
+        tmp_fusion_result_exp2_KF={}
+        #删除上一时刻检测到但这时刻没被检测到的
+        for KFkey in list(agent.KF_arr):
+            if KFkey in list(detection_keys):
+                pass
+            else:
+                agent.KF_arr.pop(KFkey)
+        for AOFkey in list(agent.AOF_arr):
+            if AOFkey in list(detection_keys):
+                pass
+            else:
+                agent.AOF_arr.pop(AOFkey)
+        agent.state_estimate={}
+        agent.state_estimate_aof={}
+        for key in list(detection_keys):
+            try:object_real=tmp_veh[key]
+            except:object_real=tmp_man[key]
+
+            if key not in list(agent.KF_arr):
+                agent.KF_arr[key]=KalmanFiltertkm(object_real[0])
+            if key not in list(agent.AOF_arr):
+                agent.AOF_arr[key]=AOFFilter(object_real[0])
+            Z =[]
+            sensor_id_list=[]
+            for pair in Error:
+                if pair[0]==int(key):
+                    # object_real=(type,x,y,heading,width,length,vx,vy)
+                    #pair=tmp.id, tmp.sensor_id, tmp.object_type, tmp.Ex, tmp.Ey, tmp.Etheta, tmp.Ew, tmp.El, tmp.Evx, tmp.Evy)
+                    tmp_Z=np.array([object_real[1]+pair[3],object_real[2]+pair[4],object_real[6]+pair[8],object_real[7]+pair[9],
+                                    (object_real[3]+pair[5])/180*np.pi,object_real[4]+pair[6],object_real[5]+pair[7]])
+                    Z.append(tmp_Z)
+                    sensor_id_list.append(pair[1])
+            #估计
+            Z_np=np.array(Z)
+            t1 = time.clock()*1e6
+            x_estKF=agent.KF_arr[key].update(Z_np,sensor_id_list)
+            t2 = time.clock()*1e6
+            KF_time=t2-t1
+
+            t1 = time.clock()*1e6
+            x_estAOF=agent.AOF_arr[key].update(Z_np,sensor_id_list)
+            t2 = time.clock()*1e6
+            AOF_time = t2 - t1
+            agent.state_estimate[key] = x_estKF
+            agent.state_estimate_aof[key] = x_estAOF
+            tmp_fusion_result_exp2_KF[key]=(x_estKF,KF_time)
+            tmp_fusion_result_exp2_AOF[key]=(x_estAOF,AOF_time)
+        agent.fusion_result_exp2_KF.append(tmp_fusion_result_exp2_KF)
+        agent.fusion_result_exp2_AOF.append(tmp_fusion_result_exp2_AOF)
 
 def dynamic_thread(agent):
     """
@@ -206,7 +267,7 @@ class Agent(object):
 
     def __init__(self, mission=None, map=None, sensor=None, controller=None,
                  dynamic=None, settings=None):
-        self.lasvsim_version = 'package'
+        self.lasvsim_version = 'gui'
         self.simulation_settings = settings
         self.route = []
         self.plan_output = []  # plan out put. Each member for example: [t,x,y,velocity,heading angle]
@@ -260,7 +321,22 @@ class Agent(object):
         self.future_path = [[1.0, 2.0], [1.0, 2.0]]  # future geo track path to drive(2-D)
         self.other_vehicles = []  # 仿真中存在的所有他车
         self.detected_objects = []  # 传感器探测到的周车状态
+        self.detected_man=[]#add by TKM
+        self.detected_traffic_sign=[]#add by TKM
         self.surrounding_objects_numbers = int(0)  # TODO(Chason): 检查后删去
+
+        #汤凯明毕业用
+        self.state_estimate = {}
+        self.state_estimate_aof = {}
+        self.detect_dict={}
+        self.errors=list([])
+        self.detection=list([])
+        self.fusion_result=list([])
+        self.fusion_result_exp2_KF=list([])
+        self.fusion_result_exp2_AOF = list([])
+        self.KF_arr={}
+        self.AOF_arr={}
+        self.experiment2=False
 
         if self.lasvsim_version == 'gui':
             self.mission = mission  # 任务导航对象
@@ -281,8 +357,8 @@ class Agent(object):
         else:
             raise Exception('Wrong version: ' + self.lasvsim_version)
 
-    # def __del__(self):
-    #     del self.sensors
+    def __del__(self):
+        del self.sensors
 
     def reset(self):
         """Agent resetting method"""
@@ -291,6 +367,7 @@ class Agent(object):
         if hasattr(self, 'planner'):
             del self.planner
         if hasattr(self, 'sensors'):
+            # 汤凯明毕业用
             del self.sensors
         if hasattr(self, 'navigator'):
             del self.mission
@@ -342,10 +419,10 @@ class Agent(object):
         # elif self.simulation_settings.router_type == '-':
         #     pass  # TODO(Xu Chenxiang):
         # else:
-        # self.planner = Planner(step_length=step_length,
-        #                        path=self.simulation_settings.router_lib,
-        #                        settings=self.simulation_settings)
-        # self.decision_thread = threading.Thread(target=plan_thread, args=(self,))
+        self.planner = Planner(step_length=step_length,
+                               path=self.simulation_settings.router_lib,
+                               settings=self.simulation_settings)
+        self.decision_thread = threading.Thread(target=plan_thread, args=(self,))
 
         """Load sensor module."""
         step_length = (self.simulation_settings.step_length *
@@ -353,8 +430,8 @@ class Agent(object):
         self.sensors = Sensors(step_length=step_length,
                                sensor_info=self.simulation_settings.sensors)
         self.map = Map()  # TODO
-        # self.mission = Mission(self.map, points,
-        #                        self.simulation_settings.mission_type)        # self.predictor = VehiclePredictor(self.map)
+        self.mission = Mission(self.map, points,
+                               self.simulation_settings.mission_type)        # self.predictor = VehiclePredictor(self.map)
 
     def set_router(self, router):
         """
@@ -392,8 +469,8 @@ class Agent(object):
         get geo track from temporal-spatial route
         """
         if self.route is not None:
-            t,x,y,v,heading = zip(*self.route)
-            self.future_path=zip(x,y)
+            t,x,y,v,heading = list(zip(*self.route))
+            self.future_path=list(zip(x,y))
 
     def get_pos(self, t=None):
         """
@@ -465,6 +542,7 @@ class Agent(object):
         """
         get car data from controller
         """
+        self.info = self.dynamic.get_info()
         return self.dynamic.get_info()[:4]
 
     def get_drive_status(self):
@@ -504,7 +582,8 @@ class Agent(object):
         self.control_thread.start()
       #  self.control_thread.join()
 
-    def update_info_from_sensor(self, traffic):
+    def update_info_from_sensor(self, traffic,lightinfo):
+        #lightinfo add by TKM
         """
         调用传感器模块对周车数据进行过滤和加噪
 
@@ -522,17 +601,63 @@ class Agent(object):
         if self.lasvsim_version == 'package':
             status = [self.dynamic.ego_x, self.dynamic.ego_y, self.dynamic.ego_vel,
                       self.dynamic.ego_heading]
-            self.sensors.update(pos=status, vehicles=traffic)
-            self.detected_objects = self.sensors.getVisibleVehicles()
+            self.sensors.update(pos=status, vehicles=traffic,traffic_sign=lightinfo)
+            self.detected_objects,self.detected_man = self.sensors.getVisibleVehicles()
             self.surrounding_objects_numbers = len(self.detected_objects)
         else:
             if self.sensor_thread.is_alive():
                 self.sensor_thread.join()
-                print('sensor delay')
+                #print('sensor delay')
             self.sensor_thread = threading.Thread(target=sensor_thread,
-                                                  args=(self, traffic,))
+                                                  args=(self, traffic,lightinfo))
             self.sensor_thread.start()
-            # self.sensor_thread.join()
+            ##add AOE here 毕业
+            #print("step")
+
+            #print("Error")
+            #print(Error)
+            # print("produce_noise")
+            # Z,detect_rel,GT=self.z_producer.produce_measurement(relationship,a,b)
+            # #print(Z)
+            # # print(detect_rel)
+            # #print("GT FOR FILTER")
+            # #print(GT)
+            # #删除这时刻未被探测到的物体
+            # for key in list(self.detect_dict.keys()):
+            #     if key not in list(detect_rel.keys()):
+            #         del self.detect_dict[key]
+            # #新增被探测到的物体
+            # for key in list(detect_rel.keys()):
+            #     if key not in list(self.detect_dict.keys()):
+            #         tmp=np.array(GT[key])[1:]
+            #         #将初始加速度设为0
+            #         x_init=np.insert(tmp,5,0)
+            #         #初始化
+            #         self.Filter[int(key)].set_estimate(x_init.reshape(8,1))
+            #         self.detect_dict[key]='dummy'
+            # #输出滤波结果
+            # Gain=np.array([[ 7.35140384e-02, -1.04055010e-03,  4.59768008e-02,8.57429923e-05, -2.18843177e-04,  7.07457931e-04,-9.12412574e-05],
+            #                     [-4.93029248e-04,  7.34789389e-02, -1.74602827e-04,4.60050679e-02,  2.83821622e-03, -6.01791350e-04,1.69651789e-04],
+            #                     [ 8.04010631e-02,  4.16346449e-04,  8.68035106e-01, 6.00176311e-04, -6.80173456e-03, -8.05705011e-04,-1.49576905e-03],
+            #                     [ 1.62859314e-03,  8.00685028e-02, -1.10086527e-04,8.66641373e-01, -4.02151475e-03, -1.26269655e-03,-2.05633999e-03],
+            #                     [-4.09745454e-04, -6.58022339e-04, -1.02116840e-04,2.79537507e-05,  5.60676083e-01,  5.49990260e-04, -2.89064254e-04],
+            #                     [-8.44083594e-03, -8.17841245e-03,  2.51157177e-03,5.56657076e-04,  4.31108999e+00,  1.79853462e-05,-3.86388415e-03],
+            #                     [ 1.02970192e-03,  1.04972516e-03,  6.07897478e-04,7.59207431e-05, -1.22629715e-03,  4.98290897e-01,-1.68389449e-06],
+            #                     [-1.05334351e-04,  2.15670291e-03, -7.20565825e-04, -3.69891813e-04,  1.73005318e-03, -1.56803205e-03,  2.82849258e-01]])
+            #
+            # filter_result={}
+            #
+            # for key in Z.keys():
+            #     filter_result[key]=self.Filter[int(key)].estimate(Z[key],Gain)
+            #     #print("debug",np.shape(filter_result[key]))
+            # self.state_estimate=filter_result
+            #
+            # #字典不为空
+            # # if self.state_estimate:
+            # #     print(self.state_estimate)
+            #
+            #
+            # # self.sensor_thread.join()
 
 
     def update_dynamic_state(self,):
@@ -621,9 +746,3 @@ class Agent(object):
         self.mission.update(status)
         self.traffic_lights = traffic_lights
         self.plan()
-
-if __name__ == "__main__":
-    f= open("data.txt",'r')
-    a = f.readlines()
-    print(a[0])
-

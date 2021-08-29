@@ -2,12 +2,14 @@
 """Dynamic module of LasVSim
 
 @Author: Xu Chenxiang
-@Date: 2019.02.28
+@Date: 2019.12.26
 """
-import os
+from LasVSim.simulation_setting import *
 from math import pi
 from LasVSim.data_structures import *
 from LasVSim.math_lib import degree_fix
+import os
+
 
 class VehicleDynamicModel(object):
     """
@@ -50,7 +52,7 @@ class VehicleDynamicModel(object):
             car_parameter(CarParameter obj): 储存动力学模型参数的C风格结构体
             model_type(string): 动力学模型类型. CVT Car, AMT Car, Truck
         """
-        self.__lasvsim_version = 'package'
+        self.__lasvsim_version = 'gui'
         if model_type is None or model_type == 'CVT Car':
             self.path = CVT_MODEL_FILE_PATH
             self.type = 'CVT Car'
@@ -60,12 +62,15 @@ class VehicleDynamicModel(object):
         elif model_type == 'Truck':
             self.path = TRUCK_MODEL_FILE_PATH
             self.type = model_type
+        elif model_type == 'EV':
+            self.path = EV_MODEL_FILE_PATH
+            self.type = model_type
         self.step_length = float(step_length)/1000
 
         self.car_para = car_parameter
         self.ego_x = x  # m
         self.ego_y = y  # m
-        self.ego_heading = heading  # deg,坐标系2
+        self.ego_heading = heading  # deg,全局坐标系1
         self.ego_vel = v  # m/s
         self.acc = 0.0  # m/s^2
         self.engine_speed = self.car_para.AV_ENGINE_IDLE / 30.0 * pi  # rpm
@@ -102,9 +107,11 @@ class VehicleDynamicModel(object):
         else:
             SW = c_float(SteerWheel)
             self.steer_wheel = SteerWheel
+        #print('ET=',ET)
+        #print('SW=',SW)
         x = c_float(0.0)
         y = c_float(0.0)
-        heading = c_float(0.0)
+        heading = c_float(0.0)  # rad
         acc = c_float(0.0)
         v = c_float(0.0)
         r = c_float(0.0)
@@ -114,21 +121,15 @@ class VehicleDynamicModel(object):
         self.dll.sim(byref(road_info), byref(ET), byref(BP), byref(SW),
                      byref(x), byref(y), byref(heading), byref(acc), byref(v),
                      byref(r), byref(i))
-        heading.value = degree_fix(heading.value/pi * 180.0)  # TODO(Chason): 和gui不统一，待检查
-        # heading.value = degree_fix(heading.value / pi * 180.0)  # TODO(Chason): 和gui不统一，待检查
+        heading.value = degree_fix(heading.value / pi * 180.0)  # TODO(Chason): 和package不统一，待检查
         (self.ego_x, self.ego_y, self.ego_vel, self.ego_heading, self.acc,
          self.engine_speed, self.drive_ratio) = (x.value, y.value, v.value,
                                                  heading.value, acc.value,
                                                  r.value, i.value)
 
     def get_pos(self):
-        return {'x': self.ego_x,
-                'y': self.ego_y,
-                'v': self.ego_vel,
-                'heading': self.ego_heading,  # (deg)
-                'acceleration': self.acc,
-                'engine_speed': self.engine_speed,  # 发动机转速(rad/s), # CVT range: [78.5, 680.5]
-                'transmission_gear_ratio': self.drive_ratio}  # CVT range: [0.32, 2.25]
+        return (self.ego_x, self.ego_y, self.ego_vel, self.ego_heading, self.acc,
+                self.engine_speed, self.drive_ratio)
 
     def set_control_input(self, eng_torque, brake_pressure, steer_wheel):
         self.engine_torque = eng_torque
@@ -137,29 +138,26 @@ class VehicleDynamicModel(object):
 
     def get_info(self):
         self.dll.get_info(byref(self.car_info))
-        return {'Steer_wheel_angle': self.car_info.Steer_SW,  # 方向盘转角(deg)
-                'Throttle': self.car_info.Throttle,  # 节气门开度 (0-100)
-                'Bk_Pressure': self.car_info.Bk_Pressure,  # 制动压力(Mpa)
-                'Transmission_gear_ratio': self.car_info.Rgear_Tr,  # 变速器ratio, CVT range: [0.32, 2.25]
-                'Engine_crankshaft_spin': self.car_info.AV_Eng,  # 发动机转速(rpm), CVT range: [750, 6500]
-                'Engine_output_torque': self.car_info.M_EngOut,  # 发动机输出转矩(N*m)
-                'A': self.car_info.A,  # 车辆加速度(m^2/s)
-                'beta_angle': self.car_info.Beta / pi * 180,  # 质心侧偏角(deg)
-                'Yaw_rate': self.car_info.AV_Y / pi * 180,  # 横摆角速度(deg/s)
-                'Lateral_speed': self.car_info.Vy,  # 横向速度(m/s)
-                'Longitudinal_speed': self.car_info.Vx,  # 纵向速度(m/s)
-                'Steer_L1': self.car_info.Steer_L1 / pi * 180,  # 自行车模型前轮转角(deg)
-                'StrAV_SW': self.car_info.StrAV_SW,  # 方向盘角速度(deg/s）
-                'Mass_of_fuel_consumed': self.car_info.Mfuel,  # 燃料消耗质量(g)
-                'Longitudinal_acc': self.car_info.Ax,  # 纵向加速度(m^2/s)
-                'Lateral_acc': self.car_info.Ay,  # 横向加速度(m^2/s)
-                'Fuel_rate': self.car_info.Qfuel,# 燃料消耗率(g/s) ,
-                'Yaw': self.car_info.Yaw,
-                'Mileage': self.car_info.Mileage, }
+        #print('=======',self.car_info.Mileage)
+        return (self.car_info.Steer_SW,
+                self.car_info.Throttle,
+                self.car_info.Bk_Pressure,
+                self.car_info.Rgear_Tr,
+                self.car_info.AV_Eng,
+                self.car_info.M_EngOut,
+                self.car_info.A,
+                self.car_info.Beta / pi * 180.0,
+                self.car_info.AV_Y / pi * 180.0,
+                self.car_info.Vy,
+                self.car_info.Vx,
+                self.car_info.Steer_L1,
+                self.car_info.StrAV_SW,
+                self.car_info.Mfuel,
+                self.car_info.Ax,
+                self.car_info.Ay,
+                self.car_info.Qfuel)
 
     def get_total_travelled_distance(self):
         return self.car_info.Mileage
 
-if __name__ == "__main__":
-    pass
 
