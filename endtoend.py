@@ -389,7 +389,7 @@ class CrossroadEnd2endPiFixLight(gym.Env):
                 rd = list(filter(lambda v: ego_x - 2 < v['x'] < min(ego_x + 10, CROSSROAD_SIZE / 2) and v['y'] > ego_y - 2, rd))
                 rl = list(filter(lambda v: max(-CROSSROAD_SIZE/2 - 10, ego_x - 20) < v['x'] < min(ego_x + 20, CROSSROAD_SIZE / 2) and v['y'] > ego_y - 2, rl))
                 lr = list(filter(lambda v: -CROSSROAD_SIZE / 2 < v['x'] < ego_x + 2 and v['y'] > ego_y, lr))
-                lu = list(filter(lambda v: -CROSSROAD_SIZE / 2 < v['x'] < ego_x + 6 and v['y'] > ego_y-4, lu))
+                lu = list(filter(lambda v: -CROSSROAD_SIZE / 2 < v['x'] < ego_x + 6 and CROSSROAD_SIZE / 2 > v['y'] > ego_y-4, lu))
 
                 # sort
                 dl = sorted(dl, key=lambda v: (v['y'], -v['x']))

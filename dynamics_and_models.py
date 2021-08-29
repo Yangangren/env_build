@@ -314,13 +314,16 @@ class EnvironmentModel(object):  # all tensors
                 stop_point = tf.constant([2.5 * LANE_WIDTH], dtype=tf.float32), tf.constant([-CROSSROAD_SIZE / 2], dtype=tf.float32)
 
             if not self.light_flag:
-                self.light_cond = logical_and(light_infos[:, 0] != 0., obses_ego[:, 4] < -CROSSROAD_SIZE / 2 - 2)
+                self.light_cond = logical_and(light_infos[:, 0] != 0., obses_ego[:, 4] < -CROSSROAD_SIZE / 2 - 4)
 
             if self.task != 'right':  # right turn always has green light
                 for ego_point in [ego_front_points, ego_rear_points]:
-                    veh2line_dist = tf.sqrt(tf.square(ego_point[0] - stop_point[0]) + tf.square(ego_point[1] - stop_point[1]))
-                    veh2line4real_temp = tf.where(veh2line_dist - 1.0 < 0, tf.square(veh2line_dist - 1.0), tf.zeros_like(veh_infos[:, 0]))
-                    veh2line4real += tf.where(self.light_cond, veh2line4real_temp, tf.zeros_like(veh_infos[:, 0]))
+                    veh2line_dist = tf.where(self.light_cond, tf.sqrt(tf.square(ego_point[0] - stop_point[0]) +
+                                                                              tf.square(ego_point[1] - stop_point[1])), tf.zeros_like(veh_infos[:, 0]))
+                    # judge
+                    back_stop_line_flag = logical_and(self.light_cond, obses_ego[:, 4] < -CROSSROAD_SIZE / 2)
+                    veh2line4real_temp = tf.where(veh2line_dist - 1.5 < 0, tf.square(veh2line_dist - 1.5), tf.zeros_like(veh_infos[:, 0]))
+                    veh2line4real += tf.where(back_stop_line_flag, veh2line4real_temp, veh2line_dist)
 
             rewards = 0.05 * devi_v + 0.8 * devi_y + 30 * devi_phi + 0.02 * punish_yaw_rate + \
                       5 * punish_steer + 0.05 * punish_a_x
