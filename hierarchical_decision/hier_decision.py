@@ -420,13 +420,14 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-08-27-12-06-56', 390000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-08-29-19-05-08', 395000, logdir)
     # for PI fix env
     # 'left', 'experiment-2021-05-28-08-50-50', 200000
     for i in range(300):
         done = 0
-        while not done:
+        for _ in range(200): #while not done:
             done = hier_decision.step()
+            if done: break
         hier_decision.reset()
 
 
