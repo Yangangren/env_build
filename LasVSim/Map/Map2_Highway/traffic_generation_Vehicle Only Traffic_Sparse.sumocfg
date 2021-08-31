@@ -1,0 +1,13 @@
+<configuration>
+	<input>
+	<net-file value="grid-map-sp.net.xml"/>
+	<route-files value="grid-map-traffic_VehicleOnly_40.rou.xml"/>
+</input>
+<processing>
+	 <step-length value="0.1"/>
+	 <lateral-resolution value="3.6"/>
+</processing>
+<gui_only>
+	<gui-settings-file value="grid-map-viewsetting.xml"/>
+</gui_only>
+</configuration>

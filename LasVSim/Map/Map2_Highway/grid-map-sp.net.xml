@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 11/04/19 02:33:01 by Eclipse SUMO netedit Version 1.0.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
+
+    <input>
+        <sumo-net-file value="E:\LasVSim%20Program\LasVSim-gui\LasVSim-gui%200.2.1.190920_alpha\Map\Map2_Highway\grid-map-sp.net.xml"/>
+    </input>
+
+    <output>
+        <output-file value="E:\LasVSim%20Program\LasVSim-gui\LasVSim-gui%200.2.1.190920_alpha\Map\Map2_Highway\grid-map-sp.net.xml"/>
+    </output>
+
+    <processing>
+        <offset.disable-normalization value="true"/>
+        <lefthand value="false"/>
+    </processing>
+
+    <junctions>
+        <no-internal-links value="true"/>
+        <no-turnarounds value="true"/>
+        <junctions.corner-detail value="0"/>
+        <junctions.limit-turn-speed value="-1"/>
+        <rectangular-lane-cut value="false"/>
+    </junctions>
+
+    <pedestrian>
+        <walkingareas value="false"/>
+    </pedestrian>
+
+</configuration>
+-->
+
+<net version="1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
+
+    <location netOffset="0.00,0.00" convBoundary="-922.00,0.00,922.00,0.00" origBoundary="-10000000000.00,-10000000000.00,10000000000.00,10000000000.00" projParameter="!"/>
+
+    <edge id="-gneE18" from="10" to="14" priority="-1">
+        <lane id="-gneE18_0" index="0" speed="19.44" length="1844.00" width="3.75" shape="-905.43,-5.63 906.42,-5.63"/>
+        <lane id="-gneE18_1" index="1" speed="25.00" length="1844.00" width="3.75" shape="-905.43,-1.87 906.43,-1.87"/>
+    </edge>
+    <edge id="gneE18" from="14" to="10" priority="-1">
+        <lane id="gneE18_0" index="0" speed="30.00" length="1844.00" width="3.75" shape="906.45,5.63 -905.43,5.63"/>
+        <lane id="gneE18_1" index="1" speed="30.00" length="1844.00" width="3.75" shape="906.44,1.87 -905.43,1.87"/>
+    </edge>
+
+    <junction id="10" type="dead_end" x="-922.00" y="0.00" incLanes="gneE18_0 gneE18_1" intLanes="" shape="-933.32,-15.07 -933.32,7.92 -905.43,7.92 -905.43,-15.07" customShape="1"/>
+    <junction id="14" type="dead_end" x="922.00" y="0.00" incLanes="-gneE18_0 -gneE18_1" intLanes="" shape="928.51,-13.54 915.62,-13.44 915.57,-7.55 906.41,-7.50 906.46,7.44 929.84,7.90" customShape="1"/>
+
+</net>

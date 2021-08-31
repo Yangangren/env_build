@@ -10,11 +10,14 @@
 import warnings
 from collections import OrderedDict
 from math import cos, sin, pi
-
+from random import choice
+import matplotlib.patches as mpatch
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
 from gym.utils import seeding
+from LasVSim.sensor_module import *
+from LasVSim.simulator import Settings
 import random
 
 # gym.envs.user_defined.toyota_env.
@@ -22,6 +25,7 @@ from dynamics_and_models import VehicleDynamics, ReferencePath, EnvironmentModel
 from endtoend_env_utils import shift_coordination, rotate_coordination, rotate_and_shift_coordination, deal_with_phi, \
     L, W, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, judge_feasible, MODE2TASK, VEHICLE_MODE_DICT, VEH_NUM, EXPECTED_V
 from traffic import Traffic
+import os
 
 warnings.filterwarnings("ignore")
 
@@ -83,6 +87,13 @@ class CrossroadEnd2endPiFixLight(gym.Env):
         self.per_path_info_dim = 4
         self.light_dim = 1
         self.mode = mode
+        """Load sensor module."""
+        setting_dir = os.path.dirname(__file__)
+        self.settings = Settings(file_path=setting_dir + '/LasVSim/Library/default_simulation_setting.xml')
+        step_length = (self.settings.step_length *
+                       self.settings.sensor_frequency)
+        self.sensors = Sensors(step_length=step_length,
+                               sensor_info=self.settings.sensors)
         if not multi_display:
             self.traffic = Traffic(self.step_length,
                                    mode=self.mode,
@@ -347,6 +358,13 @@ class CrossroadEnd2endPiFixLight(gym.Env):
 
         name_setting = name_settings[exit_]
 
+        ego_state = [self.ego_dynamics['x'], self.ego_dynamics['y'], self.ego_dynamics['v_x'], self.ego_dynamics['phi']]
+        all_vehicles = list(filter(lambda v: CROSSROAD_SIZE/2 + 40 > v['x'] > -CROSSROAD_SIZE/2 - 40 and
+                                             CROSSROAD_SIZE/2 + 40 > v['y'] > -CROSSROAD_SIZE/2 - 40, self.all_vehicles))
+        self.sensors.update(pos=ego_state, vehicles=all_vehicles)
+        self.detected_vehicles = self.sensors.getVisibleVehicles()
+        self.surrounding_objects_numbers = len(self.detected_vehicles)
+
         def filter_interested_vehicles(vs, task):
             dl, du, dr, rd, rl, ru, ur, ud, ul, lu, lr, ld = [], [], [], [], [], [], [], [], [], [], [], []
             for v in vs:
@@ -403,25 +421,25 @@ class CrossroadEnd2endPiFixLight(gym.Env):
             #     lu = sorted(lu, key=lambda v: (v['x'], v['y']))
 
             # fetch veh in range
-            dl = list(filter(lambda v: v['x'] > -CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, dl))  # interest of left straight
-            du = list(filter(lambda v: ego_y-2 < v['y'] < CROSSROAD_SIZE/2+10 and v['x'] < ego_x+5, du))  # interest of left straight
-
-            dr = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] > ego_y, dr))  # interest of right
-
-            rd = rd  # not interest in case of traffic light
-            rl = rl  # not interest in case of traffic light
-            ru = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2+10, ru))  # interest of straight
-
-            if task == 'straight':
-                ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < CROSSROAD_SIZE/2+10, ur))  # interest of straight
-            elif task == 'right':
-                ur = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2, ur))  # interest of right
-            ud = list(filter(lambda v: max(ego_y-2, -CROSSROAD_SIZE/2) < v['y'] < CROSSROAD_SIZE/2 and ego_x > v['x'], ud))  # interest of left
-            ul = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < ego_x and v['y'] < CROSSROAD_SIZE/2, ul))  # interest of left
-
-            lu = lu  # not interest in case of traffic light
-            lr = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < CROSSROAD_SIZE/2+10, lr))  # interest of right
-            ld = ld  # not interest in case of traffic light
+            # dl = list(filter(lambda v: v['x'] > -CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, dl))  # interest of left straight
+            # du = list(filter(lambda v: ego_y-2 < v['y'] < CROSSROAD_SIZE/2+10 and v['x'] < ego_x+5, du))  # interest of left straight
+            #
+            # dr = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] > ego_y, dr))  # interest of right
+            #
+            # rd = rd  # not interest in case of traffic light
+            # rl = rl  # not interest in case of traffic light
+            # ru = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2+10, ru))  # interest of straight
+            #
+            # if task == 'straight':
+            #     ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < CROSSROAD_SIZE/2+10, ur))  # interest of straight
+            # elif task == 'right':
+            #     ur = list(filter(lambda v: v['x'] < CROSSROAD_SIZE/2+10 and v['y'] < CROSSROAD_SIZE/2, ur))  # interest of right
+            # ud = list(filter(lambda v: max(ego_y-2, -CROSSROAD_SIZE/2) < v['y'] < CROSSROAD_SIZE/2 and ego_x > v['x'], ud))  # interest of left
+            # ul = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < ego_x and v['y'] < CROSSROAD_SIZE/2, ul))  # interest of left
+            #
+            # lu = lu  # not interest in case of traffic light
+            # lr = list(filter(lambda v: -CROSSROAD_SIZE/2-10 < v['x'] < CROSSROAD_SIZE/2+10, lr))  # interest of right
+            # ld = ld  # not interest in case of traffic light
 
             # sort
             dl = sorted(dl, key=lambda v: (v['y'], -v['x']))
@@ -470,7 +488,7 @@ class CrossroadEnd2endPiFixLight(gym.Env):
             return tmp
 
         list_of_interested_veh_dict = []
-        self.interested_vehs = filter_interested_vehicles(self.all_vehicles, self.training_task)
+        self.interested_vehs = filter_interested_vehicles(self.detected_vehicles, self.training_task)
         for part in list(self.interested_vehs.values()):
             list_of_interested_veh_dict.extend(part)
 
@@ -664,6 +682,15 @@ class CrossroadEnd2endPiFixLight(gym.Env):
                                  y + line_length * sin(phi*pi/180.)
                 plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
 
+            def draw_sensor_range(x_ego, y_ego, a_ego, l_bias, w_bias, angle_bias, angle_range, dist_range, color):
+                x_sensor = x_ego + l_bias * cos(a_ego) - w_bias * sin(a_ego)
+                y_sensor = y_ego + l_bias * sin(a_ego) + w_bias * cos(a_ego)
+                theta1 = a_ego + angle_bias - angle_range / 2
+                theta2 = a_ego + angle_bias + angle_range / 2
+                sensor = mpatch.Wedge([x_sensor, y_sensor], dist_range, theta1=theta1 * 180 / pi,
+                                       theta2=theta2 * 180 / pi, fc=color, alpha=0.2)
+                ax.add_patch(sensor)
+
             # plot cars
             for veh in self.all_vehicles:
                 veh_x = veh['x']
@@ -676,21 +703,21 @@ class CrossroadEnd2endPiFixLight(gym.Env):
                     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
             # plot_interested vehs
-            for mode, num in self.veh_mode_dict.items():
-                for i in range(num):
-                    veh = self.interested_vehs[mode][i]
-                    veh_x = veh['x']
-                    veh_y = veh['y']
-                    veh_phi = veh['phi']
-                    veh_l = veh['l']
-                    veh_w = veh['w']
-                    task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
-
-                    if is_in_plot_area(veh_x, veh_y):
-                        plot_phi_line(veh_x, veh_y, veh_phi, 'black')
-                        task = MODE2TASK[mode]
-                        color = task2color[task]
-                        draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, facecolor=color)
+            # for mode, num in self.veh_mode_dict.items():
+            #     for i in range(num):
+            #         veh = self.interested_vehs[mode][i]
+            #         veh_x = veh['x']
+            #         veh_y = veh['y']
+            #         veh_phi = veh['phi']
+            #         veh_l = veh['l']
+            #         veh_w = veh['w']
+            #         task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
+            #
+            #         if is_in_plot_area(veh_x, veh_y):
+            #             plot_phi_line(veh_x, veh_y, veh_phi, 'black')
+            #             task = MODE2TASK[mode]
+            #             color = task2color[task]
+            #             draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, facecolor=color)
 
             ego_v_x = self.ego_dynamics['v_x']
             ego_v_y = self.ego_dynamics['v_y']
@@ -708,6 +735,22 @@ class CrossroadEnd2endPiFixLight(gym.Env):
 
             plot_phi_line(ego_x, ego_y, ego_phi, 'red')
             draw_rotate_rec(ego_x, ego_y, ego_phi, ego_l, ego_w, 'red')
+
+            # plot sensors
+            draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=ego_l/2, w_bias=0, angle_bias=0,
+                                                     angle_range=2 * pi, dist_range=70, color='gray')
+            draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=ego_l/2, w_bias=0, angle_bias=0,
+                                                     angle_range=70 * pi / 180, dist_range=80, color="lightslategray")
+            draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=ego_l/2, w_bias=0, angle_bias=0,
+                                                     angle_range=90 * pi / 180, dist_range=60, color="slategray")
+            # plot vehicles from sensors
+            for veh in self.detected_vehicles:
+                veh_x = veh['x']
+                veh_y = veh['y']
+                veh_phi = veh['phi']
+                veh_l = veh['l']
+                veh_w = veh['w']
+                draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'fuchsia')
 
             # plot future data
             tracking_info = self.obs[self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
