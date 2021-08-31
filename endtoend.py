@@ -713,10 +713,11 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
 
             # plot sensors
             draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=ego_l/2, w_bias=0, angle_bias=0,
-                                                     angle_range=120 * pi / 180, dist_range=80, color='gray')
+                                                     angle_range=2 * pi, dist_range=70, color='gray')
             draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=ego_l/2, w_bias=0, angle_bias=0,
-                                                     angle_range=38 * pi / 180, dist_range=100, color="purple")
-
+                                                     angle_range=70 * pi / 180, dist_range=80, color="lightslategray")
+            draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=ego_l/2, w_bias=0, angle_bias=0,
+                                                     angle_range=90 * pi / 180, dist_range=60, color="slategray")
             # plot vehicles from sensors
             for veh in self.detected_vehicles:
                 veh_x = veh['x']
