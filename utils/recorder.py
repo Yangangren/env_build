@@ -48,6 +48,7 @@ class Recorder(object):
         self.comp_data_for_all_episodes = []
 
     def reset(self,):
+        # print(self.comp_list_for_an_episode)
         if self.val_list_for_an_episode:
             self.data_across_all_episodes.append(self.val_list_for_an_episode)
         if self.comp_list_for_an_episode:
@@ -97,6 +98,8 @@ class Recorder(object):
     def load(self, logdir):
         self.data_across_all_episodes = np.load(logdir + '/data_across_all_episodes.npy', allow_pickle=True)
         self.comp_data_for_all_episodes = np.load(logdir + '/comp_data_for_all_episodes.npy', allow_pickle=True)
+        # print(self.data_across_all_episodes)
+        print(self.comp_data_for_all_episodes)
 
     def plot_and_save_ith_episode_curves(self, i, save_dir, isshow=True):
         episode2plot = self.data_across_all_episodes[i]
@@ -194,7 +197,7 @@ class Recorder(object):
                 ax.set_xlabel("Time [s]", fontsize=20)
                 plt.yticks(fontsize=20)
                 plt.xticks(fontsize=20)
-                plt.savefig(save_dir + '/{}.pdf'.format(key))
+                plt.savefig(save_dir + '/{}.png'.format(key))
                 if not isshow:
                     plt.close(f)
                 i += 1
@@ -216,7 +219,7 @@ class Recorder(object):
                                'ref_path': data_dict['mpc_ref'] + 1
                                })
 
-        df_rl = pd.DataFrame({'algorithms': 'GEP',
+        df_rl = pd.DataFrame({'algorithms': 'RL',
                               'iteration': real_time,
                               'steer': data_dict['adp_steer'],
                               'acc': data_dict['adp_a_x'],
@@ -244,7 +247,7 @@ class Recorder(object):
         # ax1.get_legend().remove()
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        f1.savefig(save_dir + '/steer.pdf')
+        f1.savefig(save_dir + '/steer.png')
         plt.close() if not isshow else plt.show()
 
         f2 = plt.figure(figsize=(6.2, 5.2))
@@ -257,7 +260,7 @@ class Recorder(object):
         ax2.get_legend().remove()
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        plt.savefig(save_dir + '/acceleration.pdf')
+        plt.savefig(save_dir + '/acceleration.png')
         plt.close() if not isshow else plt.show()
 
         f3 = plt.figure(figsize=(6.2,5.2))
@@ -271,7 +274,7 @@ class Recorder(object):
         ax3.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        plt.savefig(save_dir + '/ref_path.pdf')
+        plt.savefig(save_dir + '/ref_path.png')
         plt.close() if not isshow else plt.show()
 
         f4 = plt.figure(figsize=(6.2, 5.2))
@@ -280,13 +283,13 @@ class Recorder(object):
         plt.yscale('log')
         # ax3.set_title('Computing time [ms]', fontsize=20)
         ax4.set_xlabel("Time [s]", fontsize=20)
-        ax4.set_ylabel('Computing time [ms]', fontsize=20)
+        ax4.set_ylabel('Computational time [ms]', fontsize=20)
         handles, labels = ax4.get_legend_handles_labels()
         ax4.legend(handles=handles[:], labels=labels[:], frameon=False, fontsize=20)
         ax4.get_legend().remove()
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        plt.savefig(save_dir + '/time.pdf')
+        plt.savefig(save_dir + '/time.png')
         plt.close() if not isshow else plt.show()
 
     @staticmethod

@@ -412,12 +412,12 @@ class ModelPredictiveControl(object):
 class HierarchicalMpc(object):
     def __init__(self, task, logdir):
         self.task = task
-        # if self.task == 'left':
-        #     self.policy = LoadPolicy('../utils/models/left/experiment-2021-03-15-16-39-00', 180000)
-        # elif self.task == 'right':
-        #     self.policy = LoadPolicy('G:\\env_build\\utils\\models\\right', 145000)
-        # elif self.task == 'straight':
-        #     self.policy = LoadPolicy('G:\\env_build\\utils\\models\\straight', 95000)
+        if self.task == 'left':
+            self.policy = LoadPolicy('../utils/models/left/experiment-2021-03-15-16-39-00', 180000)
+        elif self.task == 'right':
+            self.policy = LoadPolicy('../utils/models/right/experiment-2021-05-31-20-16-46', 300000)
+        elif self.task == 'straight':
+            self.policy = LoadPolicy('../utils/models/straight/experiment-2021-05-27-23-27-27', 325000)
 
         self.logdir = logdir
         self.episode_counter = 0
@@ -442,9 +442,9 @@ class HierarchicalMpc(object):
             os.makedirs(self.logdir + '/episode{}/figs'.format(self.episode_counter))
             self.recorder.save(self.logdir)
             self.episode_counter += 1
-            # if self.episode_counter >= 1:
-            #     self.recorder.plot_mpc_rl(self.episode_counter-1,
-            #                               self.logdir + '/episode{}/figs'.format(self.episode_counter-1), isshow=False)
+            if self.episode_counter >= 1:
+                self.recorder.plot_mpc_rl(self.episode_counter-1,
+                                          self.logdir + '/episode{}/figs'.format(self.episode_counter-1), isshow=False)
         return self.obs
 
     def convert_vehs_to_abso(self, obs_rela):
@@ -485,6 +485,7 @@ class HierarchicalMpc(object):
                     mpc_action = control[0]
 
                 MPC_traj_return_value.append(weight[i] * cost.squeeze().tolist())
+                print('MPC')
                 i += 1
                 action_total.append(mpc_action)
 
@@ -492,15 +493,37 @@ class HierarchicalMpc(object):
             MPC_path_index = np.argmin(MPC_traj_return_value)                           # todo: minimize
             MPC_action = action_total[MPC_path_index]
 
-        self.obs, rew, done, _ = self.env.step(MPC_action)
-        self.render(traj_list, MPC_traj_return_value, MPC_path_index, method='MPC')
+        with self.adp_cal_timer:
+            obs_list = []
+            for ref_index, trajectory in enumerate(traj_list):
+                self.env.set_traj(trajectory)
+                obs_list.append(self.env._get_obs())
+            all_obs = np.stack(obs_list, axis=0)
+            ADP_traj_return_value = self.policy.obj_value_batch(all_obs).numpy()
+            ADP_path_index = np.argmin(ADP_traj_return_value)
+
+            if np.amax(ADP_traj_return_value) == np.amin(ADP_traj_return_value):
+                ADP_path_index = MPC_path_index
+
+            # todo：1st rule
+            if np.random.random() < 1.0:
+                MPC_path_index = ADP_path_index
+            self.obs_real = obs_list[ADP_path_index][np.newaxis, :]
+            ADP_action = self.policy.run_batch(self.obs_real).numpy()[0]
+            print('ADP')
+
+        self.recorder.record_compare(self.obs, ADP_action, MPC_action, self.adp_cal_timer.mean * 1000, self.mpc_cal_timer.mean * 1000,
+                             ADP_path_index, MPC_path_index, 'both')
+
+        self.obs, rew, done, _ = self.env.step(ADP_action)
+        self.render(traj_list, ADP_traj_return_value, ADP_path_index, MPC_traj_return_value, MPC_path_index, method='ADP')
         state = state_total[MPC_path_index]
-        # plt.plot([state[i][3] for i in range(1, self.horizon - 1)], [state[i][4] for i in range(1, self.horizon - 1)], 'r*')
+        plt.plot([state[i][3] for i in range(1, self.horizon - 1)], [state[i][4] for i in range(1, self.horizon - 1)], 'r*')
         plt.pause(0.001)
 
         return done
 
-    def render(self, traj_list, MPC_traj_return_value, MPC_path_index, method='MPC'):
+    def render(self, traj_list, ADP_traj_return_value, ADP_path_index, MPC_traj_return_value, MPC_path_index, method='ADP'):
         square_length = CROSSROAD_SIZE
         extension = 40
         lane_width = LANE_WIDTH
@@ -843,13 +866,22 @@ class HierarchicalMpc(object):
         try:
             color = ['blue', 'coral', 'darkcyan']
             for i, item in enumerate(traj_list):
-                if i == MPC_path_index:
-                    plt.plot(item.path[0], item.path[1], color=color[i])
-                else:
-                    plt.plot(item.path[0], item.path[1], color=color[i], alpha=0.3)
-                indexs, points = item.find_closest_point(np.array([ego_x], np.float32), np.array([ego_y], np.float32))
-                path_x, path_y, path_phi = points[0][0], points[1][0], points[2][0]
-                plt.plot(path_x, path_y, color=color[i])
+                if method == 'ADP':
+                    if i == ADP_path_index:
+                        plt.plot(item.path[0], item.path[1], color=color[i])
+                    else:
+                        plt.plot(item.path[0], item.path[1], color=color[i], alpha=0.3)
+                    indexs, points = item.find_closest_point(np.array([ego_x], np.float32), np.array([ego_y], np.float32))
+                    path_x, path_y, path_phi = points[0][0], points[1][0], points[2][0]
+                    plt.plot(path_x, path_y, color=color[i])
+                elif method == 'MPC':
+                    if i == MPC_path_index:
+                        plt.plot(item.path[0], item.path[1], color=color[i])
+                    else:
+                        plt.plot(item.path[0], item.path[1], color=color[i], alpha=0.3)
+                    indexs, points = item.find_closest_point(np.array([ego_x], np.float32), np.array([ego_y], np.float32))
+                    path_x, path_y, path_phi = points[0][0], points[1][0], points[2][0]
+                    plt.plot(path_x, path_y, color=color[i])
         except Exception:
             pass
 
@@ -895,6 +927,19 @@ class HierarchicalMpc(object):
             for key, val in self.env.reward_info.items():
                 plt.text(text_x, text_y_start - next(ge), '{}: {:.4f}'.format(key, val))
 
+        # indicator for Atrajectory selection
+        text_x, text_y_start = 18, -70
+        ge = iter(range(0, 1000, 6))
+        plt.text(text_x+10, text_y_start - next(ge), 'ADP', fontsize=14, color='r', fontstyle='italic')
+        if ADP_traj_return_value is not None:
+            for i, value in enumerate(ADP_traj_return_value):
+                if i == ADP_path_index:
+                    plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=14,
+                             color=color[i], fontstyle='italic')
+                else:
+                    plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=12,
+                             color=color[i], fontstyle='italic')
+
         text_x, text_y_start = -36, -70
         ge = iter(range(0, 1000, 6))
         plt.text(text_x+10, text_y_start - next(ge), 'MPC', fontsize=14, color='r', fontstyle='italic')
@@ -913,8 +958,8 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     # hier_decision = HierarchicalMpc('left', logdir)
-    # hier_decision = HierarchicalMpc('right', logdir)
-    hier_decision = HierarchicalMpc('straight', logdir)
+    hier_decision = HierarchicalMpc('right', logdir)
+    # hier_decision = HierarchicalMpc('straight', logdir)
     for i in range(15):
         done = 0
         for _ in range(150):
@@ -932,5 +977,5 @@ def plot_data(epi_num, logdir):
 
 
 if __name__ == '__main__':
-    main()
-    # plot_data(epi_num=6, logdir='./results/2021-03-17-22-33-09')  # 6 or 3
+    # main()
+    plot_data(epi_num=4, logdir=r'D:\codecode\AAAmine\Toyota_ryg\env_build\mpc\results\2021-07-09-15-47-26')  # 4
