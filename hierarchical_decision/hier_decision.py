@@ -13,6 +13,7 @@ import time
 import json
 import matplotlib.patches as mpatch
 import os
+import heapq
 from math import cos, sin, pi
 
 import matplotlib.pyplot as plt
@@ -199,8 +200,21 @@ class HierarchicalDecision(object):
             all_obs_other = tf.reshape(all_obs[:, self.env_state_ego:], [-1, self.env_per_state_other])
             path_values = self.policy.obj_value_batch(all_obs_ego, all_obs_other, [self.env.veh_num]*all_obs.shape[0]).numpy()
             old_value = path_values[self.old_index]
-            new_index, new_value = int(np.argmin(path_values)), min(path_values)  # value is to approximate (- sum of reward)
-            path_index = self.old_index if old_value - new_value < 0.1 else new_index
+            # value is to approximate (- sum of reward)
+            new_index, new_value = int(np.argmin(path_values)), min(path_values)
+            # rule for equal traj value
+            path_index_error = []
+            if heapq.nsmallest(2, path_values)[0] == heapq.nsmallest(2, path_values)[1]:
+                for i in range(len(path_values)):
+                    if path_values[i] == min(path_values):
+                        index_error = abs(self.old_index - i)
+                        path_index_error.append(index_error)
+                # new_index_new = min(path_index_error) + self.old_index if min(path_index_error) + self.old_index < 4 else self.old_index - min(path_index_error)
+                new_index_new = self.old_index - min(path_index_error) if self.old_index - min(path_index_error) > -1 else self.old_index + min(path_index_error)
+                new_value_new = path_values[new_index_new]
+                path_index = self.old_index if old_value - new_value_new < 0.1 else new_index_new
+            else:
+                path_index = self.old_index if old_value - new_value < 0.1 else new_index
             self.old_index = path_index
 
             self.env.set_traj(self.path_list[path_index])
