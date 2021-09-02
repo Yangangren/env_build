@@ -292,7 +292,7 @@ class CrossroadEnd2endPiFixLight(gym.Env):
         next_ego_state[-1] = deal_with_phi(next_ego_state[-1])
         return next_ego_state, next_ego_params
 
-    def _get_obs(self, exit_='D'):
+    def _get_obs(self, exit_='D', light_test=None):
         ego_x = self.ego_dynamics['x']
         ego_y = self.ego_dynamics['y']
         ego_phi = self.ego_dynamics['phi']
@@ -306,7 +306,10 @@ class CrossroadEnd2endPiFixLight(gym.Env):
                                                              np.array([ego_v_x], dtype=np.float32),
                                                              self.num_future_data).numpy()[0]
         self.light_vector = self.v_light if self.v_light == 0 else 1
-        vector = np.concatenate((ego_vector, tracking_error, [self.light_vector], vehs_vector), axis=0)
+        if not light_test:
+            vector = np.concatenate((ego_vector, tracking_error, [self.light_vector], vehs_vector), axis=0)
+        else:
+            vector = np.concatenate((ego_vector, tracking_error, [light_test], vehs_vector), axis=0)
         vector = vector.astype(np.float32)
         # vector = self.convert_vehs_to_rela(vector)
 

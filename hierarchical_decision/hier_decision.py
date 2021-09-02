@@ -73,6 +73,73 @@ class HierarchicalDecision(object):
         # ------------------build graph for tf.function in advance-----------------------
         self.reset()
 
+    def _ruleforlight(self, exit_='D'):
+        # in：0、1、2
+        # out:0、2
+
+        name_settings = dict(D=dict(do='1o', di='1i', ro='2o', ri='2i', uo='3o', ui='3i', lo='4o', li='4i'),
+                             R=dict(do='2o', di='2i', ro='3o', ri='3i', uo='4o', ui='4i', lo='1o', li='1i'),
+                             U=dict(do='3o', di='3i', ro='4o', ri='4i', uo='1o', ui='1i', lo='2o', li='2i'),
+                             L=dict(do='4o', di='4i', ro='1o', ri='1i', uo='2o', ui='2i', lo='3o', li='3i'))
+
+        name_setting = name_settings[exit_]
+
+        def filter_junction_vehicles(vs):
+            rd, rl, lu, lr, dl, ud = [], [], [], [], [], []
+            for v in vs:
+                route_list = v['route']
+                start = route_list[0]
+                end = route_list[1]
+                if start == name_setting['ro'] and end == name_setting['di']:
+                    rd.append(v)
+                elif start == name_setting['ro'] and end == name_setting['li']:
+                    rl.append(v)
+
+                elif start == name_setting['lo'] and end == name_setting['ui']:
+                    lu.append(v)
+                elif start == name_setting['lo'] and end == name_setting['ri']:
+                    lr.append(v)
+
+                elif start == name_setting['do'] and end == name_setting['li']:
+                    dl.append(v)
+
+                elif start == name_setting['uo'] and end == name_setting['di']:
+                    ud.append(v)
+
+            return rd + rl, lu + lr, dl, ud
+
+        l_vehicles, r_vehicles, d_vehicles, u_vehicles = filter_junction_vehicles(self.env.detected_vehicles)
+
+        # ego_x = self.ego_dynamics['x']
+        ego_y = self.env.ego_dynamics['y']
+        if ego_y > -28:
+            return 0
+
+        if self.env.v_light == '0':
+            # rule4green
+            for l_v in l_vehicles:
+                if -25 < l_v['x'] < 0 and -25 < l_v['y'] < 10:
+                    return 1
+            for r_v in r_vehicles:
+                if -25 < r_v['x'] < 25 and -10 < r_v['y'] < 25:
+                    return 1
+            return 0
+        elif self.env.v_light == '1':
+            # rule4yellow
+            if self.env.traffic.get_light_duration() > 3:
+                return 1
+            else:
+                for d_v in d_vehicles:
+                    if -10 < d_v['x'] < 5 and -25 < d_v['y'] < 25:
+                        return 1
+                for u_v in u_vehicles:
+                    if -25 < u_v['x'] < 25 and -10 < u_v['y'] < 25:
+                        return 1
+            return 0
+        else:
+            # rule4red
+            return 1
+
     def reset(self,):
         self.obs = self.env.reset()
         self.recorder.reset()
@@ -99,7 +166,7 @@ class HierarchicalDecision(object):
 
     @tf.function
     def is_safe(self, obs_ego, obs_other, path_index):
-        self.model.add_traj(obs_ego, obs_other, self.env.light_vector, [self.env.veh_num], path_index)
+        self.model.add_traj(obs_ego, obs_other, self._ruleforlight('D'), [self.env.veh_num], path_index)
         punish = 0.
         for step in range(5):
             action = self.policy.run_batch(obs_ego, obs_other, [self.env.veh_num])
@@ -120,13 +187,13 @@ class HierarchicalDecision(object):
 
     def step(self):
         self.step_counter += 1
-        self.path_list = self.stg.generate_path(self.env.training_task, self.env.light_vector)
+        self.path_list = self.stg.generate_path(self.env.training_task, self._ruleforlight('D'))
         with self.step_timer:
             obs_list = []
             # select optimal path
             for path in self.path_list:
                 self.env.set_traj(path)
-                obs_list.append(self.env._get_obs())
+                obs_list.append(self.env._get_obs(light_test = self._ruleforlight('D')))
             all_obs = tf.stack(obs_list, axis=0)
             all_obs_ego = all_obs[:, :self.env_state_ego]
             all_obs_other = tf.reshape(all_obs[:, self.env_state_ego:], [-1, self.env_per_state_other])
@@ -381,58 +448,58 @@ class HierarchicalDecision(object):
             pass
 
         # text
-        # text_x, text_y_start = -120, 60
-        # ge = iter(range(0, 1000, 4))
-        # plt.text(text_x, text_y_start - next(ge), 'ego_x: {:.2f}m'.format(ego_x))
-        # plt.text(text_x, text_y_start - next(ge), 'ego_y: {:.2f}m'.format(ego_y))
-        # plt.text(text_x, text_y_start - next(ge), 'path_x: {:.2f}m'.format(path_x))
-        # plt.text(text_x, text_y_start - next(ge), 'path_y: {:.2f}m'.format(path_y))
-        # plt.text(text_x, text_y_start - next(ge), 'delta_: {:.2f}m'.format(delta_))
-        # plt.text(text_x, text_y_start - next(ge), 'delta_x: {:.2f}m'.format(delta_x))
-        # plt.text(text_x, text_y_start - next(ge), 'delta_y: {:.2f}m'.format(delta_y))
-        # plt.text(text_x, text_y_start - next(ge), r'ego_phi: ${:.2f}\degree$'.format(ego_phi))
-        # plt.text(text_x, text_y_start - next(ge), r'path_phi: ${:.2f}\degree$'.format(path_phi))
-        # plt.text(text_x, text_y_start - next(ge), r'delta_phi: ${:.2f}\degree$'.format(delta_phi))
-        # plt.text(text_x, text_y_start - next(ge), 'v_x: {:.2f}m/s'.format(ego_v_x))
-        # plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(self.path_v))
-        # plt.text(text_x, text_y_start - next(ge), 'v_y: {:.2f}m/s'.format(ego_v_y))
-        # plt.text(text_x, text_y_start - next(ge), 'yaw_rate: {:.2f}rad/s'.format(ego_r))
-        # plt.text(text_x, text_y_start - next(ge), 'yaw_rate bound: [{:.2f}, {:.2f}]'.format(-r_bound, r_bound))
-        #
-        # plt.text(text_x, text_y_start - next(ge), r'$\alpha_f$: {:.2f} rad'.format(ego_alpha_f))
-        # plt.text(text_x, text_y_start - next(ge), r'$\alpha_f$ bound: [{:.2f}, {:.2f}] '.format(-alpha_f_bound,
-        #                                                                                         alpha_f_bound))
-        # plt.text(text_x, text_y_start - next(ge), r'$\alpha_r$: {:.2f} rad'.format(ego_alpha_r))
-        # plt.text(text_x, text_y_start - next(ge), r'$\alpha_r$ bound: [{:.2f}, {:.2f}] '.format(-alpha_r_bound,
-        #                                                                                         alpha_r_bound))
-        # if self.env.action is not None:
-        #     steer, a_x = self.env.action[0], self.env.action[1]
-        #     plt.text(text_x, text_y_start - next(ge),
-        #              r'steer: {:.2f}rad (${:.2f}\degree$)'.format(steer, steer * 180 / np.pi))
-        #     plt.text(text_x, text_y_start - next(ge), 'a_x: {:.2f}m/s^2'.format(a_x))
-        #
-        # text_x, text_y_start = 70, 60
-        # ge = iter(range(0, 1000, 4))
-        #
-        # # done info
-        # plt.text(text_x, text_y_start - next(ge), 'done info: {}'.format(self.env.done_type))
-        #
-        # # reward info
-        # if self.env.reward_info is not None:
-        #     for key, val in self.env.reward_info.items():
-        #         plt.text(text_x, text_y_start - next(ge), '{}: {:.4f}'.format(key, val))
-        #
-        # # indicator for trajectory selection
-        # text_x, text_y_start = 25, -30
-        # ge = iter(range(0, 1000, 6))
-        # if path_values is not None:
-        #     for i, value in enumerate(path_values):
-        #         if i == path_index:
-        #             plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=14,
-        #                      color=color[i], fontstyle='italic')
-        #         else:
-        #             plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=12,
-        #                      color=color[i], fontstyle='italic')
+        text_x, text_y_start = -120, 60
+        ge = iter(range(0, 1000, 4))
+        plt.text(text_x, text_y_start - next(ge), 'ego_x: {:.2f}m'.format(ego_x))
+        plt.text(text_x, text_y_start - next(ge), 'ego_y: {:.2f}m'.format(ego_y))
+        plt.text(text_x, text_y_start - next(ge), 'path_x: {:.2f}m'.format(path_x))
+        plt.text(text_x, text_y_start - next(ge), 'path_y: {:.2f}m'.format(path_y))
+        plt.text(text_x, text_y_start - next(ge), 'delta_: {:.2f}m'.format(delta_))
+        plt.text(text_x, text_y_start - next(ge), 'delta_x: {:.2f}m'.format(delta_x))
+        plt.text(text_x, text_y_start - next(ge), 'delta_y: {:.2f}m'.format(delta_y))
+        plt.text(text_x, text_y_start - next(ge), r'ego_phi: ${:.2f}\degree$'.format(ego_phi))
+        plt.text(text_x, text_y_start - next(ge), r'path_phi: ${:.2f}\degree$'.format(path_phi))
+        plt.text(text_x, text_y_start - next(ge), r'delta_phi: ${:.2f}\degree$'.format(delta_phi))
+        plt.text(text_x, text_y_start - next(ge), 'v_x: {:.2f}m/s'.format(ego_v_x))
+        plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(self.path_v))
+        plt.text(text_x, text_y_start - next(ge), 'v_y: {:.2f}m/s'.format(ego_v_y))
+        plt.text(text_x, text_y_start - next(ge), 'yaw_rate: {:.2f}rad/s'.format(ego_r))
+        plt.text(text_x, text_y_start - next(ge), 'yaw_rate bound: [{:.2f}, {:.2f}]'.format(-r_bound, r_bound))
+
+        plt.text(text_x, text_y_start - next(ge), r'$\alpha_f$: {:.2f} rad'.format(ego_alpha_f))
+        plt.text(text_x, text_y_start - next(ge), r'$\alpha_f$ bound: [{:.2f}, {:.2f}] '.format(-alpha_f_bound,
+                                                                                                alpha_f_bound))
+        plt.text(text_x, text_y_start - next(ge), r'$\alpha_r$: {:.2f} rad'.format(ego_alpha_r))
+        plt.text(text_x, text_y_start - next(ge), r'$\alpha_r$ bound: [{:.2f}, {:.2f}] '.format(-alpha_r_bound,
+                                                                                                alpha_r_bound))
+        if self.env.action is not None:
+            steer, a_x = self.env.action[0], self.env.action[1]
+            plt.text(text_x, text_y_start - next(ge),
+                     r'steer: {:.2f}rad (${:.2f}\degree$)'.format(steer, steer * 180 / np.pi))
+            plt.text(text_x, text_y_start - next(ge), 'a_x: {:.2f}m/s^2'.format(a_x))
+
+        text_x, text_y_start = 90, 60
+        ge = iter(range(0, 1000, 4))
+
+        # done info
+        plt.text(text_x, text_y_start - next(ge), 'done info: {}'.format(self.env.done_type))
+
+        # reward info
+        if self.env.reward_info is not None:
+            for key, val in self.env.reward_info.items():
+                plt.text(text_x, text_y_start - next(ge), '{}: {:.4f}'.format(key, val))
+
+        # indicator for trajectory selection
+        text_x, text_y_start = 25, -30
+        ge = iter(range(0, 1000, 6))
+        if path_values is not None:
+            for i, value in enumerate(path_values):
+                if i == path_index:
+                    plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=14,
+                             color=color[i], fontstyle='italic')
+                else:
+                    plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=12,
+                             color=color[i], fontstyle='italic')
         plt.xlim(-(square_length / 2 + extension), square_length / 2 + extension)
         plt.ylim(-(square_length / 2 + extension), square_length / 2 + extension)
         plt.show()

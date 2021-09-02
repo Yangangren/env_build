@@ -108,6 +108,9 @@ class Traffic(object):
     def __del__(self):
         traci.close()
 
+    def get_light_duration(self):
+        return traci.trafficlight.getPhaseDuration('0')
+
     def add_self_car(self, n_ego_dict, with_delete=True):
         for egoID, ego_dict in n_ego_dict.items():
             ego_v_x = ego_dict['v_x']
