@@ -72,6 +72,73 @@ class HierarchicalDecision(object):
         # ------------------build graph for tf.function in advance-----------------------
         self.reset()
 
+    def _ruleforlight(self, exit_='D'):
+        # in：0、1、2
+        # out:0、2
+
+        name_settings = dict(D=dict(do='1o', di='1i', ro='2o', ri='2i', uo='3o', ui='3i', lo='4o', li='4i'),
+                             R=dict(do='2o', di='2i', ro='3o', ri='3i', uo='4o', ui='4i', lo='1o', li='1i'),
+                             U=dict(do='3o', di='3i', ro='4o', ri='4i', uo='1o', ui='1i', lo='2o', li='2i'),
+                             L=dict(do='4o', di='4i', ro='1o', ri='1i', uo='2o', ui='2i', lo='3o', li='3i'))
+
+        name_setting = name_settings[exit_]
+
+        def filter_junction_vehicles(vs):
+            rd, rl, lu, lr, dl, ud = [], [], [], [], [], []
+            for v in vs:
+                route_list = v['route']
+                start = route_list[0]
+                end = route_list[1]
+                if start == name_setting['ro'] and end == name_setting['di']:
+                    rd.append(v)
+                elif start == name_setting['ro'] and end == name_setting['li']:
+                    rl.append(v)
+
+                elif start == name_setting['lo'] and end == name_setting['ui']:
+                    lu.append(v)
+                elif start == name_setting['lo'] and end == name_setting['ri']:
+                    lr.append(v)
+
+                elif start == name_setting['do'] and end == name_setting['li']:
+                    dl.append(v)
+
+                elif start == name_setting['uo'] and end == name_setting['di']:
+                    ud.append(v)
+
+            return rd + rl, lu + lr, dl, ud
+
+        l_vehicles, r_vehicles, d_vehicles, u_vehicles = filter_junction_vehicles(self.env.all_vehicles)
+
+        # ego_x = self.ego_dynamics['x']
+        ego_y = self.env.ego_dynamics['y']
+        if ego_y > -28:
+            return 0
+
+        if self.env.v_light == '0':
+            # rule4green
+            for l_v in l_vehicles:
+                if -25 < l_v['x'] < 0 and -25 < l_v['y'] < 10:
+                    return 1
+            for r_v in r_vehicles:
+                if -25 < r_v['x'] < 25 and -10 < r_v['y'] < 25:
+                    return 1
+            return 0
+        elif self.env.v_light == '1':
+            # rule4yellow
+            if self.env.traffic.get_light_duration() > 3:
+                return 1
+            else:
+                for d_v in d_vehicles:
+                    if -10 < d_v['x'] < 5 and -25 < d_v['y'] < 25:
+                        return 1
+                for u_v in u_vehicles:
+                    if -25 < u_v['x'] < 25 and -10 < u_v['y'] < 25:
+                        return 1
+            return 0
+        else:
+            # rule4red
+            return 1
+
     def reset(self,):
         self.obs = self.env.reset()
         self.recorder.reset()
@@ -82,11 +149,11 @@ class HierarchicalDecision(object):
             os.makedirs(self.logdir + '/episode{}/figs'.format(self.episode_counter))
             self.step_counter = -1
             self.recorder.save(self.logdir)
-            # if self.episode_counter >= 1:
-            #     select_and_rename_snapshots_of_an_episode(self.logdir, self.episode_counter-1, 12)
-            #     self.recorder.plot_and_save_ith_episode_curves(self.episode_counter-1,
-            #                                                    self.logdir + '/episode{}/figs'.format(self.episode_counter-1),
-            #                                                    isshow=False)
+            if self.episode_counter >= 1:
+                select_and_rename_snapshots_of_an_episode(self.logdir, self.episode_counter-1, 12)
+                self.recorder.plot_and_save_ith_episode_curves(self.episode_counter-1,
+                                                               self.logdir + '/episode{}/figs'.format(self.episode_counter-1),
+                                                               isshow=False)
         return self.obs
 
     # @tf.function
@@ -98,7 +165,7 @@ class HierarchicalDecision(object):
 
     @tf.function
     def is_safe(self, obs_ego, obs_other, path_index):
-        self.model.add_traj(obs_ego, obs_other, self.env.light_vector, [self.env.veh_num], path_index)
+        self.model.add_traj(obs_ego, obs_other, self._ruleforlight('D'), [self.env.veh_num], path_index)
         punish = 0.
         for step in range(5):
             action = self.policy.run_batch(obs_ego, obs_other, [self.env.veh_num])
@@ -119,13 +186,13 @@ class HierarchicalDecision(object):
 
     def step(self):
         self.step_counter += 1
-        self.path_list = self.stg.generate_path(self.env.training_task, self.env.light_vector)
+        self.path_list = self.stg.generate_path(self.env.training_task, self._ruleforlight('D'))
         with self.step_timer:
             obs_list = []
             # select optimal path
             for path in self.path_list:
                 self.env.set_traj(path)
-                obs_list.append(self.env._get_obs())
+                obs_list.append(self.env._get_obs(light_test = self._ruleforlight('D')))
             all_obs = tf.stack(obs_list, axis=0)
             all_obs_ego = all_obs[:, :self.env_state_ego]
             all_obs_other = tf.reshape(all_obs[:, self.env_state_ego:], [-1, self.env_per_state_other])
@@ -141,11 +208,11 @@ class HierarchicalDecision(object):
             # obtain safe action
             with self.ss_timer:
                 safe_action, is_ss = self.safe_shield(self.obs_real, path_index)
-            print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
+            # print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
         self.render(self.path_list, path_values, path_index)
         self.recorder.record(self.obs_real, safe_action, self.step_timer.mean,
                              path_index, path_values, self.ss_timer.mean, is_ss)
-        self.obs, r, done, info = self.env.step(safe_action)
+        self.obs, r, done, info = self.env.step(safe_action)        #self.env.v_light-> v_test_light
         return done
 
     def render(self, traj_list, path_values, path_index):
@@ -420,14 +487,16 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-08-29-19-05-08', 395000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-08-30-14-44-39', 300000, logdir)
     # for PI fix env
     # 'left', 'experiment-2021-05-28-08-50-50', 200000
     for i in range(300):
         done = 0
         for _ in range(200): #while not done:
             done = hier_decision.step()
-            if done: break
+            if done:
+                print(hier_decision.env.done_type)
+                break
         hier_decision.reset()
 
 

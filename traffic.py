@@ -108,6 +108,9 @@ class Traffic(object):
     def __del__(self):
         traci.close()
 
+    def get_light_duration(self):
+        return traci.trafficlight.getPhaseDuration('0')
+
     def add_self_car(self, n_ego_dict, with_delete=True):
         for egoID, ego_dict in n_ego_dict.items():
             ego_v_x = ego_dict['v_x']
@@ -144,10 +147,11 @@ class Traffic(object):
 
     def init_light(self):
         random_num = random.random()
-        if 0.4 > random_num >= 0.0:
-            self.training_light_phase = 2
-        else:
-            self.training_light_phase = 0
+        self.training_light_phase = 0
+        # if 0.4 > random_num >= 0.0:
+        #     self.training_light_phase = 2
+        # else:
+        #     self.training_light_phase = 0
 
         traci.trafficlight.setPhase('0', self.training_light_phase)
         # traci.trafficlight.setPhaseDuration('0', 10000)
