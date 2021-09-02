@@ -272,8 +272,8 @@ class Sensors(object):
             "ped_size"]
         noise_attr=["Accuracy_Location","Accuracy_Yaw","Accuracy_Vel","Accuracy_Width"]
         #"Accuracy_Length", "Accuracy_Height" currently no use
-        lidar=pd.read_csv(os.getcwd()+'\LasVSim\Library\lidar_error_for_different_object_type.csv')
-        camera=pd.read_csv(os.getcwd()+'\LasVSim\Library\camera_error_for_different_object_type.csv')
+        lidar=pd.read_csv(os.path.dirname(__file__)+'\Library\lidar_error_for_different_object_type.csv')
+        camera=pd.read_csv(os.path.dirname(__file__)+'\Library\camera_error_for_different_object_type.csv')
         tmp=0 # int(input("lidar use other setting (yes:1) (no:0)?"))
         if (tmp==1):
             lidar_use_outer_setting=True
