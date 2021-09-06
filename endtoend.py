@@ -595,7 +595,7 @@ class CrossroadEnd2endMixPiFix(gym.Env):
 
     def _reset_init_state(self):
         if self.training_task == 'left':
-            random_index = int(np.random.random()*(900+500)) + 700
+            random_index = int(np.random.random()*(900+700)) + 700
         elif self.training_task == 'straight':
             random_index = int(np.random.random()*(1200+500)) + 700
         else:
