@@ -538,6 +538,9 @@ def main():
     hier_decision = HierarchicalDecision('left', 'experiment-2021-09-01-21-14-37', 300000, logdir)
     # for toyota202109_light with sensor:
     # 'left', 'experiment-2021-09-01-21-14-37', 200000
+    # 'left', 'experiment-2021-09-02-09-54-18', 400000
+    # 'straight', 'experiment-2021-09-07-09-37-44', 395000
+    # 'right', 'experiment-2021-09-07-23-14-26', 380000
     for i in range(300):
         done = 0
         for _ in range(200): #while not done:
