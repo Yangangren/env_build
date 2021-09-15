@@ -505,7 +505,7 @@ class CrossroadEnd2endMixPiFix(gym.Env):
             # fetch person in range
             c1 = list(filter(lambda v: v['y'] < 6 and v['x'] > ego_x - 6, c1))  # interest of right
             c2 = list(filter(lambda v: 0 < v['x'] and v['y'] > ego_y - 4, c2))  # interest of right
-            c3 = list(filter(lambda v: -6 < v['y'] and v['x'] < ego_x + 6, c3))  # interest of left
+            c3 = list(filter(lambda v: -6 < v['y'] and max(-CROSSROAD_SIZE / 2-5,  ego_x-15) < v['x'] < ego_x + 4, c3))  # interest of left
 
             # sort
             c1 = sorted(c1, key=lambda v: (abs(v['y'] - ego_y), v['x']))
