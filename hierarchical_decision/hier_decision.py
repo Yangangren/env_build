@@ -125,6 +125,7 @@ class HierarchicalDecision(object):
             all_obs = tf.stack(obs_list, axis=0).numpy()
             obs_ego, obs_bike, obs_person, obs_veh = self.split_obses(all_obs)
             path_values = self.policy.obj_value_batch(obs_ego, obs_bike, obs_person, obs_veh).numpy()
+            path_values = [1.0, 1.0, 3.] * path_values
             old_value = path_values[self.old_index]
             # value is to approximate (- sum of reward)
             new_index, new_value = int(np.argmin(path_values)), min(path_values)
@@ -577,7 +578,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-09-09-14-13-03', 375000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-09-17-23-49-35', 395000, logdir)
     # 'left', 'experiment-2021-03-15-16-39-00', 180000
     # 'straight', 'experiment-2021-03-15-19-16-13', 175000
     # 'right', 'experiment-2021-03-15-21-02-51', 195000
