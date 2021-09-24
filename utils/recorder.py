@@ -13,7 +13,7 @@ import matplotlib.pyplot as ticker
 from matplotlib.pyplot import MultipleLocator
 import math
 import pandas as pd
-sns.set(style="darkgrid")
+# sns.set(style="darkgrid")
 
 WINDOWSIZE = 15
 
@@ -23,10 +23,11 @@ class Recorder(object):
         self.val2record = ['v_x', 'v_y', 'r', 'x', 'y', 'phi',
                            'steer', 'a_x', 'delta_y', 'delta_v', 'delta_phi',
                            'cal_time', 'ref_index', 'beta', 'path_values', 'ss_time', 'is_ss']
-        self.val2plot = ['v_x', 'r',
+        self.val2plot = ['v_x', 'phi', 'r',
                          'steer', 'a_x',
                          'cal_time', 'ref_index', 'beta', 'path_values', 'is_ss']
         self.key2label = dict(v_x='Speed [m/s]',
+                              phi='Heading angle [$\circ$]',
                               r='Yaw rate [rad/s]',
                               steer='Steer angle [$\circ$]',
                               a_x='Acceleration [$\mathrm {m/s^2}$]',
@@ -98,7 +99,7 @@ class Recorder(object):
         self.data_across_all_episodes = np.load(logdir + '/data_across_all_episodes.npy', allow_pickle=True)
         self.comp_data_for_all_episodes = np.load(logdir + '/comp_data_for_all_episodes.npy', allow_pickle=True)
 
-    def plot_and_save_ith_episode_curves(self, i, save_dir, isshow=True):
+    def plot_and_save_ith_episode_curves(self, i, save_dir, isshow=False):
         episode2plot = self.data_across_all_episodes[i]
         real_time = np.array([0.1*i for i in range(len(episode2plot))])
         all_data = [np.array([vals_in_a_timestep[index] for vals_in_a_timestep in episode2plot])
@@ -106,6 +107,55 @@ class Recorder(object):
         data_dict = dict(zip(self.val2record, all_data))
         color = ['cyan', 'indigo', 'magenta', 'coral', 'b', 'brown', 'c']
         i = 0
+
+        f = plt.figure(0, figsize=(8, 1.6))
+        ax1 = f.add_axes([0.12, 0.35, 0.8, 0.6])
+        df = pd.DataFrame(dict(time=real_time, steer=data_dict['steer'], a_x=data_dict['a_x'],))
+        df['steer'] = df['steer'].rolling(WINDOWSIZE, min_periods=1).mean()
+        df['a_x'] = df['a_x'].rolling(1, min_periods=1).mean()
+
+        l1 = plt.plot(real_time, df['steer'], linewidth='1.5', color='r')
+        l2 = plt.plot(real_time, df['a_x'], linewidth='1.5', color='k', ls='--')
+        plt.legend(labels=['steer', 'acceleration'], bbox_to_anchor=(0.10, 0.98),
+                   loc='upper left', ncol=2, frameon=False)
+        plt.yticks(fontsize=12)
+        plt.xticks(fontsize=12)
+        plt.xlabel("Time [s]", fontsize=12)
+        plt.ylabel('$\delta$[$\circ$]',  fontsize=12)
+        ax1.yaxis.set_label_coords(-0.11, 0.4)
+        ax2 = ax1.twinx()
+        ax2.set_yticks([-10, 0, 10])
+        ax2.set_yticklabels(('-4', '0', '4'), fontsize=12)
+        plt.ylabel('a[$\mathrm {m/s^2}$]', fontsize=12)
+        ax2.yaxis.set_label_coords(1.05, 0.35)
+        # ax2.set_ylim([-3, 3])
+        plt.savefig(save_dir + '/{}.pdf'.format('demo-steer-acc'))
+
+        f = plt.figure(1, figsize=(8, 1.6))
+        ax1 = f.add_axes([0.12, 0.35, 0.8, 0.6])
+        df = pd.DataFrame(dict(time=real_time, v_x=data_dict['v_x'], phi=data_dict['phi'],))
+        df['v_x'] = df['v_x'].rolling(1, min_periods=1).mean()
+        df['phi'] = df['phi'].rolling(1, min_periods=1).mean()
+        df['phi'] = [i if i > 0 else i + 360 for i in df['phi']]
+        df['phi'] = df['phi'] * math.pi / 180
+        l1 = plt.plot(real_time, df['v_x'], linewidth='1.5', color='r')
+        l2 = plt.plot(real_time, df['phi'], linewidth='1.5', color='k', ls='--')
+        plt.legend(labels=['speed', 'heading angle'], loc='upper center', ncol=2, frameon=False)
+        plt.yticks(fontsize=12)
+        plt.xticks(fontsize=12)
+        plt.xlabel("Time [s]", fontsize=12)
+        plt.ylabel(r"$v_x$ $\mathrm{[m/s]}$",  fontsize=12)
+        ax1.yaxis.set_label_coords(-0.11, 0.4)
+        ax1.set_ylim([0, 8])
+        ax2 = ax1.twinx()
+        ax2.set_yticks([0, 1.57, 3.14])
+        ax2.set_yticklabels(('0', '90', '180'), fontsize=12)
+        plt.ylabel('r[$\circ$]', fontsize=12)
+        ax2.yaxis.set_label_coords(1.065, 0.45)
+        ax2.set_ylim(ax1.get_ylim())
+        plt.savefig(save_dir + '/{}.pdf'.format('demo-speed-heading'))
+        plt.show()
+
         for key in data_dict.keys():
             if key in self.val2plot:
                 f = plt.figure(key, figsize=(6, 5))
@@ -200,6 +250,47 @@ class Recorder(object):
                 i += 1
         if isshow:
             plt.show()
+
+        # # for paper plot
+        # self.data_across_all_episodes_fp = np.load('./results/2021-09-21-15-09-43/data_across_all_episodes.npy', allow_pickle=True)
+        # self.data_across_all_episodes_dp = np.load('./results/2021-09-21-16-43-51/data_across_all_episodes.npy', allow_pickle=True)
+        #
+        # acc_dp, steer_dp = [], []
+        # for episode2plot in self.data_across_all_episodes_dp[:]:
+        #     real_time = np.array([0.1 * i for i in range(len(episode2plot))])
+        #     all_data = [np.array([vals_in_a_timestep[index] for vals_in_a_timestep in episode2plot])
+        #                 for index in range(len(self.val2record))]
+        #     data_dict = dict(zip(self.val2record, all_data))
+        #     acc_dp.extend([data_dict['a_x'][i+1] - data_dict['a_x'][i] for i in range(len(data_dict['a_x'])-1)])
+        #     steer_dp.extend([data_dict['steer'][i+1] - data_dict['steer'][i] for i in range(len(data_dict['steer'])-1)])
+        #
+        # df_dp = pd.DataFrame({'algorithms': 'RL w. DP',
+        #                    'steer': steer_dp,
+        #                    'acc': acc_dp,
+        #                        })
+        #
+        # acc_fp, steer_fp = [], []
+        # for episode2plot in self.data_across_all_episodes_fp[:]:
+        #     real_time = np.array([0.1 * i for i in range(len(episode2plot))])
+        #     all_data = [np.array([vals_in_a_timestep[index] for vals_in_a_timestep in episode2plot])
+        #                 for index in range(len(self.val2record))]
+        #     data_dict = dict(zip(self.val2record, all_data))
+        #     acc_fp.extend([data_dict['a_x'][i+1] - data_dict['a_x'][i] for i in range(len(data_dict['a_x'])-1)])
+        #     steer_fp.extend([data_dict['steer'][i+1] - data_dict['steer'][i] for i in range(len(data_dict['steer'])-1)])
+        #
+        # df_fp = pd.DataFrame({'algorithms': 'RL w. FP',
+        #                    'steer': steer_fp,
+        #                    'acc': acc_fp,
+        #                        })
+        # df = df_dp.append(df_fp, ignore_index=True)
+        # f = plt.figure(22, figsize=(6, 5))
+        # ax = f.add_axes([0.12, 0.15, 0.88, 0.85])
+        # sns.jointplot(x="acc", y="steer", data=df, hue="algorithms", kind="hist")
+        # handles, labels = ax.get_legend_handles_labels()
+        # ax.legend(handles=handles[1:], labels=labels[1:], loc='upper right', frameon=False, fontsize=25)
+        # plt.ylim([-5, 5])
+        # plt.xlim([-2, 2])
+        # plt.show()
 
     def plot_mpc_rl(self, i, save_dir, isshow=True, sample=False):
         episode2plot = self.comp_data_for_all_episodes[i] if i is not None else self.comp_list_for_an_episode
