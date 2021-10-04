@@ -73,10 +73,10 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
         self.reward_info = None
         self.ego_info_dim = 6
         self.track_info_dim = 3
-        self.per_veh_info_dim = 4
+        self.per_veh_info_dim = 7
         self.task_info_dim = 1
         self.per_path_info_dim = 4
-        self.light_dim = 1
+        self.light_info_dim = 1
         self.mode = mode
         if not multi_display:
             self.traffic = Traffic(self.step_length,
@@ -297,33 +297,40 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
         task_vector = np.array([self.task_idx], dtype=np.float32)
         vector = np.concatenate((ego_vector, tracking_error, light_vector, task_vector, vehs_vector), axis=0)
         vector = vector.astype(np.float32)
-        # vector = self.convert_vehs_to_rela(vector)
+        vector = self.convert_vehs_to_rela(vector)
 
         return vector
 
-    # def convert_vehs_to_rela(self, obs_abso):
-    #     ego_infos, tracking_infos, veh_infos = obs_abso[:self.ego_info_dim], \
-    #                                            obs_abso[self.ego_info_dim:self.ego_info_dim + self.per_tracking_info_dim * (
-    #                                                      self.num_future_data + 1)], \
-    #                                            obs_abso[self.ego_info_dim + self.per_tracking_info_dim * (
-    #                                                        self.num_future_data + 1):]
-    #     ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi = ego_infos
-    #     ego = np.array([ego_x, ego_y, 0, 0]*int(len(veh_infos)/self.per_veh_info_dim), dtype=np.float32)
-    #     vehs_rela = veh_infos - ego
-    #     out = np.concatenate((ego_infos, tracking_infos, vehs_rela), axis=0)
-    #     return out
-    #
-    # def convert_vehs_to_abso(self, obs_rela):
-    #     ego_infos, tracking_infos, veh_rela = obs_rela[:self.ego_info_dim], \
-    #                                            obs_rela[self.ego_info_dim:self.ego_info_dim + self.per_tracking_info_dim * (
-    #                                                    self.num_future_data + 1)], \
-    #                                            obs_rela[self.ego_info_dim + self.per_tracking_info_dim * (
-    #                                                    self.num_future_data + 1):]
-    #     ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi = ego_infos
-    #     ego = np.array([ego_x, ego_y, 0, 0]*int(len(veh_rela)/self.per_veh_info_dim), dtype=np.float32)
-    #     vehs_abso = veh_rela + ego
-    #     out = np.concatenate((ego_infos, tracking_infos, vehs_abso), axis=0)
-    #     return out
+    def convert_vehs_to_rela(self, obs_abso):
+        obs_ego, obs_track, obs_path, obs_light, obs_task, obs_veh_abso = self._split_obs(obs_abso)
+        ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi = obs_ego
+        ego = np.array([ego_x, ego_y, 0, 0, 0, 0, 0]*int(len(obs_veh_abso)/self.per_veh_info_dim), dtype=np.float32)
+        obs_veh_rela = obs_veh_abso - ego
+        out = np.concatenate((obs_ego, obs_track, obs_path, obs_light, obs_task, obs_veh_rela), axis=0)
+        return out
+
+    def convert_vehs_to_abso(self, obs_rela):
+        obs_ego, obs_track, obs_path, obs_light, obs_task, obs_veh_rela = self._split_obs(obs_rela)
+        ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi = obs_ego
+        ego = np.array([ego_x, ego_y, 0, 0, 0, 0, 0]*int(len(obs_veh_rela)/self.per_veh_info_dim), dtype=np.float32)
+        obs_veh_abso = obs_veh_rela + ego
+        out = np.concatenate((obs_ego, obs_track, obs_path, obs_light, obs_task, obs_veh_abso), axis=0)
+        return out
+
+    def _split_obs(self, obs):
+        start = 0; end = start + self.ego_info_dim
+        obs_ego = obs[start:end]
+        start = end; end = start + self.track_info_dim
+        obs_track = obs[start:end]
+        start = end; end = start + self.per_path_info_dim * self.num_future_data
+        obs_path = obs[start:end]
+        start = end; end = start + self.light_info_dim
+        obs_light = obs[start:end]
+        start = end; end = start + self.task_info_dim
+        obs_task = obs[start:end]
+        start = end; end = start + self.per_veh_info_dim * self.veh_num
+        obs_veh = obs[start:end]
+        return obs_ego, obs_track, obs_path, obs_light, obs_task, obs_veh
 
     def _construct_ego_vector_short(self):
         ego_v_x = self.ego_dynamics['v_x']
@@ -355,31 +362,43 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                 start = route_list[0]
                 end = route_list[1]
                 if start == name_setting['do'] and end == name_setting['li']:
+                    v.update(turn_rad=1 / (CROSSROAD_SIZE / 2 + 0.5 * LANE_WIDTH))
                     dl.append(v)
                 elif start == name_setting['do'] and end == name_setting['ui']:
+                    v.update(turn_rad=0.)
                     du.append(v)
                 elif start == name_setting['do'] and end == name_setting['ri']:
+                    v.update(turn_rad=-1 / (CROSSROAD_SIZE / 2 - 2.5 * LANE_WIDTH))
                     dr.append(v)
 
                 elif start == name_setting['ro'] and end == name_setting['di']:
+                    v.update(turn_rad=1 / (CROSSROAD_SIZE / 2 + 0.5 * LANE_WIDTH))
                     rd.append(v)
                 elif start == name_setting['ro'] and end == name_setting['li']:
+                    v.update(turn_rad=0.)
                     rl.append(v)
                 elif start == name_setting['ro'] and end == name_setting['ui']:
+                    v.update(turn_rad=-1 / (CROSSROAD_SIZE / 2 - 2.5 * LANE_WIDTH))
                     ru.append(v)
 
                 elif start == name_setting['uo'] and end == name_setting['ri']:
+                    v.update(turn_rad=1 / (CROSSROAD_SIZE / 2 + 0.5 * LANE_WIDTH))
                     ur.append(v)
                 elif start == name_setting['uo'] and end == name_setting['di']:
+                    v.update(turn_rad=0.)
                     ud.append(v)
                 elif start == name_setting['uo'] and end == name_setting['li']:
+                    v.update(turn_rad=-1 / (CROSSROAD_SIZE / 2 - 2.5 * LANE_WIDTH))
                     ul.append(v)
 
                 elif start == name_setting['lo'] and end == name_setting['ui']:
+                    v.update(turn_rad=1 / (CROSSROAD_SIZE / 2 + 0.5 * LANE_WIDTH))
                     lu.append(v)
                 elif start == name_setting['lo'] and end == name_setting['ri']:
+                    v.update(turn_rad=0.)
                     lr.append(v)
                 elif start == name_setting['lo'] and end == name_setting['di']:
+                    v.update(turn_rad=-1 / (CROSSROAD_SIZE / 2 - 2.5 * LANE_WIDTH))
                     ld.append(v)
 
             # fetch veh in range
@@ -430,14 +449,14 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                     return sorted_list
 
             mode2fillvalue = dict(
-                dl=dict(x=LANE_WIDTH/2, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '4i')),
-                du=dict(x=LANE_WIDTH*1.5, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '3i')),
-                dr=dict(x=LANE_WIDTH*(LANE_NUMBER-0.5), y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '2i')),
-                ru=dict(x=(CROSSROAD_SIZE/2+15), y=LANE_WIDTH*(LANE_NUMBER-0.5), v=0, phi=180, w=2.5, l=5, route=('2o', '3i')),
-                ur=dict(x=-LANE_WIDTH/2, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '2i')),
-                ud=dict(x=-LANE_WIDTH*1.5, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '1i')),
-                ul=dict(x=-LANE_WIDTH*(LANE_NUMBER-0.5), y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '4i')),
-                lr=dict(x=-(CROSSROAD_SIZE/2+20), y=-LANE_WIDTH*1.5, v=0, phi=0, w=2.5, l=5, route=('4o', '2i')))
+                dl=dict(x=LANE_WIDTH/2, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '4i'), turn_rad=1/(CROSSROAD_SIZE/2+0.5*LANE_WIDTH)),
+                du=dict(x=LANE_WIDTH*1.5, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '3i'), turn_rad=0.),
+                dr=dict(x=LANE_WIDTH*(LANE_NUMBER-0.5), y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '2i'), turn_rad=-1 / (CROSSROAD_SIZE/2-2.5*LANE_WIDTH)),
+                ru=dict(x=(CROSSROAD_SIZE/2+15), y=LANE_WIDTH*(LANE_NUMBER-0.5), v=0, phi=180, w=2.5, l=5, route=('2o', '3i'), turn_rad=-1 / (CROSSROAD_SIZE/2-2.5*LANE_WIDTH)),
+                ur=dict(x=-LANE_WIDTH/2, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '2i'), turn_rad=1/(CROSSROAD_SIZE/2+0.5*LANE_WIDTH)),
+                ud=dict(x=-LANE_WIDTH*1.5, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '1i'), turn_rad=0.),
+                ul=dict(x=-LANE_WIDTH*(LANE_NUMBER-0.5), y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '4i'), turn_rad=-1 / (CROSSROAD_SIZE/2-2.5*LANE_WIDTH)),
+                lr=dict(x=-(CROSSROAD_SIZE/2+20), y=-LANE_WIDTH*1.5, v=0, phi=0, w=2.5, l=5, route=('4o', '2i'), turn_rad=0.))
 
             tmp = OrderedDict()
             for mode, num in VEHICLE_MODE_DICT[task].items():
@@ -451,9 +470,8 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
             list_of_interested_veh_dict.extend(part)
 
         for veh in list_of_interested_veh_dict:
-            veh_x, veh_y, veh_v, veh_phi = veh['x'], veh['y'], veh['v'], veh['phi']
-            vehs_vector.extend([veh_x, veh_y, veh_v, veh_phi])
-        self.per_veh_info_dim = 4
+            veh_x, veh_y, veh_v, veh_phi, veh_l, veh_w, veh_turn_rad = veh['x'], veh['y'], veh['v'], veh['phi'], veh['l'], veh['w'], veh['turn_rad']
+            vehs_vector.extend([veh_x, veh_y, veh_v, veh_phi, veh_l, veh_w, veh_turn_rad])
         return np.array(vehs_vector, dtype=np.float32)
 
     def recover_orig_position_fn(self, transformed_x, transformed_y, x, y, d):  # x, y, d are used to transform
@@ -493,9 +511,9 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
     def compute_reward(self, obs, action):
         obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
         obses_ego = obses[:, :self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data
-                              + self.light_dim + self.task_info_dim]
+                              + self.light_info_dim + self.task_info_dim]
         obses_other = obses[:, self.ego_info_dim + self.track_info_dim + self.per_path_info_dim * self.num_future_data
-                              + self.light_dim + self.task_info_dim:]
+                              + self.light_info_dim + self.task_info_dim:]
         reward, _, _, _, _, _, reward_dict = self.env_model.compute_rewards(obses_ego, actions, obses_other)
         for k, v in reward_dict.items():
             reward_dict[k] = v.numpy()[0]
@@ -792,8 +810,8 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
 
 def test_end2end():
     import random
-    env = CrossroadEnd2endPiIntegrate(num_future_data=10)
-    env_model = EnvironmentModel(training_task='straight', num_future_data=10)
+    env = CrossroadEnd2endPiIntegrate(num_future_data=5)
+    env_model = EnvironmentModel(training_task='straight', num_future_data=5)
     obs = env.reset()
     i = 0
     while i < 100000:
@@ -807,12 +825,13 @@ def test_end2end():
             obs, reward, done, info = env.step(action)
             obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
             obses_ego = obses[:, :env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data +
-                                  env.light_dim + env.task_info_dim]
+                                  env.light_info_dim + env.task_info_dim]
             obses_other = np.reshape(obses[:, env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data +
-                                  env.light_dim + env.task_info_dim:], [-1, env.per_veh_info_dim])
+                                  env.light_info_dim + env.task_info_dim:], [-1, env.per_veh_info_dim])
+
             obses_ego = np.tile(obses_ego, (2, 1))
-            obses_ego[:, -2] = random.randint(0, 2), random.randint(0, 2)
-            obses_ego[:, -1] = random.randint(0, 2), random.randint(0, 2)
+            obses_ego[:, (-env.task_info_dim-env.light_info_dim)] = random.randint(0, 2), random.randint(0, 2)
+            obses_ego[:, (-env.task_info_dim)] = list(TASK_DICT.values())[random.randint(0, 2)], list(TASK_DICT.values())[random.randint(0, 2)]
 
             env_model.reset(obses_ego, np.tile(obses_other, (2,1)), [env.veh_num] * 2, env.training_task,
                             [env.ref_path.ref_index, random.randint(0, 2)])
@@ -822,7 +841,7 @@ def test_end2end():
                     real_punish_term, veh2veh4real, veh2road4real, veh2line4real = env_model.rollout_out(np.tile(actions, (2, 1)))
             print(len(obs))
             print(env.training_task, obs[env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data], env.v_light)
-            print('task:', obs[env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data + env.light_dim])
+            print('task:', obs[env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data + env.light_info_dim])
             env.render()
             # if done:
             #     break
