@@ -16,7 +16,7 @@ import tensorflow as tf
 from tensorflow import logical_and
 
 # gym.envs.user_defined.toyota_env.
-from endtoend_env_utils import rotate_coordination, L, W, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, LIGHT, TASK_DICT
+from endtoend_env_utils import rotate_coordination, L, W, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, LIGHT, TASK_DICT, MAX_VEH_NUM
 
 tf.config.threading.set_inter_op_parallelism_threads(1)
 tf.config.threading.set_intra_op_parallelism_threads(1)
@@ -96,6 +96,7 @@ class EnvironmentModel(object):  # all tensors
         self.task_info_dim = 1
         self.per_path_info_dim = 4
         self.light_dim = 1
+        self.veh_num = MAX_VEH_NUM
         self.light_flag = False
         self.light_cond = None
 
@@ -105,7 +106,6 @@ class EnvironmentModel(object):  # all tensors
         self.ref_indexes = ref_indexes
         self.actions = None
         self.reward_info = None
-        self.veh_num = veh_num
         self.task = task
         self.light_flag = False
 
@@ -219,7 +219,7 @@ class EnvironmentModel(object):  # all tensors
             veh2veh4real = tf.zeros_like(veh_infos[:, 0])
             veh2veh4training = tf.zeros_like(veh_infos[:, 0])
 
-            for veh_index in range(int(tf.shape(veh_infos)[1] / self.per_veh_info_dim)):
+            for veh_index in range(self.veh_num):
                 vehs = veh_infos[:, veh_index * self.per_veh_info_dim:(veh_index + 1) * self.per_veh_info_dim]
                 veh_lws = (vehs[:, 4] - vehs[:, 5]) / 2.
                 veh_front_points = tf.cast(vehs[:, 0] + veh_lws * tf.cos(vehs[:, 3] * np.pi / 180.), dtype=tf.float32), \
@@ -392,7 +392,7 @@ class EnvironmentModel(object):  # all tensors
     def convert_vehs_to_rela(self, obses_ego, obses_other):
         ego_x, ego_y = obses_ego[:, 3], obses_ego[:, 4]
         ego = tf.tile(tf.concat([tf.stack([ego_x, ego_y], axis=1), tf.zeros(shape=(len(ego_x), self.per_veh_info_dim-2))], axis=1),
-                                (1, int(tf.shape(obses_other)[1]/self.per_veh_info_dim)))
+                                [1, self.veh_num])
 
         obses_other_rela = obses_other - ego
         return obses_ego, obses_other_rela
@@ -400,7 +400,7 @@ class EnvironmentModel(object):  # all tensors
     def convert_vehs_to_abso(self, obses_ego, obses_other):
         ego_x, ego_y = obses_ego[:, 3], obses_ego[:, 4]
         ego = tf.tile(tf.concat([tf.stack([ego_x, ego_y], axis=1), tf.zeros(shape=(len(ego_x), self.per_veh_info_dim-2))], axis=1),
-                                (1, int(tf.shape(obses_other)[1]/self.per_veh_info_dim)))
+                                [1, self.veh_num])
 
         obses_other_abso = obses_other + ego
         return obses_ego, obses_other_abso
@@ -415,7 +415,7 @@ class EnvironmentModel(object):  # all tensors
 
     def veh_predict(self, veh_infos):
         predictions_to_be_concat = []
-        for vehs_index in range(int(tf.shape(veh_infos)[1] / self.per_veh_info_dim)):  # choose the ith column
+        for vehs_index in range(self.veh_num):  # choose the ith column
             predictions_to_be_concat.append(self.predict_for_a_mode(veh_infos[:, vehs_index * self.per_veh_info_dim:(vehs_index + 1) * self.per_veh_info_dim]))
         pred = tf.stop_gradient(tf.concat(predictions_to_be_concat, 1))
         return pred

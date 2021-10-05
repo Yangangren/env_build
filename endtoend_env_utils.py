@@ -19,6 +19,7 @@ EXPECTED_V = 8.
 dirname = os.path.dirname(__file__)
 TASK_DICT = dict(left=0.0, straight=1.0, right=2.0)                         # TASK_DICT = dict(left=0.0, straight=1.0, right=2.0)
 SUMOCFG_DIR = dirname + "/sumo_files/cross.sumocfg"
+MAX_VEH_NUM = 8
 VEHICLE_MODE_DICT = dict(left=OrderedDict(dl=2, du=2, ud=2, ul=2),
                          straight=OrderedDict(dl=2, du=2, ru=2, ur=2),
                          right=OrderedDict(dr=2, du=2, ur=2, lr=2))
