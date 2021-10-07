@@ -11,25 +11,42 @@ import math
 import os
 from collections import OrderedDict
 
-L, W = 4.8, 2.0
-LANE_WIDTH = 3.75
-LANE_NUMBER = 3
-CROSSROAD_SIZE = 50
-EXPECTED_V = 8.
+
+class Para:
+    L, W = 4.8, 2.0
+    LANE_WIDTH = 3.75
+    LANE_NUMBER = 3
+    CROSSROAD_SIZE = 50
+    # DIM
+    EGO_ENCODING_DIM = 6
+    TRACK_ENCODING_DIM = 4
+    LIGHT_ENCODING_DIM = 2
+    TASK_ENCODING_DIM = 3
+    REF_ENCODING_DIM = 3
+    PER_OTHER_INFO_DIM = 7
+
+    # MAX NUM
+    MAX_VEH_NUM = 8  # to be align with VEHICLE_MODE_DICT
+    MAX_BIKE_NUM = 0  # to be align with BIKE_MODE_DICT
+    MAX_PERSON_NUM = 0  # to be align with PERSON_MODE_DICT
+
+
 dirname = os.path.dirname(__file__)
-TASK_DICT = dict(left=0.0, straight=1.0, right=2.0)                         # TASK_DICT = dict(left=0.0, straight=1.0, right=2.0)
-SUMOCFG_DIR = dirname + "/sumo_files/cross.sumocfg"
-MAX_VEH_NUM = 8
+LIGHT_PHASE_TO_GREEN_OR_RED = {0: 'green', 1: 'red', 2: 'red', 3:'red'}  # 0: green, 1: red
+TASK_ENCODING = dict(left=[1.0, 0.0, 0.0], straight=[0.0, 1.0, 0.0], right=[0.0, 0.0, 1.0])
+LIGHT_ENCODING = {0: [1.0, 0.0], 1: [1.0, 0.0], 2: [1.0, 1.0], 3: [0.0, 1.0], 4: [0.0, 1.0], 5: [0.0, 1.0], 6: [0.0, 1.0]}
+REF_ENCODING = {0: [1.0, 0.0, 0.0], 1: [0.0, 1.0, 0.0], 2: [0.0, 0.0, 1.0]}
+
+SUMOCFG_DIR = os.path.dirname(__file__) + "/sumo_files/cross.sumocfg"
 VEHICLE_MODE_DICT = dict(left=OrderedDict(dl=2, du=2, ud=2, ul=2),
                          straight=OrderedDict(dl=2, du=2, ru=2, ur=2),
                          right=OrderedDict(dr=2, du=2, ur=2, lr=2))
-LIGHT = {0: 'green', 1: 'red'}
 
 
 def dict2flat(inp):
     out = []
     for key, val in inp.items():
-        out.extend([key]*val)
+        out.extend([key] * val)
     return out
 
 
@@ -75,25 +92,25 @@ MODE2ROUTE = {'dr': ('1o', '2i'), 'du': ('1o', '3i'), 'dl': ('1o', '4i'),
 
 def judge_feasible(orig_x, orig_y, task):  # map dependant
     def is_in_straight_before1(orig_x, orig_y):
-        return 0 < orig_x < LANE_WIDTH and orig_y <= -CROSSROAD_SIZE / 2
+        return 0 < orig_x < Para.LANE_WIDTH and orig_y <= -Para.CROSSROAD_SIZE / 2
 
     def is_in_straight_before2(orig_x, orig_y):
-        return LANE_WIDTH < orig_x < LANE_WIDTH * 2 and orig_y <= -CROSSROAD_SIZE / 2
+        return Para.LANE_WIDTH < orig_x < Para.LANE_WIDTH * 2 and orig_y <= -Para.CROSSROAD_SIZE / 2
 
     def is_in_straight_before3(orig_x, orig_y):
-        return LANE_WIDTH * 2 < orig_x < LANE_WIDTH * 3 and orig_y <= -CROSSROAD_SIZE / 2
+        return Para.LANE_WIDTH * 2 < orig_x < Para.LANE_WIDTH * 3 and orig_y <= -Para.CROSSROAD_SIZE / 2
 
     def is_in_straight_after(orig_x, orig_y):
-        return 0 < orig_x < LANE_WIDTH * LANE_NUMBER and orig_y >= CROSSROAD_SIZE / 2
+        return 0 < orig_x < Para.LANE_WIDTH * Para.LANE_NUMBER and orig_y >= Para.CROSSROAD_SIZE / 2
 
     def is_in_left(orig_x, orig_y):
-        return 0 < orig_y < LANE_WIDTH * LANE_NUMBER and orig_x < -CROSSROAD_SIZE / 2
+        return 0 < orig_y < Para.LANE_WIDTH * Para.LANE_NUMBER and orig_x < -Para.CROSSROAD_SIZE / 2
 
     def is_in_right(orig_x, orig_y):
-        return -LANE_WIDTH * LANE_NUMBER < orig_y < 0 and orig_x > CROSSROAD_SIZE / 2
+        return -Para.LANE_WIDTH * Para.LANE_NUMBER < orig_y < 0 and orig_x > Para.CROSSROAD_SIZE / 2
 
     def is_in_middle(orig_x, orig_y):
-        return True if -CROSSROAD_SIZE / 2 < orig_y < CROSSROAD_SIZE / 2 and -CROSSROAD_SIZE / 2 < orig_x < CROSSROAD_SIZE / 2 else False
+        return True if -Para.CROSSROAD_SIZE / 2 < orig_y < Para.CROSSROAD_SIZE / 2 and -Para.CROSSROAD_SIZE / 2 < orig_x < Para.CROSSROAD_SIZE / 2 else False
 
     if task == 'left':
         return True if is_in_straight_before1(orig_x, orig_y) or is_in_left(orig_x, orig_y) \
@@ -200,18 +217,18 @@ def cal_ego_info_in_transform_coordination(ego_dynamics, x, y, rotate_d):
 
 
 def xy2_edgeID_lane(x, y):
-    if y < -CROSSROAD_SIZE/2:
+    if y < -Para.CROSSROAD_SIZE/2:
         edgeID = '1o'
-        lane = int((LANE_NUMBER-1)-int(x/LANE_WIDTH))
-    elif x < -CROSSROAD_SIZE/2:
+        lane = int((Para.LANE_NUMBER-1)-int(x/Para.LANE_WIDTH))
+    elif x < -Para.CROSSROAD_SIZE/2:
         edgeID = '4i'
-        lane = int((LANE_NUMBER-1)-int(y/LANE_WIDTH))
-    elif y > CROSSROAD_SIZE/2:
+        lane = int((Para.LANE_NUMBER-1)-int(y/Para.LANE_WIDTH))
+    elif y > Para.CROSSROAD_SIZE/2:
         edgeID = '3i'
-        lane = int((LANE_NUMBER-1)-int(x/LANE_WIDTH))
-    elif x > CROSSROAD_SIZE/2:
+        lane = int((Para.LANE_NUMBER-1)-int(x/Para.LANE_WIDTH))
+    elif x > Para.CROSSROAD_SIZE/2:
         edgeID = '2i'
-        lane = int((LANE_NUMBER-1)-int(-y/LANE_WIDTH))
+        lane = int((Para.LANE_NUMBER-1)-int(-y/Para.LANE_WIDTH))
     else:
         edgeID = '0'
         lane = 0

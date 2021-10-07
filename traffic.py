@@ -154,6 +154,7 @@ class Traffic(object):
         # traci.trafficlight.setPhaseDuration('0', 10000)
         traci.simulationStep()
         self._get_traffic_light()
+        return self.v_light
 
     def init_traffic(self, init_n_ego_dict, training_task):
         self.training_task = training_task
