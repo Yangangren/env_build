@@ -366,7 +366,7 @@ class EnvironmentModel(object):  # all tensors
         dist_a2c = tf.sqrt(tf.square(ego_xs - ref_xs) + tf.square(ego_ys - ref_ys))
         dist_c2line = tf.abs(tf.sin(ref_phis_rad) * ego_xs - tf.cos(ref_phis_rad) * ego_ys
                              - tf.sin(ref_phis_rad) * ref_xs + tf.cos(ref_phis_rad) * ref_ys)
-        dist_longdi = tf.sqrt(tf.square(dist_a2c) - tf.square(dist_c2line))
+        dist_longdi = tf.sqrt(tf.abs(tf.square(dist_a2c) - tf.square(dist_c2line)))
         signed_dist_lateral = tf.where(self._judge_is_left(a, b, c), dist_c2line, -dist_c2line)
         signed_dist_longi = tf.where(self._judge_is_ahead(a, b, c), dist_longdi, -dist_longdi)
         delta_phi = deal_with_phi_diff(ego_phis - ref_phis)
@@ -676,7 +676,11 @@ class ReferencePath(object):
         dist_a2c = np.sqrt(np.square(ego_x - x0) + np.square(ego_y - y0))
         dist_c2line = abs(sin(phi0_rad) * ego_x - cos(phi0_rad) * ego_y - sin(phi0_rad) * x0 + cos(phi0_rad) * y0)
         signed_dist_lateral = self._judge_sign_left_or_right(a, b, c) * dist_c2line
-        signed_dist_longi = self._judge_sign_ahead_or_behind(a, b, c) * np.sqrt(dist_a2c ** 2 - dist_c2line ** 2)
+        signed_dist_longi = self._judge_sign_ahead_or_behind(a, b, c) * np.sqrt(abs(dist_a2c ** 2 - dist_c2line ** 2))
+        if math.isnan(signed_dist_longi):
+            signed_dist_longi = 0.
+        if math.isnan(signed_dist_lateral):
+            signed_dist_lateral = 0.
         return np.array([signed_dist_longi, signed_dist_lateral, deal_with_phi_diff(ego_phi - phi0), ego_v - v0])
 
     def idx2point(self, idx):
