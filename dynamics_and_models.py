@@ -693,7 +693,7 @@ class ReferencePath(object):
         x2, y2 = b
         x3, y3 = c
         featured = (x1 - x3) * (y2 - y3) - (y1 - y3) * (x2 - x3)
-        if featured < 1e-8:
+        if abs(featured) < 1e-8:
             return 0.
         else:
             return -featured / abs(featured)
@@ -706,7 +706,7 @@ class ReferencePath(object):
         vector1 = np.array([x2 - x1, y2 - y1])
         vector2 = np.array([x3 - x1, y3 - y1])
         mul = np.sum(vector1 * vector2)
-        if mul < 1e-8:
+        if np.abs(mul) < 1e-8:
             return 0.
         else:
             return mul / np.abs(mul)
