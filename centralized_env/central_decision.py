@@ -8,7 +8,6 @@ import gym
 from gym.utils import seeding
 
 
-
 class CentralDecisionEnv(gym.Env):
     def __init__(self, N=8, pattern=[0, 2, 3, 4, 6, 8, 9, 10], height=30, width=30, laneWidth=4, laneNum=1):
         self.N = N
@@ -24,8 +23,7 @@ class CentralDecisionEnv(gym.Env):
         self.endNum = 0
         self.observation_space = spaces.Box(np.array([-self.height, 0] * self.N), np.array([self.height, 10] * self.N), dtype=np.float32)
         self.action_space = spaces.Box(low=np.array([-5] * self.N), high=np.array([5] * self.N), dtype=np.float32)
-        self.showEnv_init()
-
+        self.fig_flag = 0
 
     def reset(self):
         self.vehs = []
@@ -202,16 +200,15 @@ class CentralDecisionEnv(gym.Env):
 
         return np.array(state), reward, collisionFlag or endNum == self.N, {}
 
-
-    def showEnv_init(self):
-        plt.figure(figsize = (10, 10))
-        plt.ion()
-
-
     def render(self, mode='human'):
+        if self.fig_flag == 0:
+            plt.figure(figsize=(10, 10))
+            self.fig_flag = 1
+            plt.ion()
+
         plt.cla()
         plt.title("Demo")
-        ax = plt.axes(xlim = (-self.width - 3, self.width + 3), ylim = (-self.height - 3, self.height + 3))
+        ax = plt.axes(xlim=(-self.width - 3, self.width + 3), ylim=(-self.height - 3, self.height + 3))
         plt.axis("equal")
         argument = 1.5
         plt.plot([self.laneWidth, self.laneWidth, self.laneWidth + argument, self.width],

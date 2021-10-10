@@ -13,8 +13,6 @@ for count in range(10000):
     endFlag = False
     tag = 0
     CrossRoad.reset()
-    # CrossRoad.reStart()
-    print()
     while not endFlag:
         action = [0] * vehNum
         [state, reward, endFlag, _] = CrossRoad.step(action)
@@ -22,7 +20,6 @@ for count in range(10000):
         tag += 1
         # print(count, "step: ", tag, "collision?: ", collisionFlag, "end?: ", endFlag)
         # print(reward)
-        #print(state)
-        #time.sleep(2)
+        # time.sleep(2)
 
 
