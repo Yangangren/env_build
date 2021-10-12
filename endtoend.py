@@ -59,7 +59,7 @@ class CrossroadEnd2end(gym.Env):
         self.env_model = EnvironmentModel(training_task, num_future_data)
         self.init_state = {}
         self.action_number = 2
-        self.exp_v = EXPECTED_V #TODO: temp
+        self.exp_v = EXPECTED_V
         self.ego_l, self.ego_w = L, W
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(self.action_number,), dtype=np.float32)
 
@@ -796,22 +796,32 @@ class CrossroadEnd2end(gym.Env):
 
 
 def test_end2end():
-    env = CrossroadEnd2end(training_task='straight', num_future_data=0)
+    env = CrossroadEnd2end(training_task='left', num_future_data=0)
+    env_model = EnvironmentModel(training_task='left', num_future_data=0)
     obs = env.reset()
     i = 0
-    done = 0
     while i < 100000:
         for j in range(80):
             # print(i)
             i += 1
             # action=2*np.random.random(2)-1
-            if obs[4]<-18:
+            if obs[4] < -18:
                 action = np.array([0, 1], dtype=np.float32)
+            elif obs[3] <= -18:
+                action = np.array([0, 0], dtype=np.float32)
             else:
-                action = np.array([0.5, 0.33], dtype=np.float32)
+                action = np.array([-0.3, 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
+            obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
+            adv_actions = np.random.rand(1, 4).astype(np.float32)
+            env_model.reset(obses, env.ref_path.ref_index)
+            env_model.mode = 'testing'
+            for _ in range(8):
+                obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
+                veh2road4real = env_model.rollout_out(actions, adv_actions)
             env.render()
-        done = 0
+            if done:
+                break
         obs = env.reset()
         env.render()
 

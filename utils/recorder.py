@@ -80,7 +80,7 @@ class Recorder(object):
                                                self.num_future_data + 1):]
         v_x, v_y, r, x, y, phi = ego_info
         delta_y, delta_phi, delta_v = tracking_info[:3]
-        adp_steer, adp_a_x = adp_act[0]*0.4, adp_act[1]*3-1.
+        adp_steer, adp_a_x = adp_act[0]*0.4, adp_act[1]*2.25 - 0.75
         mpc_steer, mpc_a_x = mpc_act[0], mpc_act[1]
 
         # transformation

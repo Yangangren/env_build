@@ -96,6 +96,7 @@ class EnvironmentModel(object):  # all tensors
         self.obses = None
         self.ego_params = None
         self.actions = None
+        self.adv_actions = None
         self.ref_path = ReferencePath(self.task)
         self.ref_indexes = None
         self.num_future_data = num_future_data
@@ -109,27 +110,34 @@ class EnvironmentModel(object):  # all tensors
         self.obses = obses
         self.ref_indexes = ref_indexes
         self.actions = None
+        self.adv_actions = None
         self.reward_info = None
 
     def add_traj(self, obses, path_index):
         self.obses = obses
         self.ref_path.set_path(path_index)
 
-    def rollout_out(self, actions):  # obses and actions are tensors, think of actions are in range [-1, 1]
+    def rollout_out(self, actions, adv_actions):  # obses and actions are tensors, think of actions are in range [-1, 1]
         with tf.name_scope('model_step') as scope:
-            self.actions = self._action_transformation_for_end2end(actions)
+            self.actions, self.adv_actions = self._action_transformation_for_end2end(actions, adv_actions)
+            self.obses = self.compute_next_obses(self.obses, self.actions, self.adv_actions)
+
             rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, _ \
                 = self.compute_rewards(self.obses, self.actions)
-            self.obses = self.compute_next_obses(self.obses, self.actions)
-            # self.reward_info.update({'final_rew': rewards.numpy()[0]})
 
         return self.obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real
 
-    def _action_transformation_for_end2end(self, actions):  # [-1, 1]
+    def _action_transformation_for_end2end(self, actions, adv_actions):  # [-1, 1]
         actions = tf.clip_by_value(actions, -1.05, 1.05)
         steer_norm, a_xs_norm = actions[:, 0], actions[:, 1]
         steer_scale, a_xs_scale = 0.4 * steer_norm, 2.25 * a_xs_norm-0.75
-        return tf.stack([steer_scale, a_xs_scale], 1)
+
+        adv_actions = tf.clip_by_value(adv_actions, -1.0, 1.0)
+        delta_xs, delta_ys, delta_vs, delta_phis = adv_actions[:, 0], adv_actions[:, 1], adv_actions[:, 2], adv_actions[:, 3]
+        # todo: bound needs to be verified by real data
+        # todo: heading angle is radian
+        delta_xs_scale, delta_ys_scale, delta_vs_scale, delta_phis_scale = 0.4 * delta_xs, 0.4 * delta_ys, 0.0 * delta_vs, 0.087 * delta_phis
+        return tf.stack([steer_scale, a_xs_scale], 1), tf.stack([delta_xs_scale, delta_ys_scale, delta_vs_scale, delta_phis_scale], 1)
 
     def ss(self, obses, actions, lam=0.1):
         actions = self._action_transformation_for_end2end(actions)
@@ -192,7 +200,7 @@ class EnvironmentModel(object):  # all tensors
                                                                self.num_future_data + 1)], \
                                                    obses[:, self.ego_info_dim + self.per_tracking_info_dim * (
                                                                self.num_future_data + 1):]
-            veh_infos = tf.stop_gradient(veh_infos)
+            # veh_infos = tf.stop_gradient(veh_infos)  # todo
             steers, a_xs = actions[:, 0], actions[:, 1]
             # rewards related to action
             punish_steer = -tf.square(steers)
@@ -319,7 +327,7 @@ class EnvironmentModel(object):  # all tensors
 
             return rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, reward_dict
 
-    def compute_next_obses(self, obses, actions):
+    def compute_next_obses(self, obses, actions, adv_actions):
         # obses = self.convert_vehs_to_abso(obses)
         ego_infos, tracking_infos, veh_infos = obses[:, :self.ego_info_dim],\
                                                obses[:, self.ego_info_dim:
@@ -328,7 +336,7 @@ class EnvironmentModel(object):  # all tensors
                                                obses[:, self.ego_info_dim + self.per_tracking_info_dim * (
                                                            self.num_future_data + 1):]
 
-        veh_infos = tf.stop_gradient(veh_infos)
+        # veh_infos = tf.stop_gradient(veh_infos)   # todo
         next_ego_infos = self.ego_predict(ego_infos, actions)
         # different for training and selecting
         if self.mode != 'training':
@@ -352,7 +360,7 @@ class EnvironmentModel(object):  # all tensors
                 next_tracking_infos = tf.where(ref_indexes == ref_idx, tracking_info_4_this_ref_idx,
                                                next_tracking_infos)
 
-        next_veh_infos = self.veh_predict(veh_infos)
+        next_veh_infos = self.veh_predict(veh_infos, adv_actions)
         next_obses = tf.concat([next_ego_infos, next_tracking_infos, next_veh_infos], 1)
         # next_obses = self.convert_vehs_to_rela(next_obses)
         return next_obses
@@ -391,19 +399,21 @@ class EnvironmentModel(object):  # all tensors
         ego_next_infos = tf.stack([v_xs, v_ys, rs, xs, ys, phis], axis=1)
         return ego_next_infos
 
-    def veh_predict(self, veh_infos):
+    def veh_predict(self, veh_infos, adv_actions):
         veh_mode_list = VEHICLE_MODE_LIST[self.task]
         predictions_to_be_concat = []
 
         for vehs_index in range(len(veh_mode_list)):
             predictions_to_be_concat.append(self.predict_for_a_mode(
                 veh_infos[:, vehs_index * self.per_veh_info_dim:(vehs_index + 1) * self.per_veh_info_dim],
-                veh_mode_list[vehs_index]))
-        pred = tf.stop_gradient(tf.concat(predictions_to_be_concat, 1))
+                veh_mode_list[vehs_index], adv_actions))
+        # pred = tf.stop_gradient(tf.concat(predictions_to_be_concat, 1))  # todo
+        pred = tf.concat(predictions_to_be_concat, 1)
         return pred
 
-    def predict_for_a_mode(self, vehs, mode):
+    def predict_for_a_mode(self, vehs, mode, adv_actions):
         veh_xs, veh_ys, veh_vs, veh_phis = vehs[:, 0], vehs[:, 1], vehs[:, 2], vehs[:, 3]
+        veh_xs_noise, veh_ys_noise, veh_vs_noise, veh_phis_noise_rad = adv_actions[:, 0], adv_actions[:, 1], adv_actions[:, 2], adv_actions[:, 3]
         veh_phis_rad = veh_phis * np.pi / 180.
 
         middle_cond = logical_and(logical_and(veh_xs > -CROSSROAD_SIZE/2, veh_xs < CROSSROAD_SIZE/2),
@@ -416,11 +426,11 @@ class EnvironmentModel(object):  # all tensors
         if mode in ['dl', 'rd', 'ur', 'lu']:
             veh_phis_rad_delta = tf.where(middle_cond, (veh_vs / (CROSSROAD_SIZE/2+0.5*LANE_WIDTH)) / self.base_frequency, zeros)
         elif mode in ['dr', 'ru', 'ul', 'ld']:
-            veh_phis_rad_delta = tf.where(middle_cond, -(veh_vs / (CROSSROAD_SIZE/2-2.5*LANE_WIDTH)) / self.base_frequency, zeros)  # TODO：ONLY FOR 3LANE
+            veh_phis_rad_delta = tf.where(middle_cond, -(veh_vs / (CROSSROAD_SIZE/2-2.5*LANE_WIDTH)) / self.base_frequency, zeros)
         else:
             veh_phis_rad_delta = zeros
         next_veh_xs, next_veh_ys, next_veh_vs, next_veh_phis_rad = \
-            veh_xs + veh_xs_delta, veh_ys + veh_ys_delta, veh_vs, veh_phis_rad + veh_phis_rad_delta
+            veh_xs + veh_xs_delta + veh_xs_noise, veh_ys + veh_ys_delta + veh_ys_noise, veh_vs + veh_vs_noise, veh_phis_rad + veh_phis_rad_delta + veh_phis_noise_rad
         next_veh_phis_rad = tf.where(next_veh_phis_rad > np.pi, next_veh_phis_rad - 2 * np.pi, next_veh_phis_rad)
         next_veh_phis_rad = tf.where(next_veh_phis_rad <= -np.pi, next_veh_phis_rad + 2 * np.pi, next_veh_phis_rad)
         next_veh_phis = next_veh_phis_rad * 180 / np.pi
