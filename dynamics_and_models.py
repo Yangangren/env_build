@@ -105,44 +105,32 @@ class EnvironmentModel(object):  # all tensors
         self.bike_num = BIKE_NUM[self.task]
         self.person_num = PERSON_NUM[self.task]
         self.ego_info_dim = 6
-        self.per_veh_info_dim = 5
-        self.per_bike_info_dim = 5
-        self.per_person_info_dim = 5
         self.per_tracking_info_dim = 3
-        self.obses_ego = None
-        self.obses_bike = None
-        self.obses_person =None
-        self.obses_veh =None
+        self.other_number = sum([self.veh_num, self.bike_num, self.person_num])
+        self.other_start_dim = sum([self.ego_info_dim, self.per_tracking_info_dim * (self.num_future_data + 1)])
+        self.per_other_info_dim = 5
 
-    def reset(self, obses_ego, obses_bike, obses_person, obses_veh, ref_indexes=None):  # input are all tensors
-        self.obses_ego = obses_ego
-        self.obses_bike = tf.reshape(obses_bike, [-1, self.per_bike_info_dim * self.bike_num])
-        self.obses_person = tf.reshape(obses_person, [-1, self.per_person_info_dim * self.person_num])
-        self.obses_veh = tf.reshape(obses_veh, [-1, self.per_veh_info_dim * self.veh_num])
+    def reset(self, obses, ref_indexes=None):  # input are all tensors
+        self.obses = obses
         self.ref_indexes = ref_indexes
         self.actions = None
         self.reward_info = None
 
     def add_traj(self, obses_ego, obses_bike, obses_person, obses_veh, path_index):
         self.obses_ego = obses_ego
-        self.obses_bike = tf.reshape(obses_bike, [-1, self.per_bike_info_dim * self.bike_num])
-        self.obses_person = tf.reshape(obses_person, [-1, self.per_person_info_dim * self.person_num])
-        self.obses_veh = tf.reshape(obses_veh, [-1, self.per_veh_info_dim * self.veh_num])
+        self.obses_bike = tf.reshape(obses_bike, [-1, self.per_other_info_dim * self.bike_num])
+        self.obses_person = tf.reshape(obses_person, [-1, self.per_other_info_dim * self.person_num])
+        self.obses_veh = tf.reshape(obses_veh, [-1, self.per_other_info_dim * self.veh_num])
         self.ref_path.set_path(path_index)
 
     def rollout_out(self, actions):  # obses and actions are tensors, think of actions are in range [-1, 1]
         with tf.name_scope('model_step') as scope:
             self.actions = self._action_transformation_for_end2end(actions)
             rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2bike4real, \
-                veh2person4real, _ = self.compute_rewards(self.obses_ego, self.obses_bike, self.obses_person, self.obses_veh, self.actions)
-            self.obses_ego, self.obses_bike, self.obses_person, self.obses_veh = \
-                self.compute_next_obses(self.obses_ego, self.obses_bike, self.obses_person, self.obses_veh, self.actions)
+                veh2person4real, _ = self.compute_rewards(self.obses, self.actions)
+            self.obses = self.compute_next_obses(self.obses, self.actions)
 
-            obses_bike = tf.reshape(self.obses_bike, [-1, self.per_bike_info_dim])
-            obses_person = tf.reshape(self.obses_person, [-1, self.per_person_info_dim])
-            obses_veh = tf.reshape(self.obses_veh, [-1, self.per_veh_info_dim])
-
-        return self.obses_ego, obses_bike, obses_person, obses_veh, rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, \
+        return self.obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, \
                veh2bike4real, veh2person4real
 
     def _action_transformation_for_end2end(self, actions):  # [-1, 1]
@@ -174,11 +162,11 @@ class EnvironmentModel(object):  # all tensors
                           tf.cast(next_ego_infos[:, 4] - ego_lws * tf.sin(next_ego_infos[:, 5] * np.pi / 180.), dtype=tf.float32)
 
         veh2veh4real = tf.zeros_like(veh_infos[:, 0])
-        for veh_index in range(int(tf.shape(veh_infos)[1] / self.per_veh_info_dim)):
-            vehs = veh_infos[:, veh_index * self.per_veh_info_dim:(veh_index + 1) * self.per_veh_info_dim]
+        for veh_index in range(int(tf.shape(veh_infos)[1] / self.per_other_info_dim)):
+            vehs = veh_infos[:, veh_index * self.per_other_info_dim:(veh_index + 1) * self.per_other_info_dim]
             ego2veh_dist = tf.sqrt(tf.square(ego_infos[:, 3] - vehs[:, 0]) + tf.square(ego_infos[:, 4] - vehs[:, 1]))
 
-            next_vehs = next_veh_infos[:, veh_index * self.per_veh_info_dim:(veh_index + 1) * self.per_veh_info_dim]
+            next_vehs = next_veh_infos[:, veh_index * self.per_other_info_dim:(veh_index + 1) * self.per_other_info_dim]
 
             veh_lws = (L - W) / 2.
             veh_front_points = tf.cast(vehs[:, 0] + veh_lws * tf.cos(vehs[:, 3] * np.pi / 180.), dtype=tf.float32), \
@@ -203,11 +191,12 @@ class EnvironmentModel(object):  # all tensors
                                              tf.zeros_like(veh_infos[:, 0]))
         return veh2veh4real
 
-    def compute_rewards(self, obses_ego, obses_bike, obses_person, obses_veh, actions):
-        # obses = self.convert_vehs_to_abso(obses)
-        with tf.name_scope('compute_reward') as scope:
-            ego_infos, tracking_infos = obses_ego[:, :self.ego_info_dim], obses_ego[:, self.ego_info_dim:]
+    def compute_rewards(self, obses, actions):
+        # obses = self._convert_to_abso(obses)
+        obses_ego, obses_track, obses_other = self._split_all(obses)
+        obses_bike, obses_person, obses_veh = self._split_other(obses_other)
 
+        with tf.name_scope('compute_reward') as scope:
             bike_infos = tf.stop_gradient(obses_bike)
             person_infos = tf.stop_gradient(obses_person)
             veh_infos = tf.stop_gradient(obses_veh)
@@ -218,24 +207,24 @@ class EnvironmentModel(object):  # all tensors
             punish_a_x = -tf.square(a_xs)
 
             # rewards related to ego stability
-            punish_yaw_rate = -tf.square(ego_infos[:, 2])
+            punish_yaw_rate = -tf.square(obses_ego[:, 2])
 
             # rewards related to tracking error
-            devi_y = -tf.square(tracking_infos[:, 0])
-            devi_phi = -tf.cast(tf.square(tracking_infos[:, 1] * np.pi / 180.), dtype=tf.float32)
-            devi_v = -tf.square(tracking_infos[:, 2])
+            devi_y = -tf.square(obses_track[:, 0])
+            devi_phi = -tf.cast(tf.square(obses_track[:, 1] * np.pi / 180.), dtype=tf.float32)
+            devi_v = -tf.square(obses_track[:, 2])
 
             # rewards related to veh2veh collision
             ego_lws = (L - W) / 2.
-            ego_front_points = tf.cast(ego_infos[:, 3] + ego_lws * tf.cos(ego_infos[:, 5] * np.pi / 180.), dtype=tf.float32), \
-                               tf.cast(ego_infos[:, 4] + ego_lws * tf.sin(ego_infos[:, 5] * np.pi / 180.), dtype=tf.float32)
-            ego_rear_points = tf.cast(ego_infos[:, 3] - ego_lws * tf.cos(ego_infos[:, 5] * np.pi / 180.), dtype=tf.float32), \
-                              tf.cast(ego_infos[:, 4] - ego_lws * tf.sin(ego_infos[:, 5] * np.pi / 180.), dtype=tf.float32)
+            ego_front_points = tf.cast(obses_ego[:, 3] + ego_lws * tf.cos(obses_ego[:, 5] * np.pi / 180.), dtype=tf.float32), \
+                               tf.cast(obses_ego[:, 4] + ego_lws * tf.sin(obses_ego[:, 5] * np.pi / 180.), dtype=tf.float32)
+            ego_rear_points = tf.cast(obses_ego[:, 3] - ego_lws * tf.cos(obses_ego[:, 5] * np.pi / 180.), dtype=tf.float32), \
+                              tf.cast(obses_ego[:, 4] - ego_lws * tf.sin(obses_ego[:, 5] * np.pi / 180.), dtype=tf.float32)
             veh2veh4real = tf.zeros_like(veh_infos[:, 0])
             veh2veh4training = tf.zeros_like(veh_infos[:, 0])
 
-            for veh_index in range(int(tf.shape(veh_infos)[1] / self.per_veh_info_dim)):
-                vehs = veh_infos[:, veh_index * self.per_veh_info_dim:(veh_index + 1) * self.per_veh_info_dim]
+            for veh_index in range(self.veh_num):
+                vehs = veh_infos[:, veh_index * self.per_other_info_dim:(veh_index + 1) * self.per_other_info_dim]
                 veh_lws = (L - W) / 2.
                 veh_front_points = tf.cast(vehs[:, 0] + veh_lws * tf.cos(vehs[:, 3] * np.pi / 180.), dtype=tf.float32), \
                                    tf.cast(vehs[:, 1] + veh_lws * tf.sin(vehs[:, 3] * np.pi / 180.), dtype=tf.float32)
@@ -249,8 +238,8 @@ class EnvironmentModel(object):  # all tensors
 
             veh2bike4real = tf.zeros_like(veh_infos[:, 0])
             veh2bike4training = tf.zeros_like(veh_infos[:, 0])
-            for bike_index in range(int(tf.shape(bike_infos)[1] / self.per_bike_info_dim)):
-                bikes = bike_infos[:, bike_index * self.per_bike_info_dim:(bike_index + 1) * self.per_bike_info_dim]
+            for bike_index in range(self.bike_num):
+                bikes = bike_infos[:, bike_index * self.per_other_info_dim:(bike_index + 1) * self.per_other_info_dim]
                 bike_lws = (L_BIKE - W_BIKE) / 2.
                 bike_front_points = tf.cast(bikes[:, 0] + bike_lws * tf.cos(bikes[:, 3] * np.pi / 180.), dtype=tf.float32), \
                                    tf.cast(bikes[:, 1] + bike_lws * tf.sin(bikes[:, 3] * np.pi / 180.), dtype=tf.float32)
@@ -264,8 +253,8 @@ class EnvironmentModel(object):  # all tensors
 
             veh2person4real = tf.zeros_like(veh_infos[:, 0])
             veh2person4training = tf.zeros_like(veh_infos[:, 0])
-            for person_index in range(int(tf.shape(person_infos)[1] / self.per_person_info_dim)):
-                persons = person_infos[:, person_index * self.per_person_info_dim:(person_index + 1) * self.per_person_info_dim]
+            for person_index in range(self.person_num):
+                persons = person_infos[:, person_index * self.per_other_info_dim:(person_index + 1) * self.per_other_info_dim]
                 person_point = tf.cast(persons[:, 0], dtype=tf.float32), tf.cast(persons[:, 1], dtype=tf.float32)
                 for ego_point in [ego_front_points, ego_rear_points]:
                     veh2person_dist = tf.sqrt(tf.square(ego_point[0] - person_point[0]) + tf.square(ego_point[1] - person_point[1]))
@@ -368,14 +357,16 @@ class EnvironmentModel(object):  # all tensors
             return rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2bike4real, \
                    veh2person4real, reward_dict
 
-    def compute_next_obses(self, obses_ego, obses_bike, obses_person, obses_veh, actions):
+    def compute_next_obses(self, obses, actions):
         # obses = self.convert_vehs_to_abso(obses)
-        ego_infos, tracking_infos = obses_ego[:, :self.ego_info_dim], obses_ego[:, self.ego_info_dim:]
+        obses_ego, obses_track, obses_other = self._split_all(obses)
+        obses_bike, obses_person, obses_veh = self._split_other(obses_other)
+
         bike_infos = tf.stop_gradient(obses_bike)
         person_infos = tf.stop_gradient(obses_person)
         veh_infos = tf.stop_gradient(obses_veh)
 
-        next_ego_infos = self.ego_predict(ego_infos, actions)
+        next_ego_infos = self.ego_predict(obses_ego, actions)
         # different for training and selecting
         if self.mode != 'training':
             next_tracking_infos = self.ref_path.tracking_error_vector(next_ego_infos[:, 3],
@@ -398,15 +389,12 @@ class EnvironmentModel(object):  # all tensors
                 next_tracking_infos = tf.where(ref_indexes == ref_idx, tracking_info_4_this_ref_idx,
                                                next_tracking_infos)
         next_bike_infos = self.bike_predict(bike_infos)
-        if not person_infos.shape[1]:                                       # no pedestrian is considered
-            next_person_infos = person_infos
-        else:
-            next_person_infos = self.person_predict(person_infos)
+        next_person_infos = self.person_predict(person_infos)
         next_veh_infos = self.veh_predict(veh_infos)
 
-        next_obses_ego = tf.concat([next_ego_infos, next_tracking_infos], 1)
+        next_obses = tf.concat([next_ego_infos, next_tracking_infos, next_bike_infos, next_person_infos, next_veh_infos], 1)
         # next_obses = self.convert_vehs_to_rela(next_obses)
-        return next_obses_ego, next_bike_infos, next_person_infos, next_veh_infos
+        return next_obses
 
     # def convert_vehs_to_rela(self, obs_abso):
     #     ego_infos, tracking_infos, veh_infos = obs_abso[:, :self.ego_info_dim], \
@@ -416,7 +404,7 @@ class EnvironmentModel(object):  # all tensors
     #                                                        self.num_future_data + 1):]
     #     ego_x, ego_y = ego_infos[:, 3], ego_infos[:, 4]
     #     ego = tf.tile(tf.stack([ego_x, ego_y, tf.zeros_like(ego_x), tf.zeros_like(ego_x)], 1),
-    #                   (1, int(tf.shape(veh_infos)[1]/self.per_veh_info_dim)))
+    #                   (1, int(tf.shape(veh_infos)[1]/self.per_other_info_dim)))
     #     vehs_rela = veh_infos - ego
     #     out = tf.concat([ego_infos, tracking_infos, vehs_rela], 1)
     #     return out
@@ -429,7 +417,7 @@ class EnvironmentModel(object):  # all tensors
     #                                                    self.num_future_data + 1):]
     #     ego_x, ego_y = ego_infos[:, 3], ego_infos[:, 4]
     #     ego = tf.tile(tf.stack([ego_x, ego_y, tf.zeros_like(ego_x), tf.zeros_like(ego_x)], 1),
-    #                   (1, int(tf.shape(veh_rela)[1] / self.per_veh_info_dim)))
+    #                   (1, int(tf.shape(veh_rela)[1] / self.per_other_info_dim)))
     #     vehs_abso = veh_rela + ego
     #     out = tf.concat([ego_infos, tracking_infos, vehs_abso], 1)
     #     return out
@@ -444,12 +432,24 @@ class EnvironmentModel(object):  # all tensors
 
     def bike_predict(self, bike_infos):
         bike_mode_list = BIKE_MODE_LIST[self.task]
-        predictions_to_be_concat = []
-        for bikes_index in range(len(bike_mode_list)):
-            predictions_to_be_concat.append(self.predict_for_bike_mode(
-                bike_infos[:, bikes_index * self.per_bike_info_dim:(bikes_index + 1) * self.per_bike_info_dim],
-                bike_mode_list[bikes_index]))
-        pred = tf.stop_gradient(tf.concat(predictions_to_be_concat, 1))
+        pred = []
+        for index in range(len(bike_mode_list)):
+            bikes = bike_infos[:, index * self.per_other_info_dim:(index + 1) * self.per_other_info_dim]
+
+            bike_xs, bike_ys, bike_vs, bike_phis, bike_index = bikes[:, 0], bikes[:, 1], bikes[:, 2], bikes[:, 3], bikes[:, 4]
+            bike_phis_rad = bike_phis * np.pi / 180.
+
+            bike_xs_delta = bike_vs / self.base_frequency * tf.cos(bike_phis_rad)
+            bike_ys_delta = bike_vs / self.base_frequency * tf.sin(bike_phis_rad)
+
+            next_bike_xs, next_bike_ys, next_bike_vs, next_bike_phis_rad = \
+            bike_xs + bike_xs_delta, bike_ys + bike_ys_delta, bike_vs, bike_phis_rad,
+            next_bike_phis_rad = tf.where(next_bike_phis_rad > np.pi, next_bike_phis_rad - 2 * np.pi, next_bike_phis_rad)
+            next_bike_phis_rad = tf.where(next_bike_phis_rad <= -np.pi, next_bike_phis_rad + 2 * np.pi, next_bike_phis_rad)
+            next_bike_phis = next_bike_phis_rad * 180 / np.pi
+            next_bike_index = bike_index
+            pred.append(tf.stack([next_bike_xs, next_bike_ys, next_bike_vs, next_bike_phis, next_bike_index], 1))
+        pred = tf.concat(pred, axis=1)
         return pred
 
     def person_predict(self, person_infos):
@@ -457,7 +457,7 @@ class EnvironmentModel(object):  # all tensors
         pred = []
 
         for persons_index in range(len(person_mode_list)):
-            persons = person_infos[:, persons_index * self.per_person_info_dim:(persons_index + 1) * self.per_person_info_dim]
+            persons = person_infos[:, persons_index * self.per_other_info_dim:(persons_index + 1) * self.per_other_info_dim]
 
             person_xs, person_ys, person_vs, person_phis, person_index = persons[:, 0], persons[:, 1], persons[:, 2], persons[:, 3], persons[:, 4]
             person_phis_rad = person_phis * np.pi / 180.
@@ -482,35 +482,10 @@ class EnvironmentModel(object):  # all tensors
 
         for vehs_index in range(len(veh_mode_list)):
             predictions_to_be_concat.append(self.predict_for_veh_mode(
-                veh_infos[:, vehs_index * self.per_veh_info_dim:(vehs_index + 1) * self.per_veh_info_dim],
+                veh_infos[:, vehs_index * self.per_other_info_dim:(vehs_index + 1) * self.per_other_info_dim],
                 veh_mode_list[vehs_index]))
         pred = tf.stop_gradient(tf.concat(predictions_to_be_concat, 1))
         return pred
-
-    def predict_for_bike_mode(self, bikes, mode):
-        bike_xs, bike_ys, bike_vs, bike_phis, bike_index = bikes[:, 0], bikes[:, 1], bikes[:, 2], bikes[:, 3], bikes[:, 4]
-        bike_phis_rad = bike_phis * np.pi / 180.
-
-        middle_cond = logical_and(logical_and(bike_xs > -CROSSROAD_SIZE/2, bike_xs < CROSSROAD_SIZE/2),
-                                  logical_and(bike_ys > -CROSSROAD_SIZE/2, bike_ys < CROSSROAD_SIZE/2))
-        zeros = tf.zeros_like(bike_xs)
-
-        bike_xs_delta = bike_vs / self.base_frequency * tf.cos(bike_phis_rad)
-        bike_ys_delta = bike_vs / self.base_frequency * tf.sin(bike_phis_rad)
-
-        if mode in ['dl_b', 'rd_b', 'ur_b', 'lu_b']:
-            bike_phis_rad_delta = tf.where(middle_cond, (bike_vs / (CROSSROAD_SIZE/2+3*LANE_WIDTH + BIKE_LANE_WIDTH / 2)) / self.base_frequency, zeros)
-        elif mode in ['dr_b', 'ru_b', 'ul_b', 'ld_b']:
-            bike_phis_rad_delta = tf.where(middle_cond, -(bike_vs / (CROSSROAD_SIZE/2-3.0*LANE_WIDTH - BIKE_LANE_WIDTH / 2)) / self.base_frequency, zeros)  # TODO：ONLY FOR 3LANE
-        else:
-            bike_phis_rad_delta = zeros
-        next_bike_xs, next_bike_ys, next_bike_vs, next_bike_phis_rad = \
-            bike_xs + bike_xs_delta, bike_ys + bike_ys_delta, bike_vs, bike_phis_rad + bike_phis_rad_delta
-        next_bike_phis_rad = tf.where(next_bike_phis_rad > np.pi, next_bike_phis_rad - 2 * np.pi, next_bike_phis_rad)
-        next_bike_phis_rad = tf.where(next_bike_phis_rad <= -np.pi, next_bike_phis_rad + 2 * np.pi, next_bike_phis_rad)
-        next_bike_phis = next_bike_phis_rad * 180 / np.pi
-        next_bike_index = bike_index
-        return tf.stack([next_bike_xs, next_bike_ys, next_bike_vs, next_bike_phis, next_bike_index], 1)
 
     def predict_for_veh_mode(self, vehs, mode):
         veh_xs, veh_ys, veh_vs, veh_phis, veh_index = vehs[:, 0], vehs[:, 1], vehs[:, 2], vehs[:, 3], vehs[:, 4]
@@ -536,6 +511,19 @@ class EnvironmentModel(object):  # all tensors
         next_veh_phis = next_veh_phis_rad * 180 / np.pi
         next_veh_index = veh_index
         return tf.stack([next_veh_xs, next_veh_ys, next_veh_vs, next_veh_phis, next_veh_index], 1)
+
+    def _split_all(self, obses):
+        obses_ego = obses[:, :self.ego_info_dim]
+        obses_track = obses[:, self.ego_info_dim:self.other_start_dim]
+        obses_other = obses[:, self.other_start_dim:]
+        return obses_ego, obses_track, obses_other
+
+    def _split_other(self, obses_other):
+        obses_bike = obses_other[:, :self.bike_num * self.per_other_info_dim]
+        obses_person = obses_other[:, self.bike_num * self.per_other_info_dim:
+                                      (self.bike_num + self.person_num) * self.per_other_info_dim]
+        obses_veh = obses_other[:, (self.bike_num + self.person_num) * self.per_other_info_dim:]
+        return obses_bike, obses_person, obses_veh
 
     def render(self, mode='human'):
         if mode == 'human':
@@ -638,8 +626,8 @@ class EnvironmentModel(object):  # all tensors
                                                 obses[0, self.ego_info_dim + self.per_tracking_info_dim * (
                                                             self.num_future_data + 1):]
             # plot cars
-            for veh_index in range(int(len(vehs_info) / self.per_veh_info_dim)):
-                veh = vehs_info[self.per_veh_info_dim * veh_index:self.per_veh_info_dim * (veh_index + 1)]
+            for veh_index in range(int(len(vehs_info) / self.per_other_info_dim)):
+                veh = vehs_info[self.per_other_info_dim * veh_index:self.per_other_info_dim * (veh_index + 1)]
                 veh_x, veh_y, veh_v, veh_phi = veh
 
                 if is_in_plot_area(veh_x, veh_y):

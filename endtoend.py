@@ -79,6 +79,8 @@ class CrossroadEnd2endMixPiFix(gym.Env):
         self.veh_num = VEH_NUM[self.training_task]
         self.bike_num = BIKE_NUM[self.training_task]
         self.person_num = PERSON_NUM[self.training_task]
+        self.other_num = self.veh_num + self.bike_num + self.person_num
+        self.per_other_dim = 5
 
         self.done_type = 'not_done_yet'
         self.reward_info = None
@@ -297,7 +299,6 @@ class CrossroadEnd2endMixPiFix(gym.Env):
                                                              np.array([ego_phi], dtype=np.float32),
                                                              np.array([ego_v_x], dtype=np.float32),
                                                              self.num_future_data).numpy()[0]
-        self.per_tracking_info_dim = 3
 
         vector = np.concatenate((ego_vector, tracking_error, vehs_vector), axis=0)
         # vector = self.convert_vehs_to_rela(vector)
@@ -624,18 +625,7 @@ class CrossroadEnd2endMixPiFix(gym.Env):
 
     def compute_reward(self, obs, action):
         obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
-
-        # extract infos for each kind of participants
-        start = 0; end = start + self.ego_info_dim + self.per_tracking_info_dim * (self.num_future_data + 1)
-        obses_ego = obses[:, start:end]
-        start = end; end = start + self.per_bike_info_dim * self.bike_num
-        obses_bike = obses[:, start:end]
-        start = end; end = start + self.per_person_info_dim * self.person_num
-        obses_person = obses[:, start:end]
-        start = end; end = start + self.per_veh_info_dim * self.veh_num
-        obses_veh = obses[:, start:end]
-
-        reward, _, _, _, _, _, _, reward_dict = self.env_model.compute_rewards(obses_ego, obses_bike, obses_person, obses_veh, actions)
+        reward, _, _, _, _, _, _, reward_dict = self.env_model.compute_rewards(obses, actions)
         for k, v in reward_dict.items():
             reward_dict[k] = v.numpy()[0]
         return reward.numpy()[0], reward_dict
@@ -1071,28 +1061,13 @@ def test_end2end():
                 action = np.array([0.2, 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
             obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
-            # extract infos for each kind of participants
-            start = 0; end = start + env.ego_info_dim + env.per_tracking_info_dim * (env.num_future_data + 1)
-            obses_ego = obses[:, start:end]
-            start = end; end = start + env.per_bike_info_dim * env.bike_num
-            obses_bike = obses[:, start:end]
-            start = end; end = start + env.per_person_info_dim * env.person_num
-            obses_person = obses[:, start:end]
-            start = end; end = start + env.per_veh_info_dim * env.veh_num
-            obses_veh = obses[:, start:end]
 
-            obses_bike = np.reshape(obses_bike, [-1, env.per_bike_info_dim])
-            obses_person = np.reshape(obses_person, [-1, env.per_person_info_dim])
-            obses_veh = np.reshape(obses_veh, [-1, env.per_veh_info_dim])
-
-            env_model.reset(np.tile(obses_ego, (2, 1)), np.tile(obses_bike, (2, 1)), np.tile(obses_person, (2, 1)),
-                            np.tile(obses_veh, (2, 1)), [env.ref_path.ref_index, random.randint(0, 2)])
+            env_model.reset(np.tile(obses, (2, 1)), [env.ref_path.ref_index, random.randint(0, 2)])
             env_model.mode = 'training'
             for _ in range(10):
-                obses_ego, obses_bike, obses_person, obses_veh, rewards, punish_term_for_training, \
+                obses, rewards, punish_term_for_training, \
                     real_punish_term, veh2veh4real, veh2road4real, veh2bike4real, veh2person4real = env_model.rollout_out(np.tile(actions, (2, 1)))
-            print(obses_ego.shape, obses_bike.shape, obses_person.shape, obses_veh.shape)
-            print(obses_bike[:, -1].numpy(), obses_person[:, -1].numpy(), obses_veh[:, -1].numpy())
+                print(obses.shape)
             env.render()
             if done:
                 break
