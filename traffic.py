@@ -116,8 +116,8 @@ class Traffic(object):
                                                 # traci.constants.VAR_ROUTE_INDEX
                                                 ],begin=0.0, end=2147483647.0)
 
-        while traci.simulation.getTime() < 100:          # turn right
-            if traci.simulation.getTime() < 80:
+        while traci.simulation.getTime() < 250:          # turn right
+            if traci.simulation.getTime() < 245:
                 traci.trafficlight.setPhase('0', 2)
             else:
                 traci.trafficlight.setPhase('0', 0)
@@ -128,81 +128,6 @@ class Traffic(object):
 
     def __del__(self):
         traci.close()
-
-    def reset(self):
-        traci.close()
-        if self.training_task == 'right':
-            if random.random() > 0.5:
-                self.training_light_phase = 2
-        try:
-            traci.start(
-                [SUMO_BINARY, "-c", SUMOCFG_DIR,
-                 "--step-length", self.step_time_str,
-                 # "--lateral-resolution", "3.5",
-                 "--random",
-                 # "--start",
-                 # "--quit-on-end",
-                 "--no-warnings",
-                 "--no-step-log",
-                 # '--seed', str(int(seed))
-                 ], numRetries=5)  # '--seed', str(int(seed))
-        except FatalTraCIError:
-            print('Retry by other port')
-            port = sumolib.miscutils.getFreeSocketPort()
-            traci.start(
-                [SUMO_BINARY, "-c", SUMOCFG_DIR,
-                 "--step-length", self.step_time_str,
-                 "--lateral-resolution", "3.5",
-                 "--random",
-                 # "--start",
-                 # "--quit-on-end",
-                 "--no-warnings",
-                 "--no-step-log",
-                 # '--seed', str(int(seed))
-                 ], port=port, numRetries=5)  # '--seed', str(int(seed))
-
-        traci.junction.subscribeContext(objectID='a3', domain=traci.constants.CMD_GET_VEHICLE_VARIABLE, dist=10000.0,
-                                        varIDs=[traci.constants.VAR_POSITION,
-                                                traci.constants.VAR_LENGTH,
-                                                traci.constants.VAR_WIDTH,
-                                                traci.constants.VAR_ANGLE,
-                                                traci.constants.VAR_SIGNALS,
-                                                traci.constants.VAR_SPEED,
-                                                traci.constants.VAR_TYPE,
-                                                # traci.constants.VAR_EMERGENCY_DECEL,
-                                                # traci.constants.VAR_LANE_INDEX,
-                                                # traci.constants.VAR_LANEPOSITION,
-                                                # traci.constants.VAR_EDGES,
-                                                # traci.constants.VAR_ROAD_ID,
-                                                traci.constants.VAR_EDGES,
-                                                # traci.constants.VAR_NEXT_EDGE,
-                                                # traci.constants.VAR_ROUTE_INDEX
-                                                ], begin=0.0, end=2147483647.0)
-
-        traci.junction.subscribeContext(objectID='a4', domain=traci.constants.CMD_GET_PERSON_VARIABLE,dist=10000.0, varIDs=[traci.constants.VAR_POSITION,
-                                                traci.constants.VAR_LENGTH,
-                                                traci.constants.VAR_WIDTH,
-                                                traci.constants.VAR_ANGLE,
-                                                # traci.constants.VAR_SIGNALS,
-                                                traci.constants.VAR_SPEED,
-                                                traci.constants.VAR_TYPE,
-                                                # traci.constants.VAR_EMERGENCY_DECEL,
-                                                # traci.constants.VAR_LANE_INDEX,
-                                                # traci.constants.VAR_LANEPOSITION,
-                                                # traci.constants.VAR_EDGES,
-                                                traci.constants.VAR_ROAD_ID,
-                                                # traci.constants.VAR_NEXT_EDGE,
-                                                # traci.constants.VAR_ROUTE_ID,
-                                                # traci.constants.VAR_ROUTE_INDEX
-                                                ],begin=0.0, end=2147483647.0)
-
-        while traci.simulation.getTime() < 100:          # turn right
-            if traci.simulation.getTime() < 80:
-                traci.trafficlight.setPhase('0', 2)
-            else:
-                traci.trafficlight.setPhase('0', 0)
-
-            traci.simulationStep()
 
     def add_self_car(self, n_ego_dict, with_delete=True):
         for egoID, ego_dict in n_ego_dict.items():
@@ -241,8 +166,6 @@ class Traffic(object):
         return random_traffic
 
     def init_traffic(self, init_n_ego_dict):
-        if random.random() > 0.7:
-            self.reset()
         self.sim_time = 0
         self.n_ego_vehicles = defaultdict(list)
         self.collision_flag = False
