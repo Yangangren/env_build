@@ -98,7 +98,7 @@ class CrossroadEnd2endAdv(gym.Env):
 
     def reset(self, **kwargs):  # kwargs include three keys
         self.ref_path = ReferencePath(self.training_task, **kwargs)
-        self.init_state = self._reset_init_state()
+        self.init_state = self._reset_init_state(**kwargs)
         self.traffic.init_traffic(self.init_state)
         self.traffic.sim_step()
         ego_dynamics = self._get_ego_dynamics([self.init_state['ego']['v_x'],
@@ -469,13 +469,16 @@ class CrossroadEnd2endAdv(gym.Env):
         orig_x, orig_y = shift_coordination(transformed_x, transformed_y, -x, -y)
         return orig_x, orig_y
 
-    def _reset_init_state(self):
-        if self.training_task == 'left':
-            random_index = int(np.random.random()*(900+500)) + 700
-        elif self.training_task == 'straight':
-            random_index = int(np.random.random()*(1200+500)) + 700
+    def _reset_init_state(self, **kwargs):
+        if kwargs and kwargs['mode']=='evaluating':
+            random_index = 900
         else:
-            random_index = int(np.random.random()*(420+500)) + 700
+            if self.training_task == 'left':
+                random_index = int(np.random.random()*(900+500)) + 700
+            elif self.training_task == 'straight':
+                random_index = int(np.random.random()*(1200+500)) + 700
+            else:
+                random_index = int(np.random.random()*(420+500)) + 700
 
         x, y, phi = self.ref_path.indexs2points(random_index)
         # v = 7 + 6 * np.random.random()

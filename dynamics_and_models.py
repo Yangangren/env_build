@@ -105,6 +105,7 @@ class EnvironmentModel(object):  # all tensors
         self.ego_info_dim = 6
         self.per_veh_info_dim = 4
         self.per_tracking_info_dim = 3
+        self.veh_num = VEH_NUM[self.training_task]
 
     def reset(self, obses, ref_indexes=None):  # input are all tensors
         self.obses = obses
@@ -132,11 +133,11 @@ class EnvironmentModel(object):  # all tensors
         steer_norm, a_xs_norm = actions[:, 0], actions[:, 1]
         steer_scale, a_xs_scale = 0.4 * steer_norm, 2.25 * a_xs_norm-0.75
 
-        adv_actions = tf.clip_by_value(adv_actions, -1.0, 1.0)
+        adv_actions = tf.clip_by_value(adv_actions, -1.05, 1.05)
         delta_xs, delta_ys, delta_vs, delta_phis = adv_actions[:, 0], adv_actions[:, 1], adv_actions[:, 2], adv_actions[:, 3]
         # todo: bound needs to be verified by real data
         # todo: heading angle is radian
-        delta_xs_scale, delta_ys_scale, delta_vs_scale, delta_phis_scale = 0.4 * delta_xs, 0.4 * delta_ys, 0.0 * delta_vs, 0.087 * delta_phis
+        delta_xs_scale, delta_ys_scale, delta_vs_scale, delta_phis_scale = 0.2 * delta_xs, 0.2 * delta_ys, 0.0 * delta_vs, 0.0 * delta_phis
         return tf.stack([steer_scale, a_xs_scale], 1), tf.stack([delta_xs_scale, delta_ys_scale, delta_vs_scale, delta_phis_scale], 1)
 
     def ss(self, obses, actions, lam=0.1):
@@ -323,6 +324,8 @@ class EnvironmentModel(object):  # all tensors
                                veh2road4training=veh2road4training,
                                veh2veh4real=veh2veh4real,
                                veh2road4real=veh2road4real,
+                               punish_term_for_training=punish_term_for_training,
+                               real_punish_term=real_punish_term,
                                )
 
             return rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, reward_dict
@@ -591,7 +594,7 @@ def deal_with_phi_diff(phi_diff):
 
 
 class ReferencePath(object):
-    def __init__(self, task, ref_index=None):
+    def __init__(self, task, ref_index=None, **kwargs):
         self.exp_v = EXPECTED_V
         self.task = task
         self.path_list = []
