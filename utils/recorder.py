@@ -112,30 +112,36 @@ class Recorder(object):
         i = 0
 
         f = plt.figure(0, figsize=(8, 1.6))
-        ax1 = f.add_axes([0.12, 0.35, 0.8, 0.6])
+        ax1 = f.add_axes([0.10, 0.35, 0.8, 0.6])
         df = pd.DataFrame(dict(time=real_time, steer=data_dict['steer'], a_x=data_dict['a_x'],))
         df['steer'] = df['steer'].rolling(WINDOWSIZE, min_periods=1).mean()
-        df['a_x'] = df['a_x'].rolling(1, min_periods=1).mean()
+        df['a_x'] = df['a_x'].rolling(6, min_periods=1).mean()
 
-        l1 = plt.plot(real_time, df['steer'], linewidth='1.5', color='r')
-        l2 = plt.plot(real_time, df['a_x'], linewidth='1.5', color='k', ls='--')
-        plt.legend(labels=['steer', 'acceleration'], bbox_to_anchor=(0.10, 0.98),
+        l1 = plt.plot(real_time, df['a_x'], linewidth='1.5', color='r')
+        l2 = plt.plot(real_time, df['steer'], linewidth='1.5', color='k', ls='--')
+        plt.legend(labels=['acceleration', 'steer'], bbox_to_anchor=(0.10, 0.98),
                    loc='upper left', ncol=2, frameon=False)
         plt.yticks(fontsize=12)
         plt.xticks(fontsize=12)
         plt.xlabel("Time [s]", fontsize=12)
-        plt.ylabel('$\delta$[$\circ$]',  fontsize=12)
-        ax1.yaxis.set_label_coords(-0.11, 0.4)
-        ax2 = ax1.twinx()
-        ax2.set_yticks([-10, 0, 10])
-        ax2.set_yticklabels(('-4', '0', '4'), fontsize=12)
         plt.ylabel('a[$\mathrm {m/s^2}$]', fontsize=12)
-        ax2.yaxis.set_label_coords(1.05, 0.35)
-        # ax2.set_ylim([-3, 3])
+        # ax1.yaxis.set_label_coords(-0.11, 0.4)
+        ax1.set_yticks([-3, 2.0])
+        # ax1.set_yticklabels(('0', '90', '180'), fontsize=12)
+        # ax1.set_yticks([-3, 0, 3])
+        # ax1.set_yticklabels(('-4', '0', '4'), fontsize=12)
+        # ax1.set_ylim([-3, 3])
+        ax1.set_yticklabels(('-3','2.0'), fontsize=12)
+        ax2 = ax1.twinx()
+        # ax2.set_yticks([-15, 0, 15])
+        # ax2.set_yticklabels(('-4', '0', '4'), fontsize=12)
+        plt.ylabel('$\delta$[$\circ$]',  fontsize=12)
+        ax2.yaxis.set_label_coords(1.08, 0.35)
+        ax2.set_ylim([-15, 15])
         plt.savefig(save_dir + '/{}.pdf'.format('demo-steer-acc'))
 
         f = plt.figure(1, figsize=(8, 1.6))
-        ax1 = f.add_axes([0.12, 0.35, 0.8, 0.6])
+        ax1 = f.add_axes([0.10, 0.35, 0.8, 0.6])
         df = pd.DataFrame(dict(time=real_time, v_x=data_dict['v_x'], phi=data_dict['phi'],))
         df['v_x'] = df['v_x'].rolling(1, min_periods=1).mean()
         df['phi'] = df['phi'].rolling(1, min_periods=1).mean()
@@ -148,15 +154,41 @@ class Recorder(object):
         plt.xticks(fontsize=12)
         plt.xlabel("Time [s]", fontsize=12)
         plt.ylabel(r"$v_x$ $\mathrm{[m/s]}$",  fontsize=12)
-        ax1.yaxis.set_label_coords(-0.11, 0.4)
+        # ax1.yaxis.set_label_coords(-0.11, 0.4)
         ax1.set_ylim([0, 8])
         ax2 = ax1.twinx()
         ax2.set_yticks([0, 1.57, 3.14])
         ax2.set_yticklabels(('0', '90', '180'), fontsize=12)
         plt.ylabel('r[$\circ$]', fontsize=12)
-        ax2.yaxis.set_label_coords(1.065, 0.45)
+        ax2.yaxis.set_label_coords(1.08, 0.45)
         ax2.set_ylim(ax1.get_ylim())
         plt.savefig(save_dir + '/{}.pdf'.format('demo-speed-heading'))
+
+        from matplotlib.colors import ListedColormap
+        cmap = ListedColormap(['blue', 'coral', 'darkcyan'])
+        palette = sns.xkcd_palette(['blue', 'coral', 'cyan'])
+        f = plt.figure(2, figsize=(8, 1.6))
+        ax = f.add_axes([0.10, 0.35, 0.8, 0.6])
+        path_values = data_dict['path_values']
+        df1 = pd.DataFrame(dict(time=real_time, data=path_values[:, 0], path_index='Path 1'))
+        df1['data'] = df1['data'].rolling(5, min_periods=1).mean()
+        df2 = pd.DataFrame(dict(time=real_time, data=path_values[:, 1], path_index='Path 2'))
+        df2['data'] = df2['data'].rolling(5, min_periods=1).mean()
+        df3 = pd.DataFrame(dict(time=real_time, data=path_values[:, 2], path_index='Path 3'))
+        df3['data'] = df3['data'].rolling(5, min_periods=1).mean()
+        total_dataframe = df1.append([df2, df3], ignore_index=True)
+        sns.lineplot('time', 'data', linewidth=1.5, hue='path_index',
+                     data=total_dataframe, palette=palette, color='indigo')
+        handles, labels = ax.get_legend_handles_labels()
+        ax.legend(handles=handles, labels=labels, loc='upper left', frameon=False, fontsize=10)
+        # ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+        plt.yticks(fontsize=12)
+        plt.xticks(fontsize=12)
+        plt.xlabel("Time [s]", fontsize=12)
+        plt.ylabel("Value",  fontsize=12)
+        # ax1.yaxis.set_label_coords(-0.11, 0.4)
+        # ax1.set_ylim([0, 8])
+        plt.savefig(save_dir + '/{}.pdf'.format('demo-path_values'))
         plt.show()
 
         for key in data_dict.keys():
@@ -254,46 +286,46 @@ class Recorder(object):
         if isshow:
             plt.show()
 
-        # # for paper plot
-        # self.data_across_all_episodes_fp = np.load('./results/2021-09-21-15-09-43/data_across_all_episodes.npy', allow_pickle=True)
-        # self.data_across_all_episodes_dp = np.load('./results/2021-09-21-16-43-51/data_across_all_episodes.npy', allow_pickle=True)
-        #
-        # acc_dp, steer_dp = [], []
-        # for episode2plot in self.data_across_all_episodes_dp[:]:
-        #     real_time = np.array([0.1 * i for i in range(len(episode2plot))])
-        #     all_data = [np.array([vals_in_a_timestep[index] for vals_in_a_timestep in episode2plot])
-        #                 for index in range(len(self.val2record))]
-        #     data_dict = dict(zip(self.val2record, all_data))
-        #     acc_dp.extend([data_dict['a_x'][i+1] - data_dict['a_x'][i] for i in range(len(data_dict['a_x'])-1)])
-        #     steer_dp.extend([data_dict['steer'][i+1] - data_dict['steer'][i] for i in range(len(data_dict['steer'])-1)])
-        #
-        # df_dp = pd.DataFrame({'algorithms': 'RL w. DP',
-        #                    'steer': steer_dp,
-        #                    'acc': acc_dp,
-        #                        })
-        #
-        # acc_fp, steer_fp = [], []
-        # for episode2plot in self.data_across_all_episodes_fp[:]:
-        #     real_time = np.array([0.1 * i for i in range(len(episode2plot))])
-        #     all_data = [np.array([vals_in_a_timestep[index] for vals_in_a_timestep in episode2plot])
-        #                 for index in range(len(self.val2record))]
-        #     data_dict = dict(zip(self.val2record, all_data))
-        #     acc_fp.extend([data_dict['a_x'][i+1] - data_dict['a_x'][i] for i in range(len(data_dict['a_x'])-1)])
-        #     steer_fp.extend([data_dict['steer'][i+1] - data_dict['steer'][i] for i in range(len(data_dict['steer'])-1)])
-        #
-        # df_fp = pd.DataFrame({'algorithms': 'RL w. FP',
-        #                    'steer': steer_fp,
-        #                    'acc': acc_fp,
-        #                        })
-        # df = df_dp.append(df_fp, ignore_index=True)
-        # f = plt.figure(22, figsize=(6, 5))
-        # ax = f.add_axes([0.12, 0.15, 0.88, 0.85])
-        # sns.jointplot(x="acc", y="steer", data=df, hue="algorithms", kind="hist")
-        # handles, labels = ax.get_legend_handles_labels()
-        # ax.legend(handles=handles[1:], labels=labels[1:], loc='upper right', frameon=False, fontsize=25)
-        # plt.ylim([-5, 5])
-        # plt.xlim([-2, 2])
-        # plt.show()
+        # for paper plot
+        self.data_across_all_episodes_fp = np.load('./results/2021-09-21-15-09-43/data_across_all_episodes.npy', allow_pickle=True)
+        self.data_across_all_episodes_dp = np.load('./results/2021-09-21-16-43-51/data_across_all_episodes.npy', allow_pickle=True)
+
+        acc_dp, steer_dp = [], []
+        for episode2plot in self.data_across_all_episodes_dp[:]:
+            real_time = np.array([0.1 * i for i in range(len(episode2plot))])
+            all_data = [np.array([vals_in_a_timestep[index] for vals_in_a_timestep in episode2plot])
+                        for index in range(len(self.val2record))]
+            data_dict = dict(zip(self.val2record, all_data))
+            acc_dp.extend([data_dict['a_x'][i+1] - data_dict['a_x'][i] for i in range(len(data_dict['a_x'])-1)])
+            steer_dp.extend([data_dict['steer'][i+1] - data_dict['steer'][i] for i in range(len(data_dict['steer'])-1)])
+
+        df_dp = pd.DataFrame({'algorithms': 'RL w. DP',
+                           'steer': steer_dp,
+                           'acc': acc_dp,
+                               })
+
+        acc_fp, steer_fp = [], []
+        for episode2plot in self.data_across_all_episodes_fp[:]:
+            real_time = np.array([0.1 * i for i in range(len(episode2plot))])
+            all_data = [np.array([vals_in_a_timestep[index] for vals_in_a_timestep in episode2plot])
+                        for index in range(len(self.val2record))]
+            data_dict = dict(zip(self.val2record, all_data))
+            acc_fp.extend([data_dict['a_x'][i+1] - data_dict['a_x'][i] for i in range(len(data_dict['a_x'])-1)])
+            steer_fp.extend([data_dict['steer'][i+1] - data_dict['steer'][i] for i in range(len(data_dict['steer'])-1)])
+
+        df_fp = pd.DataFrame({'algorithms': 'RL w. FP',
+                           'steer': steer_fp,
+                           'acc': acc_fp,
+                               })
+        df = df_dp.append(df_fp, ignore_index=True)
+        f = plt.figure(22, figsize=(6, 5))
+        ax = f.add_axes([0.12, 0.15, 0.88, 0.85])
+        sns.jointplot(x="acc", y="steer", data=df, hue="algorithms", kind="hist")
+        handles, labels = ax.get_legend_handles_labels()
+        ax.legend(handles=handles[1:], labels=labels[1:], loc='upper right', frameon=False, fontsize=25)
+        plt.ylim([-5, 5])
+        plt.xlim([-2, 2])
+        plt.show()
 
     def plot_mpc_rl(self, i, save_dir, isshow=True, sample=False):
         episode2plot = self.comp_data_for_all_episodes[i] if i is not None else self.comp_list_for_an_episode
