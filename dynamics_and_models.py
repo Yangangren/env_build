@@ -16,8 +16,7 @@ import tensorflow as tf
 from tensorflow import logical_and
 
 # gym.envs.user_defined.toyota_env.
-from endtoend_env_utils import rotate_coordination, L, W, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, \
-    VEHICLE_MODE_LIST, EXPECTED_V
+from endtoend_env_utils import rotate_coordination, L, W, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, EXPECTED_V, VEH_NUM
 
 tf.config.threading.set_inter_op_parallelism_threads(1)
 tf.config.threading.set_intra_op_parallelism_threads(1)
@@ -103,9 +102,10 @@ class EnvironmentModel(object):  # all tensors
         self.exp_v = EXPECTED_V
         self.reward_info = None
         self.ego_info_dim = 6
-        self.per_veh_info_dim = 4
+        self.per_veh_info_dim = 5
         self.per_tracking_info_dim = 3
-        self.veh_num = VEH_NUM[self.training_task]
+        self.adv_action_dim = 4
+        self.veh_num = VEH_NUM[self.task]
 
     def reset(self, obses, ref_indexes=None):  # input are all tensors
         self.obses = obses
@@ -134,11 +134,11 @@ class EnvironmentModel(object):  # all tensors
         steer_scale, a_xs_scale = 0.4 * steer_norm, 2.25 * a_xs_norm-0.75
 
         adv_actions = tf.clip_by_value(adv_actions, -1.05, 1.05)
-        delta_xs, delta_ys, delta_vs, delta_phis = adv_actions[:, 0], adv_actions[:, 1], adv_actions[:, 2], adv_actions[:, 3]
         # todo: bound needs to be verified by real data
         # todo: heading angle is radian
-        delta_xs_scale, delta_ys_scale, delta_vs_scale, delta_phis_scale = 0.2 * delta_xs, 0.2 * delta_ys, 0.0 * delta_vs, 0.0 * delta_phis
-        return tf.stack([steer_scale, a_xs_scale], 1), tf.stack([delta_xs_scale, delta_ys_scale, delta_vs_scale, delta_phis_scale], 1)
+        adv_action_bound = tf.tile([[0.2, 0.2, 0., 0.]], [self.adv_actions.shape[0], self.veh_num])
+        adv_actions_scale = adv_actions * adv_action_bound
+        return tf.stack([steer_scale, a_xs_scale], 1), adv_actions_scale
 
     def ss(self, obses, actions, lam=0.1):
         actions = self._action_transformation_for_end2end(actions)
@@ -363,7 +363,7 @@ class EnvironmentModel(object):  # all tensors
                 next_tracking_infos = tf.where(ref_indexes == ref_idx, tracking_info_4_this_ref_idx,
                                                next_tracking_infos)
 
-        next_veh_infos = self.veh_predict(veh_infos, adv_actions)
+        next_veh_infos = self._other_predict(veh_infos, adv_actions)
         next_obses = tf.concat([next_ego_infos, next_tracking_infos, next_veh_infos], 1)
         # next_obses = self.convert_vehs_to_rela(next_obses)
         return next_obses
@@ -402,42 +402,33 @@ class EnvironmentModel(object):  # all tensors
         ego_next_infos = tf.stack([v_xs, v_ys, rs, xs, ys, phis], axis=1)
         return ego_next_infos
 
-    def veh_predict(self, veh_infos, adv_actions):
-        veh_mode_list = VEHICLE_MODE_LIST[self.task]
-        predictions_to_be_concat = []
+    def _other_predict(self, obses_other, adv_noises):
+        obses_other_reshape = tf.reshape(obses_other, (-1, self.veh_number, self.per_veh_info_dim))
+        adv_noises_reshape = tf.reshape(adv_noises, (-1, self.veh_number, self.adv_action_dim))
 
-        for vehs_index in range(len(veh_mode_list)):
-            predictions_to_be_concat.append(self.predict_for_a_mode(
-                veh_infos[:, vehs_index * self.per_veh_info_dim:(vehs_index + 1) * self.per_veh_info_dim],
-                veh_mode_list[vehs_index], adv_actions))
-        # pred = tf.stop_gradient(tf.concat(predictions_to_be_concat, 1))  # todo
-        pred = tf.concat(predictions_to_be_concat, 1)
-        return pred
+        xs, ys, vs, phis, turn_rad = obses_other_reshape[:, :, 0], obses_other_reshape[:, :, 1], \
+                                     obses_other_reshape[:, :, 2], obses_other_reshape[:, :, 3], \
+                                     obses_other_reshape[:, :, -1]
+        phis_rad = phis * np.pi / 180.
 
-    def predict_for_a_mode(self, vehs, mode, adv_actions):
-        veh_xs, veh_ys, veh_vs, veh_phis = vehs[:, 0], vehs[:, 1], vehs[:, 2], vehs[:, 3]
-        veh_xs_noise, veh_ys_noise, veh_vs_noise, veh_phis_noise_rad = adv_actions[:, 0], adv_actions[:, 1], adv_actions[:, 2], adv_actions[:, 3]
-        veh_phis_rad = veh_phis * np.pi / 180.
+        xs_noise, ys_noise, vs_noise, phis_noise_rad = adv_noises_reshape[:, :, 0], adv_noises_reshape[:, :, 1], adv_noises_reshape[:, :, 2], adv_noises_reshape[:, :, 3]
+        middle_cond = logical_and(logical_and(xs > -CROSSROAD_SIZE/2, xs < CROSSROAD_SIZE/2),
+                                  logical_and(ys > -CROSSROAD_SIZE/2, ys < CROSSROAD_SIZE/2))
+        zeros = tf.zeros_like(xs)
 
-        middle_cond = logical_and(logical_and(veh_xs > -CROSSROAD_SIZE/2, veh_xs < CROSSROAD_SIZE/2),
-                                  logical_and(veh_ys > -CROSSROAD_SIZE/2, veh_ys < CROSSROAD_SIZE/2))
-        zeros = tf.zeros_like(veh_xs)
+        xs_delta = vs / self.base_frequency * tf.cos(phis_rad)
+        ys_delta = vs / self.base_frequency * tf.sin(phis_rad)
+        phis_rad_delta = tf.where(middle_cond, vs / self.base_frequency * turn_rad, zeros)
 
-        veh_xs_delta = veh_vs / self.base_frequency * tf.cos(veh_phis_rad)
-        veh_ys_delta = veh_vs / self.base_frequency * tf.sin(veh_phis_rad)
-
-        if mode in ['dl', 'rd', 'ur', 'lu']:
-            veh_phis_rad_delta = tf.where(middle_cond, (veh_vs / (CROSSROAD_SIZE/2+0.5*LANE_WIDTH)) / self.base_frequency, zeros)
-        elif mode in ['dr', 'ru', 'ul', 'ld']:
-            veh_phis_rad_delta = tf.where(middle_cond, -(veh_vs / (CROSSROAD_SIZE/2-2.5*LANE_WIDTH)) / self.base_frequency, zeros)
-        else:
-            veh_phis_rad_delta = zeros
-        next_veh_xs, next_veh_ys, next_veh_vs, next_veh_phis_rad = \
-            veh_xs + veh_xs_delta + veh_xs_noise, veh_ys + veh_ys_delta + veh_ys_noise, veh_vs + veh_vs_noise, veh_phis_rad + veh_phis_rad_delta + veh_phis_noise_rad
-        next_veh_phis_rad = tf.where(next_veh_phis_rad > np.pi, next_veh_phis_rad - 2 * np.pi, next_veh_phis_rad)
-        next_veh_phis_rad = tf.where(next_veh_phis_rad <= -np.pi, next_veh_phis_rad + 2 * np.pi, next_veh_phis_rad)
-        next_veh_phis = next_veh_phis_rad * 180 / np.pi
-        return tf.stack([next_veh_xs, next_veh_ys, next_veh_vs, next_veh_phis], 1)
+        next_xs, next_ys, next_vs, next_phis_rad = xs + xs_delta + xs_noise, ys + ys_delta + ys_noise, \
+                                                   vs + vs_noise, phis_rad + phis_rad_delta + phis_noise_rad
+        next_phis_rad = tf.where(next_phis_rad > np.pi, next_phis_rad - 2 * np.pi, next_phis_rad)
+        next_phis_rad = tf.where(next_phis_rad <= -np.pi, next_phis_rad + 2 * np.pi, next_phis_rad)
+        next_phis = next_phis_rad * 180 / np.pi
+        next_info = tf.concat([tf.stack([next_xs, next_ys, next_vs, next_phis], -1), obses_other_reshape[:, :, 4:]],
+                              axis=-1)
+        next_obses_other = tf.reshape(next_info, (-1, self.veh_number * self.per_veh_info_dim))
+        return next_obses_other
 
     def render(self, mode='human'):
         if mode == 'human':

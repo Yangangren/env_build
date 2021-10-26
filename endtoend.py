@@ -61,6 +61,10 @@ class CrossroadEnd2endAdv(gym.Env):
         self.action_number = 2
         self.exp_v = EXPECTED_V
         self.ego_l, self.ego_w = L, W
+        self.ego_info_dim = 6
+        self.per_tracking_info_dim = 3
+        self.per_veh_info_dim = 5
+        self.adv_action_dim = 4
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(self.action_number,), dtype=np.float32)
 
         self.seed()
@@ -295,7 +299,6 @@ class CrossroadEnd2endAdv(gym.Env):
                                                              np.array([ego_phi], dtype=np.float32),
                                                              np.array([ego_v_x], dtype=np.float32),
                                                              self.num_future_data).numpy()[0]
-        self.per_tracking_info_dim = 3
 
         vector = np.concatenate((ego_vector, tracking_error, vehs_vector), axis=0)
         # vector = self.convert_vehs_to_rela(vector)
@@ -334,7 +337,6 @@ class CrossroadEnd2endAdv(gym.Env):
         ego_y = self.ego_dynamics['y']
         ego_phi = self.ego_dynamics['phi']
         ego_feature = [ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi]
-        self.ego_info_dim = 6
         return np.array(ego_feature, dtype=np.float32)
 
     def _construct_veh_vector_short(self, exit_='D'):
@@ -353,35 +355,48 @@ class CrossroadEnd2endAdv(gym.Env):
         def filter_interested_vehicles(vs, task):
             dl, du, dr, rd, rl, ru, ur, ud, ul, lu, lr, ld = [], [], [], [], [], [], [], [], [], [], [], []
             for v in vs:
+                v.update(exist=True)
                 route_list = v['route']
                 start = route_list[0]
                 end = route_list[1]
                 if start == name_setting['do'] and end == name_setting['li']:
+                    v.update(turn_rad=1 / (CROSSROAD_SIZE / 2 + 0.5 * LANE_WIDTH))
                     dl.append(v)
                 elif start == name_setting['do'] and end == name_setting['ui']:
+                    v.update(turn_rad=0.)
                     du.append(v)
                 elif start == name_setting['do'] and end == name_setting['ri']:
+                    v.update(turn_rad=-1 / (CROSSROAD_SIZE / 2 - 2.5 * LANE_WIDTH))
                     dr.append(v)
 
                 elif start == name_setting['ro'] and end == name_setting['di']:
+                    v.update(turn_rad=1 / (CROSSROAD_SIZE / 2 + 0.5 * LANE_WIDTH))
                     rd.append(v)
                 elif start == name_setting['ro'] and end == name_setting['li']:
+                    v.update(turn_rad=0.)
                     rl.append(v)
                 elif start == name_setting['ro'] and end == name_setting['ui']:
+                    v.update(turn_rad=-1 / (CROSSROAD_SIZE / 2 - 2.5 * LANE_WIDTH))
                     ru.append(v)
 
                 elif start == name_setting['uo'] and end == name_setting['ri']:
+                    v.update(turn_rad=1 / (CROSSROAD_SIZE / 2 + 0.5 * LANE_WIDTH))
                     ur.append(v)
                 elif start == name_setting['uo'] and end == name_setting['di']:
+                    v.update(turn_rad=0.)
                     ud.append(v)
                 elif start == name_setting['uo'] and end == name_setting['li']:
+                    v.update(turn_rad=-1 / (CROSSROAD_SIZE / 2 - 2.5 * LANE_WIDTH))
                     ul.append(v)
 
                 elif start == name_setting['lo'] and end == name_setting['ui']:
+                    v.update(turn_rad=1 / (CROSSROAD_SIZE / 2 + 0.5 * LANE_WIDTH))
                     lu.append(v)
                 elif start == name_setting['lo'] and end == name_setting['ri']:
+                    v.update(turn_rad=0.)
                     lr.append(v)
                 elif start == name_setting['lo'] and end == name_setting['di']:
+                    v.update(turn_rad=-1 / (CROSSROAD_SIZE / 2 - 2.5 * LANE_WIDTH))
                     ld.append(v)
             if self.training_task != 'right':
                 if (v_light != 0 and ego_y < -CROSSROAD_SIZE/2) \
@@ -437,14 +452,14 @@ class CrossroadEnd2endAdv(gym.Env):
                     return sorted_list
 
             mode2fillvalue = dict(
-                dl=dict(x=LANE_WIDTH/2, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '4i')),
-                du=dict(x=LANE_WIDTH*1.5, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '3i')),
-                dr=dict(x=LANE_WIDTH*(LANE_NUMBER-0.5), y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '2i')),
-                ru=dict(x=(CROSSROAD_SIZE/2+15), y=LANE_WIDTH*(LANE_NUMBER-0.5), v=0, phi=180, w=2.5, l=5, route=('2o', '3i')),
-                ur=dict(x=-LANE_WIDTH/2, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '2i')),
-                ud=dict(x=-LANE_WIDTH*1.5, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '1i')),
-                ul=dict(x=-LANE_WIDTH*(LANE_NUMBER-0.5), y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '4i')),
-                lr=dict(x=-(CROSSROAD_SIZE/2+20), y=-LANE_WIDTH*1.5, v=0, phi=0, w=2.5, l=5, route=('4o', '2i')))
+                dl=dict(x=LANE_WIDTH/2, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '4i'), turn_rad=0., exist=False),
+                du=dict(x=LANE_WIDTH*1.5, y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '3i'), turn_rad=0., exist=False),
+                dr=dict(x=LANE_WIDTH*(LANE_NUMBER-0.5), y=-(CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '2i'), turn_rad=0., exist=False),
+                ru=dict(x=(CROSSROAD_SIZE/2+15), y=LANE_WIDTH*(LANE_NUMBER-0.5), v=0, phi=180, w=2.5, l=5, route=('2o', '3i'), turn_rad=0., exist=False),
+                ur=dict(x=-LANE_WIDTH/2, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '2i'), turn_rad=0., exist=False),
+                ud=dict(x=-LANE_WIDTH*1.5, y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '1i'), turn_rad=0., exist=False),
+                ul=dict(x=-LANE_WIDTH*(LANE_NUMBER-0.5), y=(CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '4i'), turn_rad=0., exist=False),
+                lr=dict(x=-(CROSSROAD_SIZE/2+20), y=-LANE_WIDTH*1.5, v=0, phi=0, w=2.5, l=5, route=('4o', '2i'), turn_rad=0., exist=False))
 
             tmp = OrderedDict()
             for mode, num in VEHICLE_MODE_DICT[task].items():
@@ -458,9 +473,8 @@ class CrossroadEnd2endAdv(gym.Env):
             list_of_interested_veh_dict.extend(part)
 
         for veh in list_of_interested_veh_dict:
-            veh_x, veh_y, veh_v, veh_phi = veh['x'], veh['y'], veh['v'], veh['phi']
-            vehs_vector.extend([veh_x, veh_y, veh_v, veh_phi])
-        self.per_veh_info_dim = 4
+            veh_x, veh_y, veh_v, veh_phi, veh_turn_rad = veh['x'], veh['y'], veh['v'], veh['phi'], veh['turn_rad']
+            vehs_vector.extend([veh_x, veh_y, veh_v, veh_phi, veh_turn_rad])
         return np.array(vehs_vector, dtype=np.float32)
 
     def recover_orig_position_fn(self, transformed_x, transformed_y, x, y, d):  # x, y, d are used to transform
