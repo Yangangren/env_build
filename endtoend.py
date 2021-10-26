@@ -81,9 +81,6 @@ class CrossroadEnd2endAdv(gym.Env):
 
         self.done_type = 'not_done_yet'
         self.reward_info = None
-        self.ego_info_dim = None
-        self.per_tracking_info_dim = None
-        self.per_veh_info_dim = None
         self.mode = mode
         if not multi_display:
             self.traffic = Traffic(self.step_length,
@@ -829,13 +826,13 @@ def test_end2end():
             else:
                 action = np.array([-0.3, 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
-            obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
-            adv_actions = np.random.rand(1, 4).astype(np.float32)
-            env_model.reset(obses, env.ref_path.ref_index)
-            env_model.mode = 'testing'
-            for _ in range(8):
-                obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
-                veh2road4real = env_model.rollout_out(actions, adv_actions)
+            # obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
+            # adv_actions = np.random.rand(1, 4).astype(np.float32)
+            # env_model.reset(obses, env.ref_path.ref_index)
+            # env_model.mode = 'testing'
+            # for _ in range(8):
+            #     obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
+            #     veh2road4real = env_model.rollout_out(actions, adv_actions)
             env.render()
             if done:
                 break
