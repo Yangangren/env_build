@@ -226,7 +226,7 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
             return 'deviate_too_much', 1
         elif self._break_stability():
             return 'break_stability', 1
-        elif self._break_red_light():
+        elif self._break_red_light():   # todo
             return 'break_red_light', 1
         elif self._is_achieve_goal():
             return 'good_done', 1
@@ -303,8 +303,8 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
 
         other_vector, other_mask_vector = self._construct_other_vector_short(exit_)
         ego_vector = self._construct_ego_vector_short()
-        track_vector = self.ref_path.tracking_error_vector(ego_x, ego_y, ego_phi, ego_v_x)
-        future_n_point = self.ref_path.get_future_n_point(ego_x, ego_y, self.future_point_num)  # todo: 25 should be listed as a para
+        track_vector = self.ref_path.tracking_error_vector_vectorized(ego_x, ego_y, ego_phi, ego_v_x)
+        future_n_point = self.ref_path.get_future_n_point(ego_x, ego_y, self.future_point_num)
         self.light_encoding = LIGHT_ENCODING[self.light_phase]
         vector = np.concatenate((ego_vector, track_vector, self.light_encoding, self.task_encoding,
                                  self.ref_path.ref_encoding, other_vector), axis=0)

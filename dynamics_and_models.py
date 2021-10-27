@@ -105,15 +105,10 @@ class EnvironmentModel(object):  # all tensors
         self.reward_info = None
         self.steer_store = []
 
-    def add_traj(self, obses_ego, obses_other, light, veh_num, path_index):
-        self.obses_ego = obses_ego
-        self.obses_other = tf.reshape(obses_other, [-1, self.per_veh_info_dim * veh_num[0]])
-        self.ref_path.set_path(light, path_index)
-
     def rollout_out(self, actions, ref_points):  # ref_points [#batch, 4]
         with tf.name_scope('model_step') as scope:
             self.actions = self._action_transformation_for_end2end(actions)
-            self.steer_store.append(self.actions)
+            self.steer_store.append(self.actions[:, 0])
             self.obses = self.compute_next_obses(self.obses, self.actions, ref_points)
 
             rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2line4real, _ \
@@ -347,11 +342,10 @@ class EnvironmentModel(object):  # all tensors
 
     def compute_next_obses(self, obses, actions, ref_points):
         obses = self._convert_to_abso(obses)
-        self.light_flag = True
         obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_other = self._split_all(obses)
         obses_other = tf.stop_gradient(obses_other)
         next_obses_ego = self._ego_predict(obses_ego, actions)
-        next_obses_track = self._compute_next_track_info(next_obses_ego, ref_points)
+        next_obses_track = self._compute_next_track_info_vectorized(next_obses_ego, ref_points)
         next_obses_other = self._other_predict(obses_other)
         next_obses = tf.concat([next_obses_ego, next_obses_track, obses_light, obses_task, obses_ref, next_obses_other],
                                axis=-1)
@@ -373,19 +367,35 @@ class EnvironmentModel(object):  # all tensors
         delta_vs = ego_vxs - ref_vs
         return tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
 
+    def _compute_next_track_info_vectorized(self, next_ego_infos, ref_points):
+        ego_vxs, ego_vys, ego_rs, ego_xs, ego_ys, ego_phis = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
+        ref_xs, ref_ys, ref_phis, ref_vs = [ref_points[:, i] for i in range(4)]
+        ref_phis_rad = ref_phis * np.pi / 180
+
+        vector_ref_phi = tf.stack([tf.cos(ref_phis_rad), tf.sin(ref_phis_rad)], axis=-1)
+        vector_ref_phi_ccw_90 = tf.stack([-tf.sin(ref_phis_rad), tf.cos(ref_phis_rad)], axis=-1) # ccw for counterclockwise
+        vector_ego2ref = tf.stack([ref_xs - ego_xs, ref_ys - ego_ys], axis=-1)
+
+        signed_dist_longi = tf.negative(tf.reduce_sum(vector_ego2ref * vector_ref_phi, axis=-1))
+        signed_dist_lateral = tf.negative(tf.reduce_sum(vector_ego2ref * vector_ref_phi_ccw_90, axis=-1))
+
+        delta_phi = deal_with_phi_diff(ego_phis - ref_phis)
+        delta_vs = ego_vxs - ref_vs
+        return tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
+
     def _judge_is_left(self, a, b, c):
         x1, y1 = a
         x2, y2 = b
         x3, y3 = c
         featured = (x1 - x3) * (y2 - y3) - (y1 - y3) * (x2 - x3)
-        return featured < 0.
+        return featured > 0.
 
     def _judge_is_ahead(self, a, b, c):
         x1, y1 = a
         x2, y2 = b
         x3, y3 = c
         featured = (x2 - x1) * (x3 - x1) + (y2 - y1) * (y3 - y1)
-        return featured > 0.
+        return featured >= 0.
 
     def _convert_to_rela(self, obses):
         obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_other = self._split_all(obses)
@@ -641,7 +651,7 @@ class ReferencePath(object):
         self.set_path(green_or_red)
 
     def set_path(self, green_or_red='green', path_index=None):
-        if not path_index:
+        if path_index is None:
             path_index = np.random.choice(len(self.path_list[self.green_or_red]))
         self.ref_encoding = REF_ENCODING[path_index]
         self.path = self.path_list[green_or_red][path_index]
@@ -654,6 +664,8 @@ class ReferencePath(object):
             ds = v * dt
             s = 0
             while s < ds:
+                if idx + 1 >= len(self.path[0]):
+                    break
                 next_x, next_y, _, _ = self.idx2point(idx + 1)
                 s += np.sqrt(np.square(next_x - x) + np.square(next_y - y))
                 x, y = next_x, next_y
@@ -676,11 +688,21 @@ class ReferencePath(object):
         dist_a2c = np.sqrt(np.square(ego_x - x0) + np.square(ego_y - y0))
         dist_c2line = abs(sin(phi0_rad) * ego_x - cos(phi0_rad) * ego_y - sin(phi0_rad) * x0 + cos(phi0_rad) * y0)
         signed_dist_lateral = self._judge_sign_left_or_right(a, b, c) * dist_c2line
-        signed_dist_longi = self._judge_sign_ahead_or_behind(a, b, c) * np.sqrt(abs(dist_a2c ** 2 - dist_c2line ** 2))
-        if math.isnan(signed_dist_longi):
-            signed_dist_longi = 0.
-        if math.isnan(signed_dist_lateral):
-            signed_dist_lateral = 0.
+        signed_dist_longi = self._judge_sign_ahead_or_behind(a, b, c) * np.sqrt(np.abs(dist_a2c ** 2 - dist_c2line ** 2))
+        return np.array([signed_dist_longi, signed_dist_lateral, deal_with_phi_diff(ego_phi - phi0), ego_v - v0])
+
+    def tracking_error_vector_vectorized(self, ego_x, ego_y, ego_phi, ego_v):
+        _, (x0, y0, phi0, v0) = self._find_closest_point(ego_x, ego_y)
+        phi0_rad = phi0 * np.pi / 180
+        # np.sin(phi0_rad) * x - np.cos(phi0_rad) * y - np.sin(phi0_rad) * x0 + np.cos(phi0_rad) * y0 = 0
+
+        vector_ref_phi = np.array([np.cos(phi0_rad), np.sin(phi0_rad)])
+        vector_ref_phi_ccw_90 = np.array([-np.sin(phi0_rad), np.cos(phi0_rad)]) # ccw for counterclockwise
+        vector_ego2ref = np.array([x0 - ego_x, y0 - ego_y])
+
+        signed_dist_longi = np.negative(np.dot(vector_ego2ref, vector_ref_phi))
+        signed_dist_lateral = np.negative(np.dot(vector_ego2ref, vector_ref_phi_ccw_90))
+
         return np.array([signed_dist_longi, signed_dist_lateral, deal_with_phi_diff(ego_phi - phi0), ego_v - v0])
 
     def idx2point(self, idx):
@@ -696,7 +718,7 @@ class ReferencePath(object):
         if abs(featured) < 1e-8:
             return 0.
         else:
-            return -featured / abs(featured)
+            return featured / abs(featured)
 
     def _judge_sign_ahead_or_behind(self, a, b, c):
         # return +1 if head else -1
@@ -706,7 +728,7 @@ class ReferencePath(object):
         vector1 = np.array([x2 - x1, y2 - y1])
         vector2 = np.array([x3 - x1, y3 - y1])
         mul = np.sum(vector1 * vector2)
-        if np.abs(mul) < 1e-8:
+        if abs(mul) < 1e-8:
             return 0.
         else:
             return mul / np.abs(mul)
@@ -752,7 +774,8 @@ class ReferencePath(object):
                     vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L))), dtype=np.float32)
                     vs_red_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * dece_dist, endpoint=True, dtype=np.float32)
                     vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True, dtype=np.float32)
-                    vs_red_3 = np.array([8.33] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1 + len(end_straight_line_x)), dtype=np.float32)
+                    vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1) + [8.33] * len(
+                            end_straight_line_x), dtype=np.float32)
                     vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
                     planed_trj_green = xs_1, ys_1, phis_1, vs_green
@@ -794,8 +817,10 @@ class ReferencePath(object):
                                         len(end_straight_line_x), dtype=np.float32)
                     vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L))), dtype=np.float32)
                     vs_red_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * dece_dist, endpoint=True, dtype=np.float32)
-                    vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True, dtype=np.float32)
-                    vs_red_3 = np.array([8.33] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1 + len(end_straight_line_x)), dtype=np.float32)
+                    vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True,
+                                           dtype=np.float32)
+                    vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1) +
+                                        [8.33] * len(end_straight_line_x), dtype=np.float32)
                     vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
                     planed_trj_green = xs_1, ys_1, phis_1, vs_green

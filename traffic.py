@@ -45,11 +45,7 @@ class Traffic(object):
         self.collision_ego_id = None
         self.v_light = None
         self.n_ego_dict = init_n_ego_dict
-        # dict(DL1=dict(x=1.875, y=-30, v=3, a=90, l=4.8, w=2.2),
-        #      UR1=dict(x=-1.875, y=30, v=3, a=-90, l=4.8, w=2.2),
-        #      DR1=dict(x=5.625, y=-30, v=3, a=90, l=4.8, w=2.2),
-        #      RU1=dict(x=5.625, y=-30, v=3, a=90, l=4.8, w=2.2))
-
+        self.training_light_phase = None
         self.mode = mode
 
         try:
@@ -101,8 +97,6 @@ class Traffic(object):
             else:
                 traci.trafficlight.setPhase('0', 0)
 
-            # if self.mode == "training":
-            #     traci.trafficlight.setPhase('0', self.training_light_phase)
             traci.simulationStep()
 
     def __del__(self):
@@ -139,7 +133,6 @@ class Traffic(object):
         for ego_id in self.n_ego_dict.keys():
             if ego_id in random_traffic:
                 del random_traffic[ego_id]
-
         return random_traffic
 
     def init_light(self):
