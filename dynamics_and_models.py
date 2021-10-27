@@ -136,7 +136,7 @@ class EnvironmentModel(object):  # all tensors
         adv_actions = tf.clip_by_value(adv_actions, -1.05, 1.05)
         # todo: bound needs to be verified by real data
         # todo: heading angle is radian
-        adv_action_bound = tf.tile([[0.2, 0.2, 0., 0.]], [self.adv_actions.shape[0], self.veh_num])
+        adv_action_bound = tf.tile([[0.2, 0.2, 0., 0.]], [adv_actions.shape[0], self.veh_num])
         adv_actions_scale = adv_actions * adv_action_bound
         return tf.stack([steer_scale, a_xs_scale], 1), adv_actions_scale
 
@@ -201,7 +201,7 @@ class EnvironmentModel(object):  # all tensors
                                                                self.num_future_data + 1)], \
                                                    obses[:, self.ego_info_dim + self.per_tracking_info_dim * (
                                                                self.num_future_data + 1):]
-            # veh_infos = tf.stop_gradient(veh_infos)  # todo
+            # veh_infos = tf.stop_gradient(veh_infos)
             steers, a_xs = actions[:, 0], actions[:, 1]
             # rewards related to action
             punish_steer = -tf.square(steers)
@@ -403,15 +403,16 @@ class EnvironmentModel(object):  # all tensors
         return ego_next_infos
 
     def _other_predict(self, obses_other, adv_noises):
-        obses_other_reshape = tf.reshape(obses_other, (-1, self.veh_number, self.per_veh_info_dim))
-        adv_noises_reshape = tf.reshape(adv_noises, (-1, self.veh_number, self.adv_action_dim))
+        obses_other_reshape = tf.reshape(obses_other, (-1, self.veh_num, self.per_veh_info_dim))
+        adv_noises_reshape = tf.reshape(adv_noises, (-1, self.veh_num, self.adv_action_dim))
 
         xs, ys, vs, phis, turn_rad = obses_other_reshape[:, :, 0], obses_other_reshape[:, :, 1], \
                                      obses_other_reshape[:, :, 2], obses_other_reshape[:, :, 3], \
                                      obses_other_reshape[:, :, -1]
         phis_rad = phis * np.pi / 180.
 
-        xs_noise, ys_noise, vs_noise, phis_noise_rad = adv_noises_reshape[:, :, 0], adv_noises_reshape[:, :, 1], adv_noises_reshape[:, :, 2], adv_noises_reshape[:, :, 3]
+        xs_noise, ys_noise, vs_noise, phis_noise_rad = adv_noises_reshape[:, :, 0], adv_noises_reshape[:, :, 1], \
+                                                       adv_noises_reshape[:, :, 2], adv_noises_reshape[:, :, 3]
         middle_cond = logical_and(logical_and(xs > -CROSSROAD_SIZE/2, xs < CROSSROAD_SIZE/2),
                                   logical_and(ys > -CROSSROAD_SIZE/2, ys < CROSSROAD_SIZE/2))
         zeros = tf.zeros_like(xs)
@@ -427,7 +428,7 @@ class EnvironmentModel(object):  # all tensors
         next_phis = next_phis_rad * 180 / np.pi
         next_info = tf.concat([tf.stack([next_xs, next_ys, next_vs, next_phis], -1), obses_other_reshape[:, :, 4:]],
                               axis=-1)
-        next_obses_other = tf.reshape(next_info, (-1, self.veh_number * self.per_veh_info_dim))
+        next_obses_other = tf.reshape(next_info, (-1, self.veh_num * self.per_veh_info_dim))
         return next_obses_other
 
     def render(self, mode='human'):
@@ -816,8 +817,8 @@ def test_tracking_error_vector():
 
 
 def test_model():
-    from endtoend import CrossroadEnd2end
-    env = CrossroadEnd2end('left', 0)
+    from endtoend import CrossroadEnd2endAdv
+    env = CrossroadEnd2endAdv('left', 0)
     model = EnvironmentModel('left', 0)
     obs_list = []
     obs = env.reset()

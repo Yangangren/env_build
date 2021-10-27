@@ -398,8 +398,8 @@ class CrossroadEnd2endAdv(gym.Env):
             if self.training_task != 'right':
                 if (v_light != 0 and ego_y < -CROSSROAD_SIZE/2) \
                         or (self.virtual_red_light_vehicle and ego_y < -CROSSROAD_SIZE/2):
-                    dl.append(dict(x=LANE_WIDTH/2, y=-CROSSROAD_SIZE/2+2.5, v=0., phi=90, l=5, w=2.5, route=None))
-                    du.append(dict(x=LANE_WIDTH*1.5, y=-CROSSROAD_SIZE/2+2.5, v=0., phi=90, l=5, w=2.5, route=None))
+                    dl.append(dict(x=LANE_WIDTH/2, y=-CROSSROAD_SIZE/2+2.5, v=0., phi=90, l=5, w=2.5, route=None, turn_rad=0., exist=False))
+                    du.append(dict(x=LANE_WIDTH*1.5, y=-CROSSROAD_SIZE/2+2.5, v=0., phi=90, l=5, w=2.5, route=None, turn_rad=0., exist=False))
 
             # fetch veh in range
             dl = list(filter(lambda v: v['x'] > -CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, dl))  # interest of left straight
@@ -824,15 +824,29 @@ def test_end2end():
             elif obs[3] <= -18:
                 action = np.array([0, 0], dtype=np.float32)
             else:
-                action = np.array([-0.3, 0.33], dtype=np.float32)
+                action = np.array([0.3, 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
-            # obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
-            # adv_actions = np.random.rand(1, 4).astype(np.float32)
-            # env_model.reset(obses, env.ref_path.ref_index)
-            # env_model.mode = 'testing'
-            # for _ in range(8):
-            #     obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
-            #     veh2road4real = env_model.rollout_out(actions, adv_actions)
+            obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
+            # no noise
+            # adv_actions = np.tile(np.zeros(shape=(obses.shape[0], env.adv_action_dim)).astype(np.float32), (1, env.veh_num))
+            # random noise
+            import tensorflow_probability as tfp
+            tfd = tfp.distributions
+            tfb = tfp.bijectors
+            mean = np.zeros(shape=(obses.shape[0], env.adv_action_dim * env.veh_num), dtype=np.float32)
+            std1 = np.ones(shape=(obses.shape[0], env.adv_action_dim * (env.veh_num - 1)), dtype=np.float32)
+            std2 = np.ones(shape=(obses.shape[0], env.adv_action_dim * 1), dtype=np.float32)
+            std = np.concatenate([std1, std2], axis=1)
+            act_dist = tfp.distributions.MultivariateNormalDiag(mean, std)
+            act_dist = (tfp.distributions.TransformedDistribution(distribution=act_dist, bijector=tfb.Chain(
+                                                        [tfb.Affine(scale_identity_multiplier=1.0), tfb.Tanh()])))
+            adv_actions = act_dist.sample()
+            print(adv_actions[:, -4:])
+            env_model.reset(obses, env.ref_path.ref_index)
+            env_model.mode = 'testing'
+            for _ in range(8):
+                obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
+                veh2road4real = env_model.rollout_out(actions, adv_actions)
             env.render()
             if done:
                 break
