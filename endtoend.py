@@ -548,7 +548,7 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
             reward_dict[k] = v.numpy()[0]
         return reward.numpy()[0], reward_dict
 
-    def render(self, mode='human'):
+    def render(self, mode='human', weights=None):
         if mode == 'human':
             # plot basic map
             square_length = Para.CROSSROAD_SIZE
@@ -695,6 +695,9 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
             # plot interested participants
+            if weights is not None:
+                assert weights.shape == (self.other_number,), print(weights.shape)
+            index_top_k_in_weights = weights.argsort()[-4:][::-1]
             for i in range(len(self.interested_other)):
                 veh = self.interested_other[i]
                 mask = veh['exist']
@@ -709,6 +712,8 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
                     plot_phi_line(veh_x, veh_y, veh_phi, 'black')
                     color = 'm'
                     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
+                if i in index_top_k_in_weights:
+                    plt.text(veh_x, veh_y, "{:.2f}".format(weights[i]), color='red', fontsize=15)
 
             # plot own car
             abso_obs = self._convert_to_abso(self.obs)
@@ -822,11 +827,11 @@ def test_end2end():
                 veh2road4real, veh2line4real = env_model.rollout_out(np.tile(actions, (2, 1)), ref_points[:, :, i])
             # print(env.training_task, obs[env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data], env.v_light)
             # print('task:', obs[env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data + env.light_info_dim])
-            env.render()
+            env.render(weights=np.zeros(env.other_number,))
             # if done:
             #     break
         obs, _ = env.reset()
-        env.render()
+        env.render(weights=np.zeros(env.other_number,))
 
 
 if __name__ == '__main__':
