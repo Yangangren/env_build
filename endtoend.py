@@ -808,13 +808,13 @@ def test_end2end():
     obs, all_info = env.reset()
     i = 0
     while i < 100000:
-        for j in range(80):
+        for j in range(40):
             i += 1
             # action=2*np.random.random(2)-1
             if obs[4]<-18:
                 action = np.array([0, 1], dtype=np.float32)
             else:
-                action = np.array([0.5, 0.33], dtype=np.float32)
+                action = np.array([0.0, 0.33], dtype=np.float32)
             obs, reward, done, info = env.step(action)
             obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
             obses = np.tile(obses, (2, 1))
@@ -825,7 +825,8 @@ def test_end2end():
             for i in range(5):
                 obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
                 veh2road4real, veh2line4real = env_model.rollout_out(np.tile(actions, (2, 1)), ref_points[:, :, i])
-            # print(env.training_task, obs[env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data], env.v_light)
+                # print(obses[:, env.ego_info_dim + env.track_info_dim: env.ego_info_dim+env.track_info_dim+env.light_info_dim])
+            # print(env.training_task, obs[env.ego_info_dim + env.track_info_dim: env.ego_info_dim+env.track_info_dim+env.light_info_dim], env.light_phase)
             # print('task:', obs[env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data + env.light_info_dim])
             env.render(weights=np.zeros(env.other_number,))
             # if done:

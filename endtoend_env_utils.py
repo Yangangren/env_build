@@ -33,10 +33,10 @@ class Para:
     MAX_PERSON_NUM = 0  # to be align with PERSON_MODE_DICT
 
 
-dirname = os.path.dirname(__file__)
+
 LIGHT_PHASE_TO_GREEN_OR_RED = {0: 'green', 1: 'red', 2: 'red', 3:'red'}  # 0: green, 1: red
 TASK_ENCODING = dict(left=[1.0, 0.0, 0.0], straight=[0.0, 1.0, 0.0], right=[0.0, 0.0, 1.0])
-LIGHT_ENCODING = {0: [1.0, 0.0], 1: [1.0, 0.0], 2: [1.0, 1.0], 3: [0.0, 1.0], 4: [0.0, 1.0], 5: [0.0, 1.0], 6: [0.0, 1.0]}
+LIGHT_ENCODING = {0: [1.0, 0.0], 1: [0.0, 1.0], 2: [0.0, 1.0], 3: [0.0, 1.0]}
 REF_ENCODING = {0: [1.0, 0.0, 0.0], 1: [0.0, 1.0, 0.0], 2: [0.0, 0.0, 1.0]}
 
 SUMOCFG_DIR = os.path.dirname(__file__) + "/sumo_files/cross.sumocfg"

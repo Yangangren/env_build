@@ -108,7 +108,7 @@ class EnvironmentModel(object):  # all tensors
     def rollout_out(self, actions, ref_points):  # ref_points [#batch, 4]
         with tf.name_scope('model_step') as scope:
             self.actions = self._action_transformation_for_end2end(actions)
-            self.steer_store.append(self.actions[:, 0])
+
             self.obses = self.compute_next_obses(self.obses, self.actions, ref_points)
 
             rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2line4real, _ \
@@ -178,16 +178,16 @@ class EnvironmentModel(object):  # all tensors
 
             steers, a_xs = actions[:, 0], actions[:, 1]
             # rewards related to action
-            if len(self.steer_store) > 2:
-                steers_1st_order = (self.steer_store[-1] - self.steer_store[-2]) * self.base_frequency
-                steers_2st_order = (self.steer_store[-1] - 2 * self.steer_store[-2] + self.steer_store[-3]) * (
-                            self.base_frequency ** 2)
-            elif len(self.steer_store) == 2:
-                steers_1st_order = (self.steer_store[-1] - self.steer_store[-2]) * self.base_frequency
-                steers_2st_order = tf.zeros_like(steers)
-            else:
-                steers_1st_order = tf.zeros_like(steers)
-                steers_2st_order = tf.zeros_like(steers)
+            # if len(self.steer_store) > 2:
+            #     steers_1st_order = (self.steer_store[-1] - self.steer_store[-2]) * self.base_frequency
+            #     steers_2st_order = (self.steer_store[-1] - 2 * self.steer_store[-2] + self.steer_store[-3]) * (
+            #                 self.base_frequency ** 2)
+            # elif len(self.steer_store) == 2:
+            #     steers_1st_order = (self.steer_store[-1] - self.steer_store[-2]) * self.base_frequency
+            #     steers_2st_order = tf.zeros_like(steers)
+            # else:
+            #     steers_1st_order = tf.zeros_like(steers)
+            #     steers_2st_order = tf.zeros_like(steers)
             punish_steer = -tf.square(steers)  # - tf.square(steers_1st_order) - tf.square(steers_2st_order) todo
             punish_a_x = -tf.square(a_xs)
 
@@ -312,7 +312,7 @@ class EnvironmentModel(object):  # all tensors
             #             veh2line4real_pick = tf.where(self.light_cond, veh2line4real_temp, tf.zeros_like(veh_infos[:, 0]))
             #             veh2line4real += tf.where(task_infos == task_idx, veh2line4real_pick, tf.zeros_like(veh_infos[:, 0]))
 
-            rewards = 0.05 * devi_v + 0.8 * devi_lon + 0.8 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
+            rewards = 0.01 * devi_v + 0.8 * devi_lon + 0.8 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
                       5 * punish_steer + 0.05 * punish_a_x
             punish_term_for_training = veh2veh4training + veh2road4training + veh2line4real
             real_punish_term = veh2veh4real + veh2road4real + veh2line4real
@@ -327,7 +327,7 @@ class EnvironmentModel(object):  # all tensors
                                scaled_punish_steer=5 * punish_steer,
                                scaled_punish_a_x=0.05 * punish_a_x,
                                scaled_punish_yaw_rate=0.02 * punish_yaw_rate,
-                               scaled_devi_v=0.05 * devi_v,
+                               scaled_devi_v=0.01 * devi_v,
                                scaled_devi_lon=0.8 * devi_lon,
                                scaled_devi_lat=0.8 * devi_lat,
                                scaled_devi_phi=30 * devi_phi,
