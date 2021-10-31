@@ -87,7 +87,7 @@ class VehicleDynamics(object):
 
 
 class EnvironmentModel(object):  # all tensors
-    def __init__(self, training_task, num_future_data=0, mode='training'):
+    def __init__(self, training_task, num_future_data=0, mode='training', noise_bound=[[0., 0., 0., 0.]]):
         self.task = training_task
         self.mode = mode
         self.vehicle_dynamics = VehicleDynamics()
@@ -106,6 +106,7 @@ class EnvironmentModel(object):  # all tensors
         self.per_tracking_info_dim = 3
         self.adv_action_dim = 4
         self.veh_num = VEH_NUM[self.task]
+        self.noise_bound = noise_bound
 
     def reset(self, obses, ref_indexes=None):  # input are all tensors
         self.obses = obses
@@ -136,7 +137,7 @@ class EnvironmentModel(object):  # all tensors
         adv_actions = tf.clip_by_value(adv_actions, -1.05, 1.05)
         # todo: bound needs to be verified by real data
         # todo: heading angle is radian
-        adv_action_bound = tf.tile([[0.2, 0.2, 0., 0.]], [adv_actions.shape[0], self.veh_num])
+        adv_action_bound = tf.tile(self.noise_bound, [adv_actions.shape[0], self.veh_num])
         adv_actions_scale = adv_actions * adv_action_bound
         return tf.stack([steer_scale, a_xs_scale], 1), adv_actions_scale
 
@@ -201,7 +202,7 @@ class EnvironmentModel(object):  # all tensors
                                                                self.num_future_data + 1)], \
                                                    obses[:, self.ego_info_dim + self.per_tracking_info_dim * (
                                                                self.num_future_data + 1):]
-            # veh_infos = tf.stop_gradient(veh_infos)
+            # veh_infos = tf.stop_gradient(veh_infos)  # todo
             steers, a_xs = actions[:, 0], actions[:, 1]
             # rewards related to action
             punish_steer = -tf.square(steers)
@@ -423,6 +424,7 @@ class EnvironmentModel(object):  # all tensors
 
         next_xs, next_ys, next_vs, next_phis_rad = xs + xs_delta + xs_noise, ys + ys_delta + ys_noise, \
                                                    vs + vs_noise, phis_rad + phis_rad_delta + phis_noise_rad
+        next_vs = tf.where(next_vs < 0., tf.zeros_like(next_vs), next_vs)
         next_phis_rad = tf.where(next_phis_rad > np.pi, next_phis_rad - 2 * np.pi, next_phis_rad)
         next_phis_rad = tf.where(next_phis_rad <= -np.pi, next_phis_rad + 2 * np.pi, next_phis_rad)
         next_phis = next_phis_rad * 180 / np.pi

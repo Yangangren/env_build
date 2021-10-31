@@ -482,7 +482,7 @@ class CrossroadEnd2endAdv(gym.Env):
 
     def _reset_init_state(self, **kwargs):
         if kwargs and kwargs['mode']=='evaluating':
-            random_index = 900
+            random_index = int(np.random.random()* 200) + 700
         else:
             if self.training_task == 'left':
                 random_index = int(np.random.random()*(900+500)) + 700
