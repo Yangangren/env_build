@@ -90,4 +90,8 @@ class TimerStat:
         return float(sum(self._units_processed)) / time_total
 
 
+def image2video(forder):
+    os.chdir(forder)
+    subprocess.call(['ffmpeg', '-framerate', '10', '-i', 'step%03d.png', 'video.mp4'])
+
 

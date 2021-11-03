@@ -12,6 +12,7 @@ import shutil
 import time
 import json
 import os
+import heapq
 from math import cos, sin, pi
 
 import matplotlib.pyplot as plt
@@ -20,21 +21,19 @@ import tensorflow as tf
 
 from dynamics_and_models import EnvironmentModel, ReferencePath
 from endtoend import CrossroadEnd2endPiIntegrate
-from endtoend_env_utils import rotate_coordination, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, MODE2TASK
-from hierarchical_decision.multi_path_generator import MultiPathGenerator
+from endtoend_env_utils import *
+from multi_path_generator import MultiPathGenerator
 from utils.load_policy import LoadPolicy
 from utils.misc import TimerStat
 from utils.recorder import Recorder
 
 
 class HierarchicalDecision(object):
-    def __init__(self, task, train_exp_dir, ite, logdir=None):
-        self.task = task
-        self.policy = LoadPolicy('../utils/models/{}/{}'.format(task, train_exp_dir), ite)
+    def __init__(self, train_exp_dir, ite, logdir=None):
+        self.policy = LoadPolicy('../utils/models/{}'.format(train_exp_dir), ite)
         self.args = self.policy.args
-        self.env = CrossroadEnd2endPiIntegrate(mode='testing', num_future_data=self.args.env_kwargs_num_future_data)
-        self.env_state_ego = self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data+1) + self.env.task_info_dim
-        self.env_per_state_other = self.env.per_veh_info_dim
+        self.env = CrossroadEnd2endPiIntegrate(mode='testing', future_point_num=self.args.num_rollout_list_for_policy_update[0])
+        self.model = EnvironmentModel(mode='testing')
         self.recorder = Recorder()
         self.episode_counter = -1
         self.step_counter = -1
@@ -44,35 +43,28 @@ class HierarchicalDecision(object):
         self.ss_timer = TimerStat()
         self.logdir = logdir
         if self.logdir is not None:
-            config = dict(task=task, train_exp_dir=train_exp_dir, ite=ite)
+            config = dict(train_exp_dir=train_exp_dir, ite=ite)
             with open(self.logdir + '/config.json', 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=4)
-        self.fig = plt.figure(figsize=(8, 8))
-        plt.ion()
+        self.fig_plot = 0
         self.hist_posi = []
         self.old_index = 0
+        self.path_list = self.stg.generate_path(self.env.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.env.light_phase])
         # ------------------build graph for tf.function in advance-----------------------
-        for i in range(LANE_NUMBER):
-            obs = self.env.reset()[np.newaxis, :]
-            self.path_list = self.stg.generate_path(self.env.training_task)
-            self.model = EnvironmentModel(self.env.training_task, mode='selecting')
-            obs_ego = obs[:, :self.env_state_ego]
-            obs_other = np.reshape(obs[:, self.env_state_ego:], [-1, self.env_per_state_other])
-            self.is_safe(obs_ego, obs_other, i)
-        obs = self.env.reset()[np.newaxis, :]
-        obs_ego = obs[:, :self.env_state_ego]
-        obs_other = np.reshape(obs[:, self.env_state_ego:], [-1, self.env.per_veh_info_dim])
-        obs_ego_with_specific_shape = np.tile(obs_ego, (LANE_NUMBER, 1))
-        obs_other_with_specific_shape = np.tile(obs_other, (LANE_NUMBER, 1))
-        self.policy.run_batch(obs_ego_with_specific_shape, obs_other_with_specific_shape, [self.env.veh_num]*LANE_NUMBER)
-        self.policy.obj_value_batch(obs_ego_with_specific_shape, obs_other_with_specific_shape, [self.env.veh_num]*LANE_NUMBER)
+        obs, all_info = self.env.reset()
+        mask, future_n_point = all_info['mask'], all_info['future_n_point']
+        obs = tf.convert_to_tensor(obs[np.newaxis, :], dtype=tf.float32)
+        mask = tf.convert_to_tensor(mask[np.newaxis, :], dtype=tf.float32)
+        future_n_point = tf.convert_to_tensor(future_n_point[np.newaxis, :], dtype=tf.float32)
+        self.is_safe(obs, mask, future_n_point)
+        self.policy.run_batch(obs, mask)
+        self.policy.obj_value_batch(obs, mask)
         # ------------------build graph for tf.function in advance-----------------------
         self.reset()
 
     def reset(self,):
-        self.obs = self.env.reset()
-        self.path_list = self.stg.generate_path(self.env.training_task)
-        self.model = EnvironmentModel(self.env.training_task, mode='selecting')
+        self.obs, _ = self.env.reset()
+        self.path_list = self.stg.generate_path(self.env.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.env.light_phase])
         self.recorder.reset()
         self.old_index = 0
         self.hist_posi = []
@@ -88,71 +80,88 @@ class HierarchicalDecision(object):
                                                                isshow=False)
         return self.obs
 
-    # @tf.function
-    # def is_safe(self, obs, path_index):
-    #     self.model.ref_path.set_path(path_index)
-    #     action = self.policy.run_batch(obs)
-    #     veh2veh4real = self.model.ss(obs, action, lam=0.1)
-    #     return False if veh2veh4real[0] > 0 else True
-
     @tf.function
-    def is_safe(self, obs_ego, obs_other, path_index):
-        self.model.add_traj(obs_ego, obs_other, [self.env.veh_num], path_index)
+    def is_safe(self, obses, masks, future_n_point):
+        self.model.reset(obses)
         punish = 0.
         for step in range(5):
-            action = self.policy.run_batch(obs_ego, obs_other, [self.env.veh_num])
-            obs_ego, obs_other, _, _, _, veh2veh4real, _ = self.model.rollout_out(action)
+            action, _ = self.policy.run_batch(obses, masks)
+            obses, _, _, _, veh2veh4real, veh2road4real, veh2line4real = self.model.rollout_out(action, future_n_point[:, :, step])
             punish += veh2veh4real[0]
         return False if punish > 0 else True
 
-    def safe_shield(self, real_obs, path_index):
+    def safe_shield(self, real_obs, real_mask, real_future_n_point):
         action_safe_set = [[[0., -1.]]]
         real_obs = tf.convert_to_tensor(real_obs[np.newaxis, :], dtype=tf.float32)
-        real_obs_ego = real_obs[:, :self.env_state_ego]
-        real_obs_other = tf.reshape(real_obs[:, self.env_state_ego:], [-1, self.env_per_state_other])
-        if not self.is_safe(real_obs_ego, real_obs_other, path_index):
+        real_mask = tf.convert_to_tensor(real_mask[np.newaxis, :], dtype=tf.float32)
+        real_future_n_point = tf.convert_to_tensor(real_future_n_point[np.newaxis, :], dtype=tf.float32)
+        if not self.is_safe(real_obs, real_mask, real_future_n_point):
             print('SAFETY SHIELD STARTED!')
-            return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), True
+            return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), np.zeros(shape=(self.env.other_number)), True
         else:
-            return self.policy.run_batch(real_obs_ego, real_obs_other, [self.env.veh_num]*real_obs.shape[0]).numpy()[0], False
+            action, weight = self.policy.run_batch(real_obs, real_mask)
+            return action.numpy()[0], weight.numpy()[0], False
 
     def step(self):
         self.step_counter += 1
+        self.path_list = self.stg.generate_path(self.env.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.env.light_phase])
         with self.step_timer:
-            obs_list = []
+            obs_list, mask_list, future_n_point_list = [], [], []
             # select optimal path
             for path in self.path_list:
                 self.env.set_traj(path)
-                obs_list.append(self.env._get_obs())
-            all_obs = tf.stack(obs_list, axis=0)
-            all_obs_ego = all_obs[:, :self.env_state_ego]
-            all_obs_other = tf.reshape(all_obs[:, self.env_state_ego:], [-1, self.env_per_state_other])
-            path_values = self.policy.obj_value_batch(all_obs_ego, all_obs_other, [self.env.veh_num]*all_obs.shape[0]).numpy()
-            old_value = path_values[self.old_index]
-            new_index, new_value = int(np.argmin(path_values)), min(path_values)  # value is to approximate (- sum of reward)
-            path_index = self.old_index if old_value - new_value < 0.1 else new_index
-            self.old_index = path_index
+                vector, mask_vector, future_n_point = self.env._get_obs()
+                obs_list.append(vector)
+                mask_list.append(mask_vector)
+                future_n_point_list.append(future_n_point)
+            all_obs = tf.stack(obs_list, axis=0).numpy()
+            all_mask = tf.stack(mask_list, axis=0).numpy()
 
+            path_values = self.policy.obj_value_batch(all_obs, all_mask).numpy()
+            old_value = path_values[self.old_index]
+            # value is to approximate (- sum of reward)
+            new_index, new_value = int(np.argmin(path_values)), min(path_values)
+            # rule for equal traj value
+            path_index_error = []
+            if self.step_counter % 3 == 0:
+                if heapq.nsmallest(2, path_values)[0] == heapq.nsmallest(2, path_values)[1]:
+                    for i in range(len(path_values)):
+                        if path_values[i] == min(path_values):
+                            index_error = abs(self.old_index - i)
+                            path_index_error.append(index_error)
+                    # new_index_new = min(path_index_error) + self.old_index if min(path_index_error) + self.old_index < 4 else self.old_index - min(path_index_error)
+                    new_index_new = self.old_index - min(path_index_error) if self.old_index - min(path_index_error) > -1 else self.old_index + min(path_index_error)
+                    new_value_new = path_values[new_index_new]
+                    path_index = self.old_index if old_value - new_value_new < 0.1 else new_index_new
+                else:
+                    path_index = self.old_index if old_value - new_value < 0.1 else new_index
+                self.old_index = path_index
+            else:
+                path_index = self.old_index
             self.env.set_traj(self.path_list[path_index])
-            self.obs_real = obs_list[path_index]
+            obs_real, mask_real, future_n_point_real = obs_list[path_index], mask_list[path_index], future_n_point_list[path_index]
 
             # obtain safe action
             with self.ss_timer:
-                safe_action, is_ss = self.safe_shield(self.obs_real, path_index)
+                safe_action, weights, is_ss = self.safe_shield(obs_real, mask_real, future_n_point_real)
             print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
-        self.render(self.path_list, path_values, path_index)
-        self.recorder.record(self.obs_real, safe_action, self.step_timer.mean,
-                             path_index, path_values, self.ss_timer.mean, is_ss)
+        self.render(path_values, path_index, weights)
+        self.recorder.record(obs_real, safe_action, self.step_timer.mean, path_index, path_values, self.ss_timer.mean, is_ss)
         self.obs, r, done, info = self.env.step(safe_action)
         return done
 
-    def render(self, traj_list, path_values, path_index):
-        square_length = CROSSROAD_SIZE
+    def render(self, path_values, path_index, weights):
+        square_length = Para.CROSSROAD_SIZE
         extension = 40
-        lane_width = LANE_WIDTH
+        lane_width = Para.LANE_WIDTH
         light_line_width = 3
         dotted_line_style = '--'
         solid_line_style = '-'
+
+        if not self.fig_plot:
+            self.fig = plt.figure(figsize=(8, 8))
+            self.fig_plot = 1
+        plt.ion()
 
         plt.cla()
         ax = plt.axes([-0.05, -0.05, 1.1, 1.1])
@@ -175,9 +184,9 @@ class HierarchicalDecision(object):
         plt.plot([square_length / 2 + extension, square_length / 2], [-0.3, -0.3], color='orange')
 
         #
-        for i in range(1, LANE_NUMBER + 1):
-            linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
-            linewidth = 1 if i < LANE_NUMBER else 2
+        for i in range(1, Para.LANE_NUMBER + 1):
+            linestyle = dotted_line_style if i < Para.LANE_NUMBER else solid_line_style
+            linewidth = 1 if i < Para.LANE_NUMBER else 2
             plt.plot([-square_length / 2 - extension, -square_length / 2], [i * lane_width, i * lane_width],
                      linestyle=linestyle, color='black', linewidth=linewidth)
             plt.plot([square_length / 2 + extension, square_length / 2], [i * lane_width, i * lane_width],
@@ -194,9 +203,9 @@ class HierarchicalDecision(object):
         plt.plot([-0.3, -0.3], [square_length / 2 + extension, square_length / 2], color='orange')
 
         #
-        for i in range(1, LANE_NUMBER + 1):
-            linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
-            linewidth = 1 if i < LANE_NUMBER else 2
+        for i in range(1, Para.LANE_NUMBER + 1):
+            linestyle = dotted_line_style if i < Para.LANE_NUMBER else solid_line_style
+            linewidth = 1 if i < Para.LANE_NUMBER else 2
             plt.plot([i * lane_width, i * lane_width], [-square_length / 2 - extension, -square_length / 2],
                      linestyle=linestyle, color='black', linewidth=linewidth)
             plt.plot([i * lane_width, i * lane_width], [square_length / 2 + extension, square_length / 2],
@@ -206,7 +215,7 @@ class HierarchicalDecision(object):
             plt.plot([-i * lane_width, -i * lane_width], [square_length / 2 + extension, square_length / 2],
                      linestyle=linestyle, color='black', linewidth=linewidth)
 
-        v_light = self.env.v_light
+        v_light = self.env.light_phase
         if v_light == 0:
             v_color, h_color = 'green', 'red'
         elif v_light == 1:
@@ -216,34 +225,34 @@ class HierarchicalDecision(object):
         else:
             v_color, h_color = 'red', 'orange'
 
-        plt.plot([0, (LANE_NUMBER - 1) * lane_width], [-square_length / 2, -square_length / 2],
+        plt.plot([0, (Para.LANE_NUMBER - 1) * lane_width], [-square_length / 2, -square_length / 2],
                  color=v_color, linewidth=light_line_width)
-        plt.plot([(LANE_NUMBER - 1) * lane_width, LANE_NUMBER * lane_width], [-square_length / 2, -square_length / 2],
+        plt.plot([(Para.LANE_NUMBER - 1) * lane_width, Para.LANE_NUMBER * lane_width], [-square_length / 2, -square_length / 2],
                  color='green', linewidth=light_line_width)
 
-        plt.plot([-LANE_NUMBER * lane_width, -(LANE_NUMBER - 1) * lane_width], [square_length / 2, square_length / 2],
+        plt.plot([-Para.LANE_NUMBER * lane_width, -(Para.LANE_NUMBER - 1) * lane_width], [square_length / 2, square_length / 2],
                  color='green', linewidth=light_line_width)
-        plt.plot([-(LANE_NUMBER - 1) * lane_width, 0], [square_length / 2, square_length / 2],
+        plt.plot([-(Para.LANE_NUMBER - 1) * lane_width, 0], [square_length / 2, square_length / 2],
                  color=v_color, linewidth=light_line_width)
 
-        plt.plot([-square_length / 2, -square_length / 2], [0, -(LANE_NUMBER - 1) * lane_width],
+        plt.plot([-square_length / 2, -square_length / 2], [0, -(Para.LANE_NUMBER - 1) * lane_width],
                  color=h_color, linewidth=light_line_width)
-        plt.plot([-square_length / 2, -square_length / 2], [-(LANE_NUMBER - 1) * lane_width, -LANE_NUMBER * lane_width],
+        plt.plot([-square_length / 2, -square_length / 2], [-(Para.LANE_NUMBER - 1) * lane_width, -Para.LANE_NUMBER * lane_width],
                  color='green', linewidth=light_line_width)
 
-        plt.plot([square_length / 2, square_length / 2], [(LANE_NUMBER - 1) * lane_width, 0],
+        plt.plot([square_length / 2, square_length / 2], [(Para.LANE_NUMBER - 1) * lane_width, 0],
                  color=h_color, linewidth=light_line_width)
-        plt.plot([square_length / 2, square_length / 2], [LANE_NUMBER * lane_width, (LANE_NUMBER - 1) * lane_width],
+        plt.plot([square_length / 2, square_length / 2], [Para.LANE_NUMBER * lane_width, (Para.LANE_NUMBER - 1) * lane_width],
                  color='green', linewidth=light_line_width)
 
         # ----------Oblique--------------
-        plt.plot([LANE_NUMBER * lane_width, square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
+        plt.plot([Para.LANE_NUMBER * lane_width, square_length / 2], [-square_length / 2, -Para.LANE_NUMBER * lane_width],
                  color='black', linewidth=2)
-        plt.plot([LANE_NUMBER * lane_width, square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
+        plt.plot([Para.LANE_NUMBER * lane_width, square_length / 2], [square_length / 2, Para.LANE_NUMBER * lane_width],
                  color='black', linewidth=2)
-        plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
+        plt.plot([-Para.LANE_NUMBER * lane_width, -square_length / 2], [-square_length / 2, -Para.LANE_NUMBER * lane_width],
                  color='black', linewidth=2)
-        plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
+        plt.plot([-Para.LANE_NUMBER * lane_width, -square_length / 2], [square_length / 2, Para.LANE_NUMBER * lane_width],
                  color='black', linewidth=2)
 
         def is_in_plot_area(x, y, tolerance=5):
@@ -265,7 +274,7 @@ class HierarchicalDecision(object):
             plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
 
         # plot cars
-        for veh in self.env.all_vehicles:
+        for veh in self.env.all_other:
             veh_x = veh['x']
             veh_y = veh['y']
             veh_phi = veh['phi']
@@ -275,39 +284,32 @@ class HierarchicalDecision(object):
                 plot_phi_line(veh_x, veh_y, veh_phi, 'black')
                 draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
-        # plot_interested vehs
-        for mode, num in self.env.veh_mode_dict.items():
-            for i in range(num):
-                veh = self.env.interested_vehs[mode][i]
-                veh_x = veh['x']
-                veh_y = veh['y']
-                veh_phi = veh['phi']
-                veh_l = veh['l']
-                veh_w = veh['w']
-                task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
+        # plot interested others
+        if weights is not None:
+            assert weights.shape == (self.args.other_number,), print(weights.shape)
+            index_top_k_in_weights = weights.argsort()[-4:][::-1]
+        for i in range(len(self.env.interested_other)):
+            item = self.env.interested_other[i]
+            item_mask = item['exist']
+            item_x = item['x']
+            item_y = item['y']
+            item_phi = item['phi']
+            item_l = item['l']
+            item_w = item['w']
+            if is_in_plot_area(item_x, item_y):
+                plot_phi_line(item_x, item_y, item_phi, 'black')
+                draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='m')
+            if (weights is not None) and (i in index_top_k_in_weights):
+                plt.text(item_x, item_y, "{:.2f}".format(weights[i]), color='red', fontsize=15)
 
-                if is_in_plot_area(veh_x, veh_y):
-                    plot_phi_line(veh_x, veh_y, veh_phi, 'black')
-                    task = MODE2TASK[mode]
-                    color = task2color[task]
-                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color)
-
-        ego_v_x = self.env.ego_dynamics['v_x']
-        ego_v_y = self.env.ego_dynamics['v_y']
-        ego_r = self.env.ego_dynamics['r']
-        ego_x = self.env.ego_dynamics['x']
-        ego_y = self.env.ego_dynamics['y']
-        ego_phi = self.env.ego_dynamics['phi']
-        ego_l = self.env.ego_dynamics['l']
-        ego_w = self.env.ego_dynamics['w']
-        ego_alpha_f = self.env.ego_dynamics['alpha_f']
-        ego_alpha_r = self.env.ego_dynamics['alpha_r']
-        alpha_f_bound = self.env.ego_dynamics['alpha_f_bound']
-        alpha_r_bound = self.env.ego_dynamics['alpha_r_bound']
-        r_bound = self.env.ego_dynamics['r_bound']
+        # plot own car
+        abso_obs = self.env._convert_to_abso(self.obs)
+        obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_other = self.env._split_all(abso_obs)
+        ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi = obs_ego
+        devi_longi, devi_lateral, devi_phi, devi_v = obs_track
 
         plot_phi_line(ego_x, ego_y, ego_phi, 'fuchsia')
-        draw_rotate_rec(ego_x, ego_y, ego_phi, ego_l, ego_w, 'fuchsia')
+        draw_rotate_rec(ego_x, ego_y, ego_phi, self.env.ego_l, self.env.ego_w, 'fuchsia')
         self.hist_posi.append((ego_x, ego_y))
 
         # plot history
@@ -315,37 +317,16 @@ class HierarchicalDecision(object):
         ys = [pos[1] for pos in self.hist_posi]
         plt.scatter(np.array(xs), np.array(ys), color='fuchsia', alpha=0.1)
 
-
-        # plot future data
-        tracking_info = self.obs[
-                        self.env.ego_info_dim:self.env.ego_info_dim + self.env.per_tracking_info_dim * (self.env.num_future_data + 1)]
-        future_path = tracking_info[self.env.per_tracking_info_dim:]
-        for i in range(self.env.num_future_data):
-            delta_x, delta_y, delta_phi = future_path[i * self.env.per_tracking_info_dim:
-                                                      (i + 1) * self.env.per_tracking_info_dim]
-            path_x, path_y, path_phi = ego_x + delta_x, ego_y + delta_y, ego_phi - delta_phi
-            plt.plot(path_x, path_y, 'g.')
-            plot_phi_line(path_x, path_y, path_phi, 'g')
-
-        delta_, _, _ = tracking_info[:3]
-        indexs, points = self.env.ref_path.find_closest_point(np.array([ego_x], np.float32), np.array([ego_y], np.float32))
-        path_x, path_y, path_phi = points[0][0], points[1][0], points[2][0]
-        # plt.plot(path_x, path_y, 'g.')
-        delta_x, delta_y, delta_phi = ego_x - path_x, ego_y - path_y, ego_phi - path_phi
-
         # plot real time traj
-        color = ['blue', 'coral', 'darkcyan']
-        try:
-            for i, item in enumerate(traj_list):
-                if i == path_index:
-                    plt.plot(item.path[0], item.path[1], color=color[i])
-                else:
-                    plt.plot(item.path[0], item.path[1], color=color[i], alpha=0.3)
-                indexs, points = item.find_closest_point(np.array([ego_x], np.float32), np.array([ego_y], np.float32))
-                path_x, path_y, path_phi = points[0][0], points[1][0], points[2][0]
-                plt.plot(path_x, path_y, color=color[i])
-        except Exception:
-            pass
+        color = ['blue', 'coral', 'darkcyan', 'pink']
+        for i, item in enumerate(self.path_list):
+            if i == path_index:
+                plt.plot(item.path[0], item.path[1], color=color[i], alpha=1.0)
+            else:
+                plt.plot(item.path[0], item.path[1], color=color[i], alpha=0.3)
+        _, point = self.env.ref_path._find_closest_point(ego_x, ego_y)
+        # plt.plot(path_x, path_y, 'g.')
+        path_x, path_y, path_phi, path_v = point[0], point[1], point[2], point[3]
 
         # text
         text_x, text_y_start = -120, 60
@@ -354,24 +335,20 @@ class HierarchicalDecision(object):
         plt.text(text_x, text_y_start - next(ge), 'ego_y: {:.2f}m'.format(ego_y))
         plt.text(text_x, text_y_start - next(ge), 'path_x: {:.2f}m'.format(path_x))
         plt.text(text_x, text_y_start - next(ge), 'path_y: {:.2f}m'.format(path_y))
-        plt.text(text_x, text_y_start - next(ge), 'delta_: {:.2f}m'.format(delta_))
-        plt.text(text_x, text_y_start - next(ge), 'delta_x: {:.2f}m'.format(delta_x))
-        plt.text(text_x, text_y_start - next(ge), 'delta_y: {:.2f}m'.format(delta_y))
+        plt.text(text_x, text_y_start - next(ge), 'devi_longi: {:.2f}m'.format(devi_longi))
+        plt.text(text_x, text_y_start - next(ge), 'devi_lateral: {:.2f}m'.format(devi_lateral))
+        plt.text(text_x, text_y_start - next(ge), 'devi_v: {:.2f}m/s'.format(devi_v))
         plt.text(text_x, text_y_start - next(ge), r'ego_phi: ${:.2f}\degree$'.format(ego_phi))
         plt.text(text_x, text_y_start - next(ge), r'path_phi: ${:.2f}\degree$'.format(path_phi))
-        plt.text(text_x, text_y_start - next(ge), r'delta_phi: ${:.2f}\degree$'.format(delta_phi))
+        plt.text(text_x, text_y_start - next(ge), r'devi_phi: ${:.2f}\degree$'.format(devi_phi))
+
         plt.text(text_x, text_y_start - next(ge), 'v_x: {:.2f}m/s'.format(ego_v_x))
-        plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(self.env.exp_v))
+        plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(path_v))
         plt.text(text_x, text_y_start - next(ge), 'v_y: {:.2f}m/s'.format(ego_v_y))
         plt.text(text_x, text_y_start - next(ge), 'yaw_rate: {:.2f}rad/s'.format(ego_r))
-        plt.text(text_x, text_y_start - next(ge), 'yaw_rate bound: [{:.2f}, {:.2f}]'.format(-r_bound, r_bound))
-
-        plt.text(text_x, text_y_start - next(ge), r'$\alpha_f$: {:.2f} rad'.format(ego_alpha_f))
-        plt.text(text_x, text_y_start - next(ge), r'$\alpha_f$ bound: [{:.2f}, {:.2f}] '.format(-alpha_f_bound,
-                                                                                                alpha_f_bound))
-        plt.text(text_x, text_y_start - next(ge), r'$\alpha_r$: {:.2f} rad'.format(ego_alpha_r))
-        plt.text(text_x, text_y_start - next(ge), r'$\alpha_r$ bound: [{:.2f}, {:.2f}] '.format(-alpha_r_bound,
-                                                                                                alpha_r_bound))
+        plt.text(text_x, text_y_start - next(ge), ' ')
+        plt.text(text_x, text_y_start - next(ge), 'light: {}'.format(self.env.light_phase))
+        plt.text(text_x, text_y_start - next(ge), ' ')
         if self.env.action is not None:
             steer, a_x = self.env.action[0], self.env.action[1]
             plt.text(text_x, text_y_start - next(ge),
@@ -387,7 +364,7 @@ class HierarchicalDecision(object):
         # reward info
         if self.env.reward_info is not None:
             for key, val in self.env.reward_info.items():
-                plt.text(text_x, text_y_start - next(ge), '{}: {:.4f}'.format(key, val))
+                plt.text(text_x, text_y_start - next(ge), 'rew_{}: {:.4f}'.format(key, val))
 
         # indicator for trajectory selection
         text_x, text_y_start = 25, -30
@@ -418,19 +395,19 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('unify', 'experiment-2021-06-01-13-09-13', 180000, logdir)
+    hier_decision = HierarchicalDecision('experiment-2021-11-02-10-44-56', 300000, logdir)
 
     for i in range(300):
-        done = 0
-        while not done:
+        for _ in range(200):
             done = hier_decision.step()
+            if done: break
         hier_decision.reset()
 
 
 def plot_static_path():
-    square_length = CROSSROAD_SIZE
+    square_length = Para.CROSSROAD_SIZE
     extension = 20
-    lane_width = LANE_WIDTH
+    lane_width = Para.LANE_WIDTH
     light_line_width = 3
     dotted_line_style = '--'
     solid_line_style = '-'
@@ -454,9 +431,9 @@ def plot_static_path():
     plt.plot([square_length / 2 + extension, square_length / 2], [0.3, 0.3], color='orange')
     plt.plot([square_length / 2 + extension, square_length / 2], [-0.3, -0.3], color='orange')
 
-    for i in range(1, LANE_NUMBER + 1):
-        linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
-        linewidth = 1 if i < LANE_NUMBER else 2
+    for i in range(1, Para.LANE_NUMBER + 1):
+        linestyle = dotted_line_style if i < Para.LANE_NUMBER else solid_line_style
+        linewidth = 1 if i < Para.LANE_NUMBER else 2
         plt.plot([-square_length / 2 - extension, -square_length / 2], [i * lane_width, i * lane_width],
                  linestyle=linestyle, color='black', linewidth=linewidth)
         plt.plot([square_length / 2 + extension, square_length / 2], [i * lane_width, i * lane_width],
@@ -472,9 +449,9 @@ def plot_static_path():
     plt.plot([0.3, 0.3], [square_length / 2 + extension, square_length / 2], color='orange')
     plt.plot([-0.3, -0.3], [square_length / 2 + extension, square_length / 2], color='orange')
 
-    for i in range(1, LANE_NUMBER + 1):
-        linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
-        linewidth = 1 if i < LANE_NUMBER else 2
+    for i in range(1, Para.LANE_NUMBER + 1):
+        linestyle = dotted_line_style if i < Para.LANE_NUMBER else solid_line_style
+        linewidth = 1 if i < Para.LANE_NUMBER else 2
         plt.plot([i * lane_width, i * lane_width], [-square_length / 2 - extension, -square_length / 2],
                  linestyle=linestyle, color='black', linewidth=linewidth)
         plt.plot([i * lane_width, i * lane_width], [square_length / 2 + extension, square_length / 2],
@@ -483,31 +460,31 @@ def plot_static_path():
                  linestyle=linestyle, color='black', linewidth=linewidth)
         plt.plot([-i * lane_width, -i * lane_width], [square_length / 2 + extension, square_length / 2],
                  linestyle=linestyle, color='black', linewidth=linewidth)
-    plt.plot([0, LANE_NUMBER * lane_width], [-square_length / 2, -square_length / 2],
+    plt.plot([0, Para.LANE_NUMBER * lane_width], [-square_length / 2, -square_length / 2],
              color='black', linewidth=light_line_width, alpha=0.3)
-    plt.plot([LANE_NUMBER * lane_width, 0], [square_length / 2, square_length / 2],
+    plt.plot([Para.LANE_NUMBER * lane_width, 0], [square_length / 2, square_length / 2],
              color='black', linewidth=light_line_width, alpha=0.3)
-    plt.plot([-square_length / 2, -square_length / 2], [0, LANE_NUMBER * lane_width],
+    plt.plot([-square_length / 2, -square_length / 2], [0, Para.LANE_NUMBER * lane_width],
              color='black', linewidth=light_line_width, alpha=0.3)
-    plt.plot([square_length / 2, square_length / 2], [-LANE_NUMBER * lane_width, 0],
+    plt.plot([square_length / 2, square_length / 2], [-Para.LANE_NUMBER * lane_width, 0],
              color='black', linewidth=light_line_width, alpha=0.3)
 
     # ----------Oblique--------------
-    plt.plot([LANE_NUMBER * lane_width, square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
+    plt.plot([Para.LANE_NUMBER * lane_width, square_length / 2], [-square_length / 2, -Para.LANE_NUMBER * lane_width],
              color='black', linewidth=2)
-    plt.plot([LANE_NUMBER * lane_width, square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
+    plt.plot([Para.LANE_NUMBER * lane_width, square_length / 2], [square_length / 2, Para.LANE_NUMBER * lane_width],
              color='black', linewidth=2)
-    plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
+    plt.plot([-Para.LANE_NUMBER * lane_width, -square_length / 2], [-square_length / 2, -Para.LANE_NUMBER * lane_width],
              color='black', linewidth=2)
-    plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
+    plt.plot([-Para.LANE_NUMBER * lane_width, -square_length / 2], [square_length / 2, Para.LANE_NUMBER * lane_width],
              color='black', linewidth=2)
 
     for task in ['left', 'straight', 'right']:
         path = ReferencePath(task)
-        path_list = path.path_list
+        path_list = path.path_list['green']
         control_points = path.control_points
         color = ['blue', 'coral', 'darkcyan']
-        for i, (path_x, path_y, _) in enumerate(path_list):
+        for i, (path_x, path_y, _, _) in enumerate(path_list):
             plt.plot(path_x[600:-600], path_y[600:-600], color=color[i])
         for i, four_points in enumerate(control_points):
             for point in four_points:
@@ -522,10 +499,10 @@ def plot_static_path():
 def select_and_rename_snapshots_of_an_episode(logdir, epinum, num):
     file_list = os.listdir(logdir + '/episode{}'.format(epinum))
     file_num = len(file_list) - 1
-    intervavl = file_num // (num-1)
+    interval = file_num // (num-1)
     start = file_num % (num-1)
-    print(start, file_num, intervavl)
-    selected = [start//2] + [start//2+intervavl*i-1 for i in range(1, num)]
+    print(start, file_num, interval)
+    selected = [start//2] + [start//2+interval*i for i in range(1, num-1)]
     print(selected)
     if file_num > 0:
         for i, j in enumerate(selected):

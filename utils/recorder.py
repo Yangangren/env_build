@@ -9,13 +9,13 @@
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+import matplotlib.pyplot as ticker
 from matplotlib.pyplot import MultipleLocator
 import math
 import pandas as pd
 sns.set(style="darkgrid")
 
-WINDOWSIZE = 15
+WINDOWSIZE = 1
 
 
 class Recorder(object):
@@ -133,7 +133,7 @@ class Recorder(object):
                     ax = f.add_axes([0.11, 0.12, 0.88, 0.86])
                     sns.lineplot('time', 'data_smo', linewidth=2,
                                  data=df, palette="bright", color='indigo')
-                    plt.ylim([0, 10])
+                    plt.ylim([0, 80])
                 elif key == 'a_x':
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key]))
                     df['data_smo'] = df['data'].rolling(WINDOWSIZE, min_periods=1).mean()

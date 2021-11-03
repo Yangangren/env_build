@@ -9,7 +9,6 @@
 # =====================================
 
 import math
-import datetime
 import matplotlib.pyplot as plt
 from casadi import *
 
@@ -268,8 +267,8 @@ class ModelPredictiveControl(object):
             Uname = 'U' + str(k - 1)
             Uk = MX.sym(Uname, self.ACTION_DIM)
             w += [Uk]
-            lbw += [-0.4, -3.]                    # todo: action constraints
-            ubw += [0.4, 1.5]
+            lbw += [-0.4, -4.]                    # todo: action constraints
+            ubw += [0.4, 2.]
 
             Fk = F(Xk, Uk)
             Gk = G_f(Xk)
@@ -319,41 +318,32 @@ class ModelPredictiveControl(object):
 
 
 class HierarchicalMpc(object):
-    def __init__(self, task, logdir):
+    def __init__(self, task):
         self.task = task
         if self.task == 'left':
-            self.policy = LoadPolicy('../utils/models/left/experiment-2021-03-15-16-39-00', 180000)
-        # elif self.task == 'right':
-        #     self.policy = LoadPolicy('G:\\env_build\\utils\\models\\right', 145000)
-        # elif self.task == 'straight':
-        #     self.policy = LoadPolicy('G:\\env_build\\utils\\models\\straight', 95000)
+            self.policy = LoadPolicy('G:\\env_build\\utils\\models\\left', 100000)
+        elif self.task == 'right':
+            self.policy = LoadPolicy('G:\\env_build\\utils\\models\\right', 145000)
+        elif self.task == 'straight':
+            self.policy = LoadPolicy('G:\\env_build\\utils\\models\\straight', 95000)
 
-        self.logdir = logdir
-        self.episode_counter = 0
         self.horizon = 25
         self.num_future_data = 0
         self.env = CrossroadEnd2end(training_task=self.task, num_future_data=self.num_future_data)
         self.model = EnvironmentModel(self.task)
         self.obs = self.env.reset()
         self.stg = StaticTrajectoryGenerator_origin(mode='static_traj')
+        self.data2plot = []
         self.mpc_cal_timer = TimerStat()
         self.adp_cal_timer = TimerStat()
         self.recorder = Recorder()
-        self.hist_posi = []
 
     def reset(self):
         self.obs = self.env.reset()
         self.stg = StaticTrajectoryGenerator_origin(mode='static_traj')
         self.recorder.reset()
-        self.hist_posi = []
-
-        if self.logdir is not None:
-            os.makedirs(self.logdir + '/episode{}/figs'.format(self.episode_counter))
-            self.recorder.save(self.logdir)
-            self.episode_counter += 1
-            if self.episode_counter >= 1:
-                self.recorder.plot_mpc_rl(self.episode_counter-1,
-                                          self.logdir + '/episode{}/figs'.format(self.episode_counter-1), isshow=False)
+        self.recorder.save('.')
+        self.data2plot = []
         return self.obs
 
     def convert_vehs_to_abso(self, obs_rela):
@@ -389,33 +379,38 @@ class HierarchicalMpc(object):
                         (-1, 1))
                     mpc_action = control[0]
 
-                MPC_traj_return_value.append(cost.squeeze().tolist())
+                MPC_traj_return_value.append(-cost.squeeze().tolist())
                 action_total.append(mpc_action)
 
             MPC_traj_return_value = np.array(MPC_traj_return_value, dtype=np.float32)
-            MPC_path_index = np.argmin(MPC_traj_return_value)                           # todo: minimize
+            MPC_path_index = np.argmax(MPC_traj_return_value)
             MPC_action = action_total[MPC_path_index]
 
         with self.adp_cal_timer:
-            obs_list = []
             for ref_index, trajectory in enumerate(traj_list):
                 self.env.set_traj(trajectory)
-                obs_list.append(self.env._get_obs())
-            all_obs = np.stack(obs_list, axis=0)
-            ADP_traj_return_value = self.policy.obj_value_batch(all_obs).numpy()
-            ADP_path_index = np.argmin(ADP_traj_return_value)
+                obs = self.env._get_obs()[np.newaxis, :]
+                traj_value = self.policy.values(obs)
+                ADP_traj_return_value.append(traj_value.numpy().squeeze().tolist())
 
+            ADP_traj_return_value = np.array(ADP_traj_return_value, dtype=np.float32)[:, 0]
+            ADP_path_index = np.argmax(ADP_traj_return_value)
             if np.amax(ADP_traj_return_value) == np.amin(ADP_traj_return_value):
                 ADP_path_index = MPC_path_index
-
-            # todo：1st rule
-            if np.random.random() < 1.0:
-                MPC_path_index = ADP_path_index
-            self.obs_real = obs_list[ADP_path_index][np.newaxis, :]
-            ADP_action = self.policy.run_batch(self.obs_real).numpy()[0]
+            self.env.set_traj(traj_list[ADP_path_index])
+            self.obs_real = self.env._get_obs()
+            ADP_action = self.policy.run(self.obs_real).numpy()
 
         self.recorder.record_compare(self.obs, ADP_action, MPC_action, self.adp_cal_timer.mean * 1000, self.mpc_cal_timer.mean * 1000,
                              ADP_path_index, MPC_path_index, 'both')
+
+        self.data2plot.append(dict(obs=self.obs,
+                                   ADP_action=ADP_action,
+                                   MPC_action=MPC_action,
+                                   ADP_path_index=ADP_path_index,
+                                   MPC_path_index=MPC_path_index,
+                                   mpc_time=self.mpc_cal_timer.mean * 1000,
+                                   ))
 
         self.obs, rew, done, _ = self.env.step(ADP_action)
         self.render(traj_list, ADP_traj_return_value, ADP_path_index, MPC_traj_return_value, MPC_path_index, method='ADP')
@@ -449,47 +444,41 @@ class HierarchicalMpc(object):
         # ----------arrow--------------
         plt.arrow(lane_width / 2, -square_length / 2 - 10, 0, 5, color='b')
         plt.arrow(lane_width / 2, -square_length / 2 - 10 + 5, -0.5, 0, color='b', head_width=1)
-        plt.arrow(lane_width * 1.5, -square_length / 2 - 10, 0, 4, color='b', head_width=1)
+        plt.arrow(lane_width * 1.5, -square_length / 2 - 10, 0, 5, color='b', head_width=1)
         plt.arrow(lane_width * 2.5, -square_length / 2 - 10, 0, 5, color='b')
         plt.arrow(lane_width * 2.5, -square_length / 2 - 10 + 5, 0.5, 0, color='b', head_width=1)
 
         # ----------horizon--------------
-        plt.plot([-square_length / 2 - extension, -square_length / 2], [0.3, 0.3], color='orange')
-        plt.plot([-square_length / 2 - extension, -square_length / 2], [-0.3, -0.3], color='orange')
-        plt.plot([square_length / 2 + extension, square_length / 2], [0.3, 0.3], color='orange')
-        plt.plot([square_length / 2 + extension, square_length / 2], [-0.3, -0.3], color='orange')
+        plt.plot([-square_length / 2 - extension, -square_length / 2], [0, 0], color='black')
+        plt.plot([square_length / 2 + extension, square_length / 2], [0, 0], color='black')
 
         #
         for i in range(1, LANE_NUMBER + 1):
             linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
-            linewidth = 1 if i < LANE_NUMBER else 2
             plt.plot([-square_length / 2 - extension, -square_length / 2], [i * lane_width, i * lane_width],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
+                     linestyle=linestyle, color='black')
             plt.plot([square_length / 2 + extension, square_length / 2], [i * lane_width, i * lane_width],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
+                     linestyle=linestyle, color='black')
             plt.plot([-square_length / 2 - extension, -square_length / 2], [-i * lane_width, -i * lane_width],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
+                     linestyle=linestyle, color='black')
             plt.plot([square_length / 2 + extension, square_length / 2], [-i * lane_width, -i * lane_width],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
+                     linestyle=linestyle, color='black')
 
         # ----------vertical----------------
-        plt.plot([0.3, 0.3], [-square_length / 2 - extension, -square_length / 2], color='orange')
-        plt.plot([-0.3, -0.3], [-square_length / 2 - extension, -square_length / 2], color='orange')
-        plt.plot([0.3, 0.3], [square_length / 2 + extension, square_length / 2], color='orange')
-        plt.plot([-0.3, -0.3], [square_length / 2 + extension, square_length / 2], color='orange')
+        plt.plot([0, 0], [-square_length / 2 - extension, -square_length / 2], color='black')
+        plt.plot([0, 0], [square_length / 2 + extension, square_length / 2], color='black')
 
         #
         for i in range(1, LANE_NUMBER + 1):
             linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
-            linewidth = 1 if i < LANE_NUMBER else 2
             plt.plot([i * lane_width, i * lane_width], [-square_length / 2 - extension, -square_length / 2],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
+                     linestyle=linestyle, color='black')
             plt.plot([i * lane_width, i * lane_width], [square_length / 2 + extension, square_length / 2],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
+                     linestyle=linestyle, color='black')
             plt.plot([-i * lane_width, -i * lane_width], [-square_length / 2 - extension, -square_length / 2],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
+                     linestyle=linestyle, color='black')
             plt.plot([-i * lane_width, -i * lane_width], [square_length / 2 + extension, square_length / 2],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
+                     linestyle=linestyle, color='black')
 
         v_light = self.env.v_light
         if v_light == 0:
@@ -523,13 +512,13 @@ class HierarchicalMpc(object):
 
         # ----------Oblique--------------
         plt.plot([LANE_NUMBER * lane_width, square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
-                 color='black', linewidth=2)
+                 color='black')
         plt.plot([LANE_NUMBER * lane_width, square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
-                 color='black', linewidth=2)
+                 color='black')
         plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
-                 color='black', linewidth=2)
+                 color='black')
         plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
-                 color='black', linewidth=2)
+                 color='black')
 
         def is_in_plot_area(x, y, tolerance=5):
             if -square_length / 2 - extension + tolerance < x < square_length / 2 + extension - tolerance and \
@@ -538,13 +527,18 @@ class HierarchicalMpc(object):
             else:
                 return False
 
-        def draw_rotate_rec(x, y, a, l, w, c):
-            bottom_left_x, bottom_left_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
-            ax.add_patch(plt.Rectangle((x + bottom_left_x, y + bottom_left_y), w, l, edgecolor=c,
-                                       facecolor='white', angle=-(90 - a), zorder=50))
+        def draw_rotate_rec(x, y, a, l, w, color, linestyle='-'):
+            RU_x, RU_y, _ = rotate_coordination(l / 2, w / 2, 0, -a)
+            RD_x, RD_y, _ = rotate_coordination(l / 2, -w / 2, 0, -a)
+            LU_x, LU_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
+            LD_x, LD_y, _ = rotate_coordination(-l / 2, -w / 2, 0, -a)
+            ax.plot([RU_x + x, RD_x + x], [RU_y + y, RD_y + y], color=color, linestyle=linestyle)
+            ax.plot([RU_x + x, LU_x + x], [RU_y + y, LU_y + y], color=color, linestyle=linestyle)
+            ax.plot([LD_x + x, RD_x + x], [LD_y + y, RD_y + y], color=color, linestyle=linestyle)
+            ax.plot([LD_x + x, LU_x + x], [LD_y + y, LU_y + y], color=color, linestyle=linestyle)
 
         def plot_phi_line(x, y, phi, color):
-            line_length = 3
+            line_length = 5
             x_forw, y_forw = x + line_length * cos(phi * pi / 180.), \
                              y + line_length * sin(phi * pi / 180.)
             plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
@@ -593,13 +587,6 @@ class HierarchicalMpc(object):
 
         plot_phi_line(ego_x, ego_y, ego_phi, 'fuchsia')
         draw_rotate_rec(ego_x, ego_y, ego_phi, ego_l, ego_w, 'fuchsia')
-        self.hist_posi.append((ego_x, ego_y))
-
-        # plot history
-        xs = [pos[0] for pos in self.hist_posi]
-        ys = [pos[1] for pos in self.hist_posi]
-        plt.scatter(np.array(xs), np.array(ys), color='fuchsia', alpha=0.1)
-
 
         # plot future data
         tracking_info = self.obs[
@@ -620,7 +607,7 @@ class HierarchicalMpc(object):
 
         # plot real time traj
         try:
-            color = ['blue', 'coral', 'darkcyan']
+            color = ['blue', 'coral', 'cyan']
             for i, item in enumerate(traj_list):
                 if method == 'ADP':
                     if i == ADP_path_index:
@@ -711,25 +698,23 @@ class HierarchicalMpc(object):
 
 
 def main():
-    time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    logdir = './results/{time}'.format(time=time_now)
-    hier_decision = HierarchicalMpc('left', logdir)
-    for i in range(15):
+    hier_decision = HierarchicalMpc('left')
+    for i in range(1):
         done = 0
         for _ in range(150):
             done = hier_decision.step()
             if done:
                 break
-        # np.save('mpc.npy', np.array(hier_decision.data2plot))
+        np.save('mpc.npy', np.array(hier_decision.data2plot))
         hier_decision.reset()
 
 
 def plot_data(epi_num, logdir):
     recorder = Recorder()
     recorder.load(logdir)
-    recorder.plot_mpc_rl(epi_num, logdir, sample=True)
+    recorder.plot_mpc_rl(epi_num)
 
 
 if __name__ == '__main__':
-    # main()
-    plot_data(epi_num=6, logdir='./results/2021-03-17-22-33-09')
+    main()
+    plot_data(epi_num=0, logdir='.')
