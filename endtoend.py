@@ -42,7 +42,7 @@ def convert_observation_to_space(observation):
     return space
 
 
-class CrossroadEnd2endPiIntegrate(gym.Env):
+class CrossroadEnd2endAllRela(gym.Env):
     def __init__(self,
                  mode='training',
                  multi_display=False,
@@ -309,7 +309,7 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
         vector = np.concatenate((ego_vector, track_vector, self.light_encoding, self.task_encoding,
                                  self.ref_path.ref_encoding, other_vector), axis=0)
         vector = vector.astype(np.float32)
-        vector = self._convert_to_rela(vector)
+        # vector = self._convert_to_rela(vector)
 
         return vector, other_mask_vector, future_n_point
 
@@ -803,7 +803,7 @@ class CrossroadEnd2endPiIntegrate(gym.Env):
 
 def test_end2end():
     import random
-    env = CrossroadEnd2endPiIntegrate()
+    env = CrossroadEnd2endAllRela()
     env_model = EnvironmentModel()
     obs, all_info = env.reset()
     i = 0

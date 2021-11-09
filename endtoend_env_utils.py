@@ -198,6 +198,8 @@ def cal_info_in_transform_coordination(filtered_objects, x, y, rotate_d):  # rot
         width = obj['w']
         length = obj['l']
         route = obj['route']
+        turn_rad = obj['turn_rad']
+        exist = obj['exist']
         shifted_x, shifted_y = shift_coordination(orig_x, orig_y, x, y)
         trans_x, trans_y, trans_heading = rotate_coordination(shifted_x, shifted_y, orig_heading, rotate_d)
         trans_v = orig_v
@@ -207,7 +209,9 @@ def cal_info_in_transform_coordination(filtered_objects, x, y, rotate_d):  # rot
                         'phi': trans_heading,
                         'w': width,
                         'l': length,
-                        'route': route,})
+                        'route': route,
+                        'turn_rad': turn_rad,
+                        'exist': exist})
     return results
 
 

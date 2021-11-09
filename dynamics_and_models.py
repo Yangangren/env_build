@@ -170,7 +170,7 @@ class EnvironmentModel(object):  # all tensors
     #     return veh2veh4real
 
     def compute_rewards(self, obses, actions):
-        obses = self._convert_to_abso(obses)
+        # obses = self._convert_to_abso(obses)
         obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_other = self._split_all(obses)
 
         with tf.name_scope('compute_reward') as scope:
@@ -341,7 +341,7 @@ class EnvironmentModel(object):  # all tensors
             return rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real,veh2line4real, reward_dict
 
     def compute_next_obses(self, obses, actions, ref_points):
-        obses = self._convert_to_abso(obses)
+        # obses = self._convert_to_abso(obses)
         obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_other = self._split_all(obses)
         obses_other = tf.stop_gradient(obses_other)
         next_obses_ego = self._ego_predict(obses_ego, actions)
@@ -349,7 +349,7 @@ class EnvironmentModel(object):  # all tensors
         next_obses_other = self._other_predict(obses_other)
         next_obses = tf.concat([next_obses_ego, next_obses_track, obses_light, obses_task, obses_ref, next_obses_other],
                                axis=-1)
-        next_obses = self._convert_to_rela(next_obses)
+        # next_obses = self._convert_to_rela(next_obses)
         return next_obses
 
     def _compute_next_track_info(self, next_ego_infos, ref_points):
