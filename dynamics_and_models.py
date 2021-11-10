@@ -78,8 +78,9 @@ class VehicleDynamics(object):
 
 
 class EnvironmentModel(object):  # all tensors
-    def __init__(self, mode='training'):
+    def __init__(self, future_point_num=25, mode='training'):
         self.mode = mode
+        self.future_point_num = future_point_num
         self.vehicle_dynamics = VehicleDynamics()
         self.base_frequency = 10.
         self.obses = None
@@ -94,9 +95,11 @@ class EnvironmentModel(object):  # all tensors
         self.task_info_dim = Para.TASK_ENCODING_DIM
         self.ref_info_dim = Para.REF_ENCODING_DIM
         self.other_number = sum([self.veh_num, self.bike_num, self.person_num])
-        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.light_info_dim,
-                                    self.task_info_dim, self.ref_info_dim])
         self.per_other_info_dim = Para.PER_OTHER_INFO_DIM
+        self.future_point_num = future_point_num
+        self.per_path_info_dim = Para.PER_PATH_INFO_DIM
+        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_point_num * self.per_path_info_dim,
+                                    self.light_info_dim, self.task_info_dim, self.ref_info_dim])
         self.steer_store = []
 
     def reset(self, obses):  # input are all tensors
@@ -171,7 +174,7 @@ class EnvironmentModel(object):  # all tensors
 
     def compute_rewards(self, obses, actions):
         # obses = self._convert_to_abso(obses)
-        obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_other = self._split_all(obses)
+        obses_ego, obses_track, obses_future_point, obses_light, obses_task, obses_ref, obses_other = self._split_all(obses)
 
         with tf.name_scope('compute_reward') as scope:
             veh_infos = tf.stop_gradient(obses_other)
@@ -456,14 +459,16 @@ class EnvironmentModel(object):  # all tensors
     def _split_all(self, obses):
         obses_ego = obses[:, :self.ego_info_dim]
         obses_track = obses[:, self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
-        obses_light = obses[:, self.ego_info_dim + self.track_info_dim:
-                               self.ego_info_dim + self.track_info_dim + self.light_info_dim]
-        obses_task = obses[:, self.ego_info_dim + self.track_info_dim + self.light_info_dim:
-                              self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim]
-        obses_ref = obses[:, self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim:
+        obses_future_point = obses[:, self.ego_info_dim + self.track_info_dim:
+                                      self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim]
+        obses_light = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim:
+                               self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim]
+        obses_task = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim:
+                              self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim]
+        obses_ref = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim:
                              self.other_start_dim]
         obses_other = obses[:, self.other_start_dim:]
-        return obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_other
+        return obses_ego, obses_track, obses_future_point, obses_light, obses_task, obses_ref, obses_other
 
     def _split_other(self, obses_other):
         obses_bike = obses_other[:, :self.bike_num * self.per_other_info_dim]
@@ -656,28 +661,18 @@ class ReferencePath(object):
         self.ref_encoding = REF_ENCODING[path_index]
         self.path = self.path_list[green_or_red][path_index]
 
-    def get_future_n_point(self, ego_x, ego_y, n, dt=0.1):  # not include the current closest point
+    def get_future_n_point(self, ego_x, ego_y, n):  # not include the current closest point
         idx, _ = self._find_closest_point(ego_x, ego_y)
-        future_n_x, future_n_y, future_n_phi, future_n_v = [], [], [], []
+        future_n_point = []
         for _ in range(n):
+            if idx + 1 >= len(self.path[0]):
+                print('Caution!!! idx proceeds the maximum in {} step when getting future point'.format(n))
+                idx = idx
+            else:
+                idx = idx + 1
             x, y, phi, v = self.idx2point(idx)
-            ds = v * dt
-            s = 0
-            while s < ds:
-                if idx + 1 >= len(self.path[0]):
-                    break
-                next_x, next_y, _, _ = self.idx2point(idx + 1)
-                s += np.sqrt(np.square(next_x - x) + np.square(next_y - y))
-                x, y = next_x, next_y
-                idx += 1
-            x, y, phi, v = self.idx2point(idx)
-            future_n_x.append(x)
-            future_n_y.append(y)
-            future_n_phi.append(phi)
-            future_n_v.append(v)
-        future_n_point = np.stack([np.array(future_n_x, dtype=np.float32), np.array(future_n_y, dtype=np.float32),
-                                   np.array(future_n_phi, dtype=np.float32), np.array(future_n_v, dtype=np.float32)],
-                                  axis=0)
+            future_n_point.extend([x, y, phi, v])
+        future_n_point = np.array(future_n_point)
         return future_n_point
 
     def tracking_error_vector(self, ego_x, ego_y, ego_phi, ego_v):
@@ -778,10 +773,18 @@ class ReferencePath(object):
                             end_straight_line_x), dtype=np.float32)
                     vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
-                    planed_trj_green = xs_1, ys_1, phis_1, vs_green
-                    planed_trj_red = xs_1, ys_1, phis_1, vs_red
-                    planed_trj_g.append(planed_trj_green)
-                    planed_trj_r.append(planed_trj_red)
+                    # planed_trj_green = xs_1, ys_1, phis_1, vs_green
+                    # planed_trj_red = xs_1, ys_1, phis_1, vs_red
+                    # planed_trj_g.append(planed_trj_green)
+                    # planed_trj_r.append(planed_trj_red)
+
+                    # filter points by expected velocity
+                    filtered_trj_g = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_green)
+                    filtered_tri_r = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_red)
+
+                    planed_trj_g.append(filtered_trj_g)
+                    planed_trj_r.append(filtered_tri_r)
+
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
             self.path_list = {'green': planed_trj_g, 'red': planed_trj_r}
 
@@ -823,10 +826,18 @@ class ReferencePath(object):
                                         [8.33] * len(end_straight_line_x), dtype=np.float32)
                     vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
-                    planed_trj_green = xs_1, ys_1, phis_1, vs_green
-                    planed_trj_red = xs_1, ys_1, phis_1, vs_red
-                    planed_trj_g.append(planed_trj_green)
-                    planed_trj_r.append(planed_trj_red)
+                    # planed_trj_green = xs_1, ys_1, phis_1, vs_green
+                    # planed_trj_red = xs_1, ys_1, phis_1, vs_red
+                    # planed_trj_g.append(planed_trj_green)
+                    # planed_trj_r.append(planed_trj_red)
+
+                    # filter points by expected velocity
+                    filtered_trj_g = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_green)
+                    filtered_tri_r = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_red)
+
+                    planed_trj_g.append(filtered_trj_g)
+                    planed_trj_r.append(filtered_tri_r)
+
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
             self.path_list = {'green': planed_trj_g, 'red': planed_trj_r}
 
@@ -864,19 +875,51 @@ class ReferencePath(object):
                     vs_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] *
                                         len(end_straight_line_x), dtype=np.float32)
 
-                    planed_trj_green = xs_1, ys_1, phis_1, vs_green
-                    planed_trj_red = xs_1, ys_1, phis_1, vs_green     # the same velocity design for turning right
-                    planed_trj_g.append(planed_trj_green)
-                    planed_trj_r.append(planed_trj_red)
+                    # same velocity design for turning right
+                    # planed_trj_green = xs_1, ys_1, phis_1, vs_green
+                    # planed_trj_red = xs_1, ys_1, phis_1, vs_green
+
+                    # filter points by expected velocity
+                    filtered_trj_g = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_green)
+                    filtered_tri_r = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_green)
+
+                    planed_trj_g.append(filtered_trj_g)
+                    planed_trj_r.append(filtered_tri_r)
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
             self.path_list = {'green': planed_trj_g, 'red': planed_trj_r}
 
-    def _find_closest_point(self, x, y, ratio=10):
+    def _get_point_by_speed(self, xs, ys, phis, vs, dt=0.1):
+        assert len(xs) == len(ys) == len(phis) == len(vs), 'len of path variable is not equal'
+        idx = 0
+        future_n_x, future_n_y, future_n_phi, future_n_v = [], [], [], []
+        while idx + 1 < len(xs):
+            x, y, phi, v = xs[idx], ys[idx], phis[idx], vs[idx]
+            ds = v * dt
+            if ds <= 0.:
+                break
+            s = 0
+            while s < ds:
+                if idx + 1 >= len(xs):
+                    break
+                next_x, next_y, _, _ = xs[idx+1], ys[idx+1], phis[idx+1], vs[idx+1]
+                s += np.sqrt(np.square(next_x - x) + np.square(next_y - y))
+                x, y = next_x, next_y
+                idx += 1
+            x, y, phi, v = xs[idx], ys[idx], phis[idx], vs[idx]
+            future_n_x.append(x)
+            future_n_y.append(y)
+            future_n_phi.append(phi)
+            future_n_v.append(v)
+
+        filtered_trj = np.array(future_n_x), np.array(future_n_y), np.array(future_n_phi), np.array(future_n_v)
+        return filtered_trj
+
+    def _find_closest_point(self, x, y):
         path_len = len(self.path[0])
-        reduced_idx = np.arange(0, path_len, ratio)
+        reduced_idx = np.arange(0, path_len)
         reduced_path_x, reduced_path_y = self.path[0][reduced_idx], self.path[1][reduced_idx]
         dists = np.square(x - reduced_path_x) + np.square(y - reduced_path_y)
-        idx = np.argmin(dists) * ratio
+        idx = np.argmin(dists)
         return idx, self.idx2point(idx)
 
     def plot_path(self, x, y):
