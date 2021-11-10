@@ -20,7 +20,7 @@ import numpy as np
 import tensorflow as tf
 
 from dynamics_and_models import EnvironmentModel, ReferencePath
-from endtoend import CrossroadEnd2endPiIntegrate
+from endtoend import CrossroadEnd2endAllRela
 from endtoend_env_utils import *
 from multi_path_generator import MultiPathGenerator
 from utils.load_policy import LoadPolicy
@@ -32,7 +32,7 @@ class HierarchicalDecision(object):
     def __init__(self, train_exp_dir, ite, logdir=None):
         self.policy = LoadPolicy('../utils/models/{}'.format(train_exp_dir), ite)
         self.args = self.policy.args
-        self.env = CrossroadEnd2endPiIntegrate(mode='testing', future_point_num=self.args.num_rollout_list_for_policy_update[0])
+        self.env = CrossroadEnd2endAllRela(mode='testing', future_point_num=self.args.num_rollout_list_for_policy_update[0])
         self.model = EnvironmentModel(mode='testing')
         self.recorder = Recorder()
         self.episode_counter = -1
@@ -395,7 +395,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('experiment-2021-11-02-10-44-56', 300000, logdir)
+    hier_decision = HierarchicalDecision('experiment-2021-11-09-20-16-22', 300000, logdir)
 
     for i in range(300):
         for _ in range(200):

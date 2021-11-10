@@ -12,7 +12,7 @@ import json
 import tensorflow as tf
 import numpy as np
 
-from endtoend import CrossroadEnd2endPiIntegrate
+from endtoend import CrossroadEnd2endAllRela
 from utils.policy import Policy4Toyota
 from utils.preprocessor import Preprocessor
 
@@ -25,7 +25,7 @@ class LoadPolicy(object):
         for key, val in params.items():
             parser.add_argument("-" + key, default=val)
         self.args = parser.parse_args()
-        env = CrossroadEnd2endPiIntegrate(future_point_num=self.args.num_rollout_list_for_policy_update[0])
+        env = CrossroadEnd2endAllRela(future_point_num=self.args.num_rollout_list_for_policy_update[0])
         self.policy = Policy4Toyota(self.args)
         self.policy.load_weights(model_dir, iter)
         self.preprocessor = Preprocessor(self.args.obs_scale, self.args.reward_scale, self.args.reward_shift,
@@ -37,14 +37,16 @@ class LoadPolicy(object):
 
     @tf.function
     def run_batch(self, obses, masks):
-        processed_obses = self.preprocessor.process_obs(obses)
+        obses_transformed = self.preprocessor.tf_convert_ego_coordinate(obses)
+        processed_obses = self.preprocessor.process_obs(obses_transformed)
         states, weights = self._get_states(processed_obses, masks)
-        actions, _ = self.policy.compute_action(states)            # todo
+        actions = self.policy.compute_mode(states)
         return actions, weights
 
     @tf.function
     def obj_value_batch(self, obses, masks):
-        processed_obses = self.preprocessor.process_obs(obses)
+        obses_transformed = self.preprocessor.tf_convert_ego_coordinate(obses)
+        processed_obses = self.preprocessor.process_obs(obses_transformed)
         states, _ = self._get_states(processed_obses, masks)
         values = self.policy.compute_obj_v(states)
         return values
