@@ -101,18 +101,24 @@ class EnvironmentModel(object):  # all tensors
         self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_point_num * self.per_path_info_dim,
                                     self.light_info_dim, self.task_info_dim, self.ref_info_dim])
         self.steer_store = []
+        self.ref = ReferencePath(task='left', green_or_red='green')
+        self.path_all = self.ref.path_all
+        self.batch_path = None
+        self.path_len = None
 
-    def reset(self, obses):  # input are all tensors
+    def reset(self, obses, ref_index=None):  # input are all tensors
         self.obses = obses
         self.actions = None
         self.reward_info = None
         self.steer_store = []
+        self.batch_path = tf.gather(self.path_all, indices=ref_index)
+        self.path_len = tf.shape(self.batch_path)[-1]
 
-    def rollout_out(self, actions, ref_points):  # ref_points [#batch, 4]
+    def rollout_out(self, actions):  # ref_points [#batch, 4]
         with tf.name_scope('model_step') as scope:
             self.actions = self._action_transformation_for_end2end(actions)
 
-            self.obses = self.compute_next_obses(self.obses, self.actions, ref_points)
+            self.obses = self.compute_next_obses(self.obses, self.actions)
 
             rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2line4real, _ \
                 = self.compute_rewards(self.obses, self.actions)
@@ -343,12 +349,12 @@ class EnvironmentModel(object):  # all tensors
 
             return rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real,veh2line4real, reward_dict
 
-    def compute_next_obses(self, obses, actions, ref_points):
+    def compute_next_obses(self, obses, actions):
         # obses = self._convert_to_abso(obses)
-        obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_other = self._split_all(obses)
+        obses_ego, obses_track, obses_future_point, obses_light, obses_task, obses_ref, obses_other = self._split_all(obses)
         obses_other = tf.stop_gradient(obses_other)
         next_obses_ego = self._ego_predict(obses_ego, actions)
-        next_obses_track = self._compute_next_track_info_vectorized(next_obses_ego, ref_points)
+        next_obses_track = self._compute_next_track_info_vectorized(next_obses_ego)
         next_obses_other = self._other_predict(obses_other)
         next_obses = tf.concat([next_obses_ego, next_obses_track, obses_light, obses_task, obses_ref, next_obses_other],
                                axis=-1)
@@ -370,8 +376,14 @@ class EnvironmentModel(object):  # all tensors
         delta_vs = ego_vxs - ref_vs
         return tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
 
-    def _compute_next_track_info_vectorized(self, next_ego_infos, ref_points):
+    def _compute_next_track_info_vectorized(self, next_ego_infos):
         ego_vxs, ego_vys, ego_rs, ego_xs, ego_ys, ego_phis = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
+
+        # find close point
+        indexes, ref_points = self._find_closest_point_batch(ego_xs, ego_ys, self.batch_path)
+        # find future point
+        future_data = self._future_n_data(indexes, self.future_point_num)
+
         ref_xs, ref_ys, ref_phis, ref_vs = [ref_points[:, i] for i in range(4)]
         ref_phis_rad = ref_phis * np.pi / 180
 
@@ -384,7 +396,28 @@ class EnvironmentModel(object):  # all tensors
 
         delta_phi = deal_with_phi_diff(ego_phis - ref_phis)
         delta_vs = ego_vxs - ref_vs
-        return tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
+        track_error = tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
+        return tf.concat([track_error, future_data], axis=1)
+
+    def _find_closest_point_batch(self, xs, ys, paths):
+        xs_tile = tf.tile(tf.reshape(xs, (-1, 1)), [1, self.path_len])
+        ys_tile = tf.tile(tf.reshape(ys, (-1, 1)), [1, self.path_len])
+        pathx_tile = paths[:, 0, :]
+        pathy_tile = paths[:, 1, :]
+        dist_array = tf.square(xs_tile - pathx_tile) + tf.square(ys_tile - pathy_tile)
+        indexs = tf.argmin(dist_array, 1)
+        ref_points = tf.gather(paths, indices=indexs, axis=-1, batch_dims=1)
+        return indexs, ref_points
+
+    def _future_n_data(self, current_indexs, n):
+        future_data_list = []
+        current_indexs = tf.cast(current_indexs, tf.int32)
+        for _ in range(n):
+            current_indexs += 1
+            current_indexs = tf.where(current_indexs >= self.path_len - 1, self.path_len - 1, current_indexs)
+            ref_points = tf.gather(self.batch_path, indices=current_indexs, axis=-1, batch_dims=1)
+            future_data_list.append(ref_points)
+        return tf.concat(future_data_list, axis=1)
 
     def _judge_is_left(self, a, b, c):
         x1, y1 = a
@@ -647,19 +680,33 @@ class ReferencePath(object):
     def __init__(self, task, green_or_red='green'):
         self.task = task
         self.path_list = {}
+        self.path_all = []
         self.path_len_list = []
+        self.max_path_len = 180
         self.control_points = []
         self.green_or_red = green_or_red
         self._construct_ref_path(self.task)
+        self._construct_all_path()
         self.path = None
         self.ref_encoding = None
-        self.set_path(green_or_red)
+        self.path_index = None
+        self.set_path(task, green_or_red)
 
-    def set_path(self, green_or_red='green', path_index=None):
+    def set_path(self, task, green_or_red='green', path_index=None):
         if path_index is None:
-            path_index = np.random.choice(len(self.path_list[self.green_or_red]))
-        self.ref_encoding = REF_ENCODING[path_index]
-        self.path = self.path_list[green_or_red][path_index]
+            if task == 'left' and green_or_red == 'green':
+                path_index = np.random.choice([0, 2, 4])
+            elif task == 'left' and green_or_red == 'red':
+                path_index = np.random.choice([1, 3, 5])
+            elif task == 'straight' and green_or_red == 'green':
+                path_index = np.random.choice([6, 8, 10])
+            elif task == 'straight' and green_or_red == 'red':
+                path_index = np.random.choice([7, 9, 11])
+            elif task == 'right':
+                path_index = np.random.choice([12, 13, 14])
+        self.ref_encoding = [0., 0., 1.]                                  # todo: delete
+        self.path = self.path_all[path_index]
+        self.path_index = path_index
 
     def get_future_n_point(self, ego_x, ego_y, n):  # not include the current closest point
         idx, _ = self._find_closest_point(ego_x, ego_y)
@@ -888,7 +935,151 @@ class ReferencePath(object):
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
             self.path_list = {'green': planed_trj_g, 'red': planed_trj_r}
 
-    def _get_point_by_speed(self, xs, ys, phis, vs, dt=0.1):
+    def _construct_all_path(self):
+        sl = 40  # straight length
+        dece_dist = 20
+        meter_pointnum_ratio = 30
+        control_ext = Para.CROSSROAD_SIZE/3.
+        max_path_len = 180
+        # left
+        end_offsets = [Para.LANE_WIDTH*(i+0.5) for i in range(Para.LANE_NUMBER)]
+        start_offsets = [Para.LANE_WIDTH*0.5]
+        for start_offset in start_offsets:
+            for end_offset in end_offsets:
+                control_point1 = start_offset, -Para.CROSSROAD_SIZE/2
+                control_point2 = start_offset, -Para.CROSSROAD_SIZE/2 + control_ext
+                control_point3 = -Para.CROSSROAD_SIZE/2 + control_ext, end_offset
+                control_point4 = -Para.CROSSROAD_SIZE/2, end_offset
+                self.control_points.append([control_point1,control_point2,control_point3,control_point4])
+
+                node = np.asfortranarray([[control_point1[0], control_point2[0], control_point3[0], control_point4[0]],
+                                          [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]],
+                                         dtype=np.float32)
+                curve = bezier.Curve(node, degree=3)
+                s_vals = np.linspace(0, 1.0, int(pi/2*(Para.CROSSROAD_SIZE/2+Para.LANE_WIDTH/2)) * meter_pointnum_ratio)
+                trj_data = curve.evaluate_multi(s_vals)
+                trj_data = trj_data.astype(np.float32)
+                start_straight_line_x = Para.LANE_WIDTH/2 * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[:-1]
+                start_straight_line_y = np.linspace(-Para.CROSSROAD_SIZE/2 - sl, -Para.CROSSROAD_SIZE/2, sl * meter_pointnum_ratio, dtype=np.float32)[:-1]
+                end_straight_line_x = np.linspace(-Para.CROSSROAD_SIZE/2, -Para.CROSSROAD_SIZE/2 - sl, sl * meter_pointnum_ratio, dtype=np.float32)[1:]
+                end_straight_line_y = end_offset * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[1:]
+                planed_trj = np.append(np.append(start_straight_line_x, trj_data[0]), end_straight_line_x), \
+                             np.append(np.append(start_straight_line_y, trj_data[1]), end_straight_line_y)
+
+                xs_1, ys_1 = planed_trj[0][:-1], planed_trj[1][:-1]
+                xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
+                phis_1 = np.arctan2(ys_2 - ys_1, xs_2 - xs_1) * 180 / pi
+
+                vs_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] *
+                                    len(end_straight_line_x), dtype=np.float32)
+                vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L))), dtype=np.float32)
+                vs_red_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * dece_dist, endpoint=True, dtype=np.float32)
+                vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True, dtype=np.float32)
+                vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1) + [8.33] * len(
+                        end_straight_line_x), dtype=np.float32)
+                vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
+
+                # planed_trj_green = xs_1, ys_1, phis_1, vs_green
+                # planed_trj_red = xs_1, ys_1, phis_1, vs_red
+                # planed_trj_g.append(planed_trj_green)
+                # planed_trj_r.append(planed_trj_red)
+
+                # filter points by expected velocity
+                filtered_trj_g = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_green, equal_len=True)
+                filtered_tri_r = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_red, equal_len=True)
+
+                self.path_all.append(filtered_trj_g)
+                self.path_all.append(filtered_tri_r)
+
+        # straight
+        end_offsets = [Para.LANE_WIDTH*(i+0.5) for i in range(Para.LANE_NUMBER)]
+        start_offsets = [Para.LANE_WIDTH*1.5]
+        for start_offset in start_offsets:
+            for end_offset in end_offsets:
+                control_point1 = start_offset, -Para.CROSSROAD_SIZE/2
+                control_point2 = start_offset, -Para.CROSSROAD_SIZE/2 + control_ext
+                control_point3 = end_offset, Para.CROSSROAD_SIZE/2 - control_ext
+                control_point4 = end_offset, Para.CROSSROAD_SIZE/2
+                self.control_points.append([control_point1,control_point2,control_point3,control_point4])
+
+                node = np.asfortranarray([[control_point1[0], control_point2[0], control_point3[0], control_point4[0]],
+                                          [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]]
+                                         , dtype=np.float32)
+                curve = bezier.Curve(node, degree=3)
+                s_vals = np.linspace(0, 1.0, Para.CROSSROAD_SIZE * meter_pointnum_ratio)
+                trj_data = curve.evaluate_multi(s_vals)
+                trj_data = trj_data.astype(np.float32)
+                start_straight_line_x = start_offset * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[:-1]
+                start_straight_line_y = np.linspace(-Para.CROSSROAD_SIZE/2 - sl, -Para.CROSSROAD_SIZE/2, sl * meter_pointnum_ratio, dtype=np.float32)[:-1]
+                end_straight_line_x = end_offset * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[1:]
+                end_straight_line_y = np.linspace(Para.CROSSROAD_SIZE/2, Para.CROSSROAD_SIZE/2 + sl, sl * meter_pointnum_ratio, dtype=np.float32)[1:]
+                planed_trj = np.append(np.append(start_straight_line_x, trj_data[0]), end_straight_line_x), \
+                             np.append(np.append(start_straight_line_y, trj_data[1]), end_straight_line_y)
+                xs_1, ys_1 = planed_trj[0][:-1], planed_trj[1][:-1]
+                xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
+                phis_1 = np.arctan2(ys_2 - ys_1, xs_2 - xs_1) * 180 / pi
+
+                vs_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] *
+                                    len(end_straight_line_x), dtype=np.float32)
+                vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L))), dtype=np.float32)
+                vs_red_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * dece_dist, endpoint=True, dtype=np.float32)
+                vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True,
+                                       dtype=np.float32)
+                vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1) +
+                                    [8.33] * len(end_straight_line_x), dtype=np.float32)
+                vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
+
+                # planed_trj_green = xs_1, ys_1, phis_1, vs_green
+                # planed_trj_red = xs_1, ys_1, phis_1, vs_red
+                # planed_trj_g.append(planed_trj_green)
+                # planed_trj_r.append(planed_trj_red)
+
+                # filter points by expected velocity
+                filtered_trj_g = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_green, equal_len=True)
+                filtered_tri_r = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_red, equal_len=True)
+
+                self.path_all.append(filtered_trj_g)
+                self.path_all.append(filtered_tri_r)
+
+        # right
+        control_ext = Para.CROSSROAD_SIZE/5.
+        end_offsets = [-Para.LANE_WIDTH * 2.5, -Para.LANE_WIDTH * 1.5, -Para.LANE_WIDTH * 0.5]
+        start_offsets = [Para.LANE_WIDTH*(Para.LANE_NUMBER-0.5)]
+
+        for start_offset in start_offsets:
+            for end_offset in end_offsets:
+                control_point1 = start_offset, -Para.CROSSROAD_SIZE/2
+                control_point2 = start_offset, -Para.CROSSROAD_SIZE/2 + control_ext
+                control_point3 = Para.CROSSROAD_SIZE/2 - control_ext, end_offset
+                control_point4 = Para.CROSSROAD_SIZE/2, end_offset
+                self.control_points.append([control_point1,control_point2,control_point3,control_point4])
+
+                node = np.asfortranarray([[control_point1[0], control_point2[0], control_point3[0], control_point4[0]],
+                                          [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]],
+                                         dtype=np.float32)
+                curve = bezier.Curve(node, degree=3)
+                s_vals = np.linspace(0, 1.0, int(pi/2*(Para.CROSSROAD_SIZE/2-Para.LANE_WIDTH*(Para.LANE_NUMBER-0.5))) * meter_pointnum_ratio)
+                trj_data = curve.evaluate_multi(s_vals)
+                trj_data = trj_data.astype(np.float32)
+                start_straight_line_x = start_offset * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[:-1]
+                start_straight_line_y = np.linspace(-Para.CROSSROAD_SIZE/2 - sl, -Para.CROSSROAD_SIZE/2, sl * meter_pointnum_ratio, dtype=np.float32)[:-1]
+                end_straight_line_x = np.linspace(Para.CROSSROAD_SIZE/2, Para.CROSSROAD_SIZE/2 + sl, sl * meter_pointnum_ratio, dtype=np.float32)[1:]
+                end_straight_line_y = end_offset * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[1:]
+                planed_trj = np.append(np.append(start_straight_line_x, trj_data[0]), end_straight_line_x), \
+                             np.append(np.append(start_straight_line_y, trj_data[1]), end_straight_line_y)
+                xs_1, ys_1 = planed_trj[0][:-1], planed_trj[1][:-1]
+                xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
+                phis_1 = np.arctan2(ys_2 - ys_1, xs_2 - xs_1) * 180 / pi
+
+                vs_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] *
+                                    len(end_straight_line_x), dtype=np.float32)
+
+                # filter points by expected velocity
+                filtered_trj_g = self._get_point_by_speed(xs_1, ys_1, phis_1, vs_green, equal_len=True)
+
+                self.path_all.append(filtered_trj_g)
+
+    def _get_point_by_speed(self, xs, ys, phis, vs, dt=0.1, equal_len=False):
         assert len(xs) == len(ys) == len(phis) == len(vs), 'len of path variable is not equal'
         idx = 0
         future_n_x, future_n_y, future_n_phi, future_n_v = [], [], [], []
@@ -910,7 +1101,12 @@ class ReferencePath(object):
             future_n_y.append(y)
             future_n_phi.append(phi)
             future_n_v.append(v)
-
+        if equal_len:
+            while len(future_n_x) < self.max_path_len:
+                future_n_x.append(future_n_x[-1])
+                future_n_y.append(future_n_y[-1])
+                future_n_phi.append(future_n_phi[-1])
+                future_n_v.append(future_n_v[-1])
         filtered_trj = np.array(future_n_x), np.array(future_n_y), np.array(future_n_phi), np.array(future_n_v)
         return filtered_trj
 

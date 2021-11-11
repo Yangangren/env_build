@@ -136,7 +136,7 @@ class CrossroadEnd2endAllRela(gym.Env):
         self.action = None
         self.reward_info = None
         self.done_type = 'not_done_yet'
-        all_info = dict(future_n_point=self.future_n_point, mask=other_mask_vector)
+        all_info = dict(future_n_point=self.future_n_point, mask=other_mask_vector, path_index=self.ref_path.path_index)
         return self.obs, all_info
 
     def close(self):
@@ -153,7 +153,7 @@ class CrossroadEnd2endAllRela(gym.Env):
         self.obs, other_mask_vector, self.future_n_point = self._get_obs()
         self.done_type, done = self._judge_done()
         self.reward_info.update({'final_rew': reward})
-        all_info.update({'reward_info': self.reward_info, 'future_n_point': self.future_n_point, 'mask': other_mask_vector})
+        all_info.update({'reward_info': self.reward_info, 'future_n_point': self.future_n_point, 'mask': other_mask_vector, 'path_index': self.ref_path.path_index})
         return self.obs, reward, done, all_info
 
     def _set_observation_space(self, observation):
@@ -738,6 +738,7 @@ class CrossroadEnd2endAllRela(gym.Env):
             plt.plot(path_x, path_y, 'g.')
 
             # plot reference point
+            plt.plot(self.ref_path.path[0], self.ref_path.path[1], color='gray')
             for i in range(int(len(obs_future_point) / self.per_path_info_dim)):
                 current_point = obs_future_point[i * self.per_path_info_dim : (i + 1) * self.per_path_info_dim]
                 plt.plot(current_point[0], current_point[1], 'm.')
@@ -766,6 +767,7 @@ class CrossroadEnd2endAllRela(gym.Env):
                 plt.text(text_x, text_y_start - next(ge), r'steer: {:.2f}rad (${:.2f}\degree$)'.format(steer, steer * 180 / np.pi))
                 plt.text(text_x, text_y_start - next(ge), 'a_x: {:.2f}m/s^2'.format(a_x))
 
+            plt.text(text_x, text_y_start - next(ge), 'path_index: {}'.format(self.ref_path.path_index))
             text_x, text_y_start = 80, 60
             ge = iter(range(0, 1000, 4))
 
@@ -810,15 +812,14 @@ def test_end2end():
             else:
                 action = np.array([-0.0, 1.], dtype=np.float32)
             obs, reward, done, info = env.step(action)
-            # obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
-            # obses = np.tile(obses, (2, 1))
-            # ref_points = np.tile(info['future_n_point'], (2, 1, 1))
+            obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
+            obses = np.tile(obses, (2, 1))
             # obses_ego[:, (-env.task_info_dim-env.light_info_dim)] = random.randint(0, 2), random.randint(0, 2)
             # obses_ego[:, (-env.task_info_dim)] = list(TASK_DICT.values())[random.randint(0, 2)], list(TASK_DICT.values())[random.randint(0, 2)]
-            # env_model.reset(obses)
-            # for i in range(5):
-                # obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
-                # veh2road4real, veh2line4real = env_model.rollout_out(np.tile(actions, (2, 1)), ref_points[:, :, i])
+            env_model.reset(obses, [1, 9])
+            for i in range(5):
+                obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
+                veh2road4real, veh2line4real = env_model.rollout_out(np.tile(actions, (2, 1)))
                 # print(obses[:, env.ego_info_dim + env.track_info_dim: env.ego_info_dim+env.track_info_dim+env.light_info_dim])
             # print(env.training_task, obs[env.ego_info_dim + env.track_info_dim: env.ego_info_dim+env.track_info_dim+env.light_info_dim], env.light_phase)
             # print('task:', obs[env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data + env.light_info_dim])
