@@ -10,10 +10,9 @@
 import numpy as np
 from endtoend import CrossroadEnd2end
 from math import cos, sin, pi
-from dynamics_and_models import EnvironmentModel
+from dynamics_and_models import EnvironmentModel, ReferencePath
 from hierarchical_decision.static_traj_generator import StaticTrajectoryGenerator
-from endtoend_env_utils import shift_coordination, rotate_coordination, rotate_and_shift_coordination, deal_with_phi, \
-    L, W, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, judge_feasible, MODE2TASK, VEHICLE_MODE_DICT, VEH_NUM
+from endtoend_env_utils import *
 from utils.load_policy import LoadPolicy
 import time
 import tensorflow as tf
@@ -399,8 +398,128 @@ def main():
         hier_decision.reset()
 
 
+def plot_static_path():
+    extension = 20
+    light_line_width = 3
+    dotted_line_style = '--'
+    solid_line_style = '-'
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.axes([0, 0, 1, 1])
+    for ax in fig.get_axes():
+        ax.axis('off')
+    ax.axis("equal")
+
+    # ----------arrow--------------
+    plt.arrow(LANE_WIDTH_UD / 2, -CROSSROAD_D_HEIGHT - 10, 0, 5, color='b')
+    plt.arrow(LANE_WIDTH_UD / 2, -CROSSROAD_D_HEIGHT - 10 + 5, -0.5, 0, color='b', head_width=1)
+    plt.arrow(LANE_WIDTH_UD / 2, -CROSSROAD_D_HEIGHT - 10 + 2.5, 0, 4, color='b', head_width=1)
+    plt.arrow(LANE_WIDTH_UD * 1.5, -CROSSROAD_D_HEIGHT - 10, 0, 5, color='b')
+    plt.arrow(LANE_WIDTH_UD * 1.5, -CROSSROAD_D_HEIGHT - 10 + 5, 0.5, 0, color='b', head_width=1)
+
+    # ----------horizon--------------
+    plt.plot([-CROSSROAD_HALF_WIDTH - extension, -CROSSROAD_HALF_WIDTH], [0.3, 0.3], color='orange')
+    plt.plot([-CROSSROAD_HALF_WIDTH - extension, -CROSSROAD_HALF_WIDTH], [-0.3, -0.3], color='orange')
+    plt.plot([CROSSROAD_HALF_WIDTH + extension, CROSSROAD_HALF_WIDTH], [0.3, 0.3], color='orange')
+    plt.plot([CROSSROAD_HALF_WIDTH + extension, CROSSROAD_HALF_WIDTH], [-0.3, -0.3], color='orange')
+
+    #
+    for i in range(1, LANE_NUMBER_LR + 1):
+        linestyle = dotted_line_style if i < LANE_NUMBER_LR else solid_line_style
+        plt.plot([-CROSSROAD_HALF_WIDTH - extension, -CROSSROAD_HALF_WIDTH], [i * LANE_WIDTH_LR, i * LANE_WIDTH_LR],
+                 linestyle=linestyle, color='black')
+        plt.plot([CROSSROAD_HALF_WIDTH + extension, CROSSROAD_HALF_WIDTH], [i * LANE_WIDTH_LR, i * LANE_WIDTH_LR],
+                 linestyle=linestyle, color='black')
+        plt.plot([-CROSSROAD_HALF_WIDTH - extension, -CROSSROAD_HALF_WIDTH], [-i * LANE_WIDTH_LR, -i * LANE_WIDTH_LR],
+                 linestyle=linestyle, color='black')
+        plt.plot([CROSSROAD_HALF_WIDTH + extension, CROSSROAD_HALF_WIDTH], [-i * LANE_WIDTH_LR, -i * LANE_WIDTH_LR],
+                 linestyle=linestyle, color='black')
+
+    # ----------vertical----------------
+    plt.plot([0.3, 0.3], [-CROSSROAD_D_HEIGHT - extension, -CROSSROAD_D_HEIGHT], color='orange')
+    plt.plot([-0.3, -0.3], [-CROSSROAD_D_HEIGHT - extension, -CROSSROAD_D_HEIGHT], color='orange')
+    plt.plot([0.3, 0.3], [CROSSROAD_U_HEIGHT + extension, CROSSROAD_U_HEIGHT], color='orange')
+    plt.plot([-0.3, -0.3], [CROSSROAD_U_HEIGHT + extension, CROSSROAD_U_HEIGHT], color='orange')
+
+    #
+    for i in range(1, LANE_NUMBER_UD + 1):
+        linestyle = dotted_line_style if i < LANE_NUMBER_UD else solid_line_style
+        plt.plot([i * LANE_WIDTH_UD, i * LANE_WIDTH_UD], [-CROSSROAD_D_HEIGHT - extension, -CROSSROAD_D_HEIGHT],
+                 linestyle=linestyle, color='black')
+        plt.plot([i * LANE_WIDTH_UD, i * LANE_WIDTH_UD], [CROSSROAD_U_HEIGHT + extension, CROSSROAD_U_HEIGHT],
+                 linestyle=linestyle, color='black')
+        plt.plot([-i * LANE_WIDTH_UD, -i * LANE_WIDTH_UD], [-CROSSROAD_D_HEIGHT - extension, -CROSSROAD_D_HEIGHT],
+                 linestyle=linestyle, color='black')
+        plt.plot([-i * LANE_WIDTH_UD, -i * LANE_WIDTH_UD], [CROSSROAD_U_HEIGHT + extension, CROSSROAD_U_HEIGHT],
+                 linestyle=linestyle, color='black')
+
+    v_color, h_color = 'gray', 'gray'
+
+    plt.plot([(LANE_NUMBER_UD-1)*LANE_WIDTH_UD, LANE_NUMBER_UD * LANE_WIDTH_UD], [-CROSSROAD_D_HEIGHT, -CROSSROAD_D_HEIGHT],
+             color='gray', linewidth=light_line_width)
+    plt.plot([-LANE_NUMBER_UD * LANE_WIDTH_UD, -(LANE_NUMBER_UD-1)*LANE_WIDTH_UD], [CROSSROAD_U_HEIGHT, CROSSROAD_U_HEIGHT],
+             color='gray', linewidth=light_line_width)
+    plt.plot([0, (LANE_NUMBER_UD - 1) * LANE_WIDTH_UD], [-CROSSROAD_D_HEIGHT, -CROSSROAD_D_HEIGHT],
+             color=v_color, linewidth=light_line_width)
+    plt.plot([0, -(LANE_NUMBER_UD - 1) * LANE_WIDTH_UD], [CROSSROAD_U_HEIGHT, CROSSROAD_U_HEIGHT],
+             color=v_color, linewidth=light_line_width)
+
+    plt.plot([-CROSSROAD_HALF_WIDTH, -CROSSROAD_HALF_WIDTH], [0, -(LANE_NUMBER_LR - 1) * LANE_WIDTH_LR],
+             color=h_color, linewidth=light_line_width)
+    plt.plot([-CROSSROAD_HALF_WIDTH, -CROSSROAD_HALF_WIDTH], [-(LANE_NUMBER_LR-1)*LANE_WIDTH_LR, -LANE_NUMBER_LR * LANE_WIDTH_LR],
+             color='gray', linewidth=light_line_width)
+
+    plt.plot([CROSSROAD_HALF_WIDTH, CROSSROAD_HALF_WIDTH], [(LANE_NUMBER_LR - 1) * LANE_WIDTH_LR, 0],
+             color=h_color, linewidth=light_line_width)
+    plt.plot([CROSSROAD_HALF_WIDTH, CROSSROAD_HALF_WIDTH], [(LANE_NUMBER_LR - 1) * LANE_WIDTH_LR, LANE_NUMBER_LR * LANE_WIDTH_LR],
+             color='gray', linewidth=light_line_width)
+
+    # ----------Oblique--------------
+    plt.plot([LANE_NUMBER_UD * LANE_WIDTH_UD, CROSSROAD_HALF_WIDTH],
+             [-CROSSROAD_D_HEIGHT, -LANE_NUMBER_LR * LANE_WIDTH_LR],
+             color='black')
+    plt.plot([LANE_NUMBER_UD * LANE_WIDTH_UD, CROSSROAD_HALF_WIDTH],
+             [CROSSROAD_U_HEIGHT, LANE_NUMBER_LR * LANE_WIDTH_LR],
+             color='black')
+    plt.plot([-LANE_NUMBER_UD * LANE_WIDTH_UD, -CROSSROAD_HALF_WIDTH],
+             [-CROSSROAD_D_HEIGHT, -LANE_NUMBER_LR * LANE_WIDTH_LR],
+             color='black')
+    plt.plot([-LANE_NUMBER_UD * LANE_WIDTH_UD, -CROSSROAD_HALF_WIDTH],
+             [CROSSROAD_U_HEIGHT, LANE_NUMBER_LR * LANE_WIDTH_LR],
+             color='black')
+
+    for task in ['left', 'straight', 'right']:
+        path = ReferencePath(task)
+        path_list = path.path_list
+        control_points = path.control_points
+        color = ['blue', 'coral', 'darkcyan', 'm']
+        for i, (path_x, path_y, _) in enumerate(path_list):
+            plt.plot(path_x[600:-600], path_y[600:-600], color=color[i])
+        for i, four_points in enumerate(control_points):
+            for point in four_points:
+                plt.scatter(point[0], point[1], color=color[i])
+            plt.plot([four_points[0][0], four_points[1][0]], [four_points[0][1], four_points[1][1]], linestyle='--', color=color[i])
+            plt.plot([four_points[1][0], four_points[2][0]], [four_points[1][1], four_points[2][1]], linestyle='--', color=color[i])
+            plt.plot([four_points[2][0], four_points[3][0]], [four_points[2][1], four_points[3][1]], linestyle='--', color=color[i])
+    plt.savefig('./multipath_planning.png')
+    plt.show()
+
+
+def select_and_rename_snapshots_of_an_episode(logdir, epinum, num):
+    file_list = os.listdir(logdir + '/episode{}'.format(epinum))
+    file_num = len(file_list) - 1
+    intervavl = file_num // (num-1)
+    start = file_num % (num-1)
+    print(start, file_num, intervavl)
+    selected = [start//2] + [start//2+intervavl*i-1 for i in range(1, num)]
+    print(selected)
+    if file_num > 0:
+        for i, j in enumerate(selected):
+            shutil.copyfile(logdir + '/episode{}/step{}.pdf'.format(epinum, j),
+                            logdir + '/episode{}/figs/{}.pdf'.format(epinum, i))
+
+
 if __name__ == '__main__':
-    main()
-    # plot_data(3)
+    # main()
+    plot_static_path()
 
 
