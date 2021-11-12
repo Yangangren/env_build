@@ -797,7 +797,7 @@ class ReferencePath(object):
                                               [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]],
                                              dtype=np.float32)
                     curve = bezier.Curve(node, degree=3)
-                    s_vals = np.linspace(0, 1.0, int(pi/2*(Para.CROSSROAD_SIZE/2+Para.LANE_WIDTH/2)) * meter_pointnum_ratio)
+                    s_vals = np.linspace(0, 1.0, int(curve.length*meter_pointnum_ratio))
                     trj_data = curve.evaluate_multi(s_vals)
                     trj_data = trj_data.astype(np.float32)
                     start_straight_line_x = Para.LANE_WIDTH/2 * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[:-1]
@@ -850,7 +850,7 @@ class ReferencePath(object):
                                               [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]]
                                              , dtype=np.float32)
                     curve = bezier.Curve(node, degree=3)
-                    s_vals = np.linspace(0, 1.0, Para.CROSSROAD_SIZE * meter_pointnum_ratio)
+                    s_vals = np.linspace(0, 1.0, int(curve.length*meter_pointnum_ratio))
                     trj_data = curve.evaluate_multi(s_vals)
                     trj_data = trj_data.astype(np.float32)
                     start_straight_line_x = start_offset * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[:-1]
@@ -906,7 +906,7 @@ class ReferencePath(object):
                                               [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]],
                                              dtype=np.float32)
                     curve = bezier.Curve(node, degree=3)
-                    s_vals = np.linspace(0, 1.0, int(pi/2*(Para.CROSSROAD_SIZE/2-Para.LANE_WIDTH*(Para.LANE_NUMBER-0.5))) * meter_pointnum_ratio)
+                    s_vals = np.linspace(0, 1.0, int(curve.length*meter_pointnum_ratio))
                     trj_data = curve.evaluate_multi(s_vals)
                     trj_data = trj_data.astype(np.float32)
                     start_straight_line_x = start_offset * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[:-1]
@@ -956,7 +956,7 @@ class ReferencePath(object):
                                           [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]],
                                          dtype=np.float32)
                 curve = bezier.Curve(node, degree=3)
-                s_vals = np.linspace(0, 1.0, int(pi/2*(Para.CROSSROAD_SIZE/2+Para.LANE_WIDTH/2)) * meter_pointnum_ratio)
+                s_vals = np.linspace(0, 1.0, int(curve.length*meter_pointnum_ratio))
                 trj_data = curve.evaluate_multi(s_vals)
                 trj_data = trj_data.astype(np.float32)
                 start_straight_line_x = Para.LANE_WIDTH/2 * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[:-1]
@@ -1006,7 +1006,7 @@ class ReferencePath(object):
                                           [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]]
                                          , dtype=np.float32)
                 curve = bezier.Curve(node, degree=3)
-                s_vals = np.linspace(0, 1.0, Para.CROSSROAD_SIZE * meter_pointnum_ratio)
+                s_vals = np.linspace(0, 1.0, int(curve.length*meter_pointnum_ratio))
                 trj_data = curve.evaluate_multi(s_vals)
                 trj_data = trj_data.astype(np.float32)
                 start_straight_line_x = start_offset * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[:-1]
@@ -1058,7 +1058,7 @@ class ReferencePath(object):
                                           [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]],
                                          dtype=np.float32)
                 curve = bezier.Curve(node, degree=3)
-                s_vals = np.linspace(0, 1.0, int(pi/2*(Para.CROSSROAD_SIZE/2-Para.LANE_WIDTH*(Para.LANE_NUMBER-0.5))) * meter_pointnum_ratio)
+                s_vals = np.linspace(0, 1.0, int(curve.length*meter_pointnum_ratio))
                 trj_data = curve.evaluate_multi(s_vals)
                 trj_data = trj_data.astype(np.float32)
                 start_straight_line_x = start_offset * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[:-1]
