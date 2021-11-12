@@ -10,6 +10,7 @@
 import datetime
 import os
 from math import cos, sin, pi
+import shutil
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -328,6 +329,113 @@ def main():
         hier_decision.reset()
 
 
+def plot_static_path():
+    square_length = CROSSROAD_SIZE
+    extension = 20
+    lane_width = LANE_WIDTH
+    light_line_width = 3
+    dotted_line_style = '--'
+    solid_line_style = '-'
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.axes([0, 0, 1, 1])
+    for ax in fig.get_axes():
+        ax.axis('off')
+    ax.axis("equal")
+
+    # ----------arrow--------------
+    plt.arrow(lane_width / 2, -square_length / 2 - 10, 0, 5, color='b')
+    plt.arrow(lane_width / 2, -square_length / 2 - 10 + 5, -0.5, 0, color='b', head_width=1)
+    plt.arrow(lane_width / 2, -square_length / 2 - 10 + 2.5, 0, 4, color='b', head_width=1)
+    plt.arrow(lane_width * 1.5, -square_length / 2 - 10, 0, 5, color='b')
+    plt.arrow(lane_width * 1.5, -square_length / 2 - 10 + 5, 0.5, 0, color='b', head_width=1)
+
+    # ----------horizon--------------
+
+    plt.plot([-square_length / 2 - extension, -square_length / 2], [0.3, 0.3], color='orange')
+    plt.plot([-square_length / 2 - extension, -square_length / 2], [-0.3, -0.3], color='orange')
+    plt.plot([square_length / 2 + extension, square_length / 2], [0.3, 0.3], color='orange')
+    plt.plot([square_length / 2 + extension, square_length / 2], [-0.3, -0.3], color='orange')
+
+    for i in range(1, LANE_NUMBER + 1):
+        linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
+        linewidth = 1 if i < LANE_NUMBER else 2
+        plt.plot([-square_length / 2 - extension, -square_length / 2], [i * lane_width, i * lane_width],
+                 linestyle=linestyle, color='black', linewidth=linewidth)
+        plt.plot([square_length / 2 + extension, square_length / 2], [i * lane_width, i * lane_width],
+                 linestyle=linestyle, color='black', linewidth=linewidth)
+        plt.plot([-square_length / 2 - extension, -square_length / 2], [-i * lane_width, -i * lane_width],
+                 linestyle=linestyle, color='black', linewidth=linewidth)
+        plt.plot([square_length / 2 + extension, square_length / 2], [-i * lane_width, -i * lane_width],
+                 linestyle=linestyle, color='black', linewidth=linewidth)
+
+    # ----------vertical----------------
+    plt.plot([0.3, 0.3], [-square_length / 2 - extension, -square_length / 2], color='orange')
+    plt.plot([-0.3, -0.3], [-square_length / 2 - extension, -square_length / 2], color='orange')
+    plt.plot([0.3, 0.3], [square_length / 2 + extension, square_length / 2], color='orange')
+    plt.plot([-0.3, -0.3], [square_length / 2 + extension, square_length / 2], color='orange')
+
+    for i in range(1, LANE_NUMBER + 1):
+        linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
+        linewidth = 1 if i < LANE_NUMBER else 2
+        plt.plot([i * lane_width, i * lane_width], [-square_length / 2 - extension, -square_length / 2],
+                 linestyle=linestyle, color='black', linewidth=linewidth)
+        plt.plot([i * lane_width, i * lane_width], [square_length / 2 + extension, square_length / 2],
+                 linestyle=linestyle, color='black', linewidth=linewidth)
+        plt.plot([-i * lane_width, -i * lane_width], [-square_length / 2 - extension, -square_length / 2],
+                 linestyle=linestyle, color='black', linewidth=linewidth)
+        plt.plot([-i * lane_width, -i * lane_width], [square_length / 2 + extension, square_length / 2],
+                 linestyle=linestyle, color='black', linewidth=linewidth)
+    plt.plot([0, LANE_NUMBER * lane_width], [-square_length / 2, -square_length / 2],
+             color='black', linewidth=light_line_width, alpha=0.3)
+    plt.plot([LANE_NUMBER * lane_width, 0], [square_length / 2, square_length / 2],
+             color='black', linewidth=light_line_width, alpha=0.3)
+    plt.plot([-square_length / 2, -square_length / 2], [0, LANE_NUMBER * lane_width],
+             color='black', linewidth=light_line_width, alpha=0.3)
+    plt.plot([square_length / 2, square_length / 2], [-LANE_NUMBER * lane_width, 0],
+             color='black', linewidth=light_line_width, alpha=0.3)
+
+    # ----------Oblique--------------
+    plt.plot([LANE_NUMBER * lane_width, square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
+             color='black', linewidth=2)
+    plt.plot([LANE_NUMBER * lane_width, square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
+             color='black', linewidth=2)
+    plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
+             color='black', linewidth=2)
+    plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
+             color='black', linewidth=2)
+
+    for task in ['left', 'straight', 'right']:
+        path = ReferencePath(task)
+        path_list = path.path_list
+        control_points = path.control_points
+        color = ['blue', 'coral', 'darkcyan']
+        for i, (path_x, path_y, _) in enumerate(path_list):
+            plt.plot(path_x[600:-600], path_y[600:-600], color=color[i])
+        for i, four_points in enumerate(control_points):
+            for point in four_points:
+                plt.scatter(point[0], point[1], color=color[i])
+            plt.plot([four_points[0][0], four_points[1][0]], [four_points[0][1], four_points[1][1]], linestyle='--', color=color[i])
+            plt.plot([four_points[1][0], four_points[2][0]], [four_points[1][1], four_points[2][1]], linestyle='--', color=color[i])
+            plt.plot([four_points[2][0], four_points[3][0]], [four_points[2][1], four_points[3][1]], linestyle='--', color=color[i])
+    plt.savefig('./multipath_planning.png')
+    plt.show()
+
+
+def select_and_rename_snapshots_of_an_episode(logdir, epinum, num):
+    file_list = os.listdir(logdir + '/episode{}'.format(epinum))
+    file_num = len(file_list) - 1
+    intervavl = file_num // (num-1)
+    start = file_num % (num-1)
+    print(start, file_num, intervavl)
+    selected = [start//2] + [start//2+intervavl*i-1 for i in range(1, num)]
+    print(selected)
+    if file_num > 0:
+        for i, j in enumerate(selected):
+            shutil.copyfile(logdir + '/episode{}/step{}.pdf'.format(epinum, j),
+                            logdir + '/episode{}/figs/{}.pdf'.format(epinum, i))
+
+
 if __name__ == '__main__':
     main()
+    # plot_static_path()
     # plot_data('./results/2021-03-03-19-18-38', 1)
