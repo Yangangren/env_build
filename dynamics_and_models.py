@@ -102,7 +102,7 @@ class EnvironmentModel(object):  # all tensors
                                     self.light_info_dim, self.task_info_dim, self.ref_info_dim])
         self.steer_store = []
         self.ref = ReferencePath(task='left', green_or_red='green')
-        self.path_all = self.ref.path_all
+        self.path_all = tf.convert_to_tensor(self.ref.path_all, dtype=tf.float32)
         self.batch_path = None
         self.path_len = None
 
@@ -693,17 +693,36 @@ class ReferencePath(object):
         self.set_path(task, green_or_red)
 
     def set_path(self, task, green_or_red='green', path_index=None):
-        if path_index is None:
-            if task == 'left' and green_or_red == 'green':
-                path_index = np.random.choice([0, 2, 4])
-            elif task == 'left' and green_or_red == 'red':
-                path_index = np.random.choice([1, 3, 5])
-            elif task == 'straight' and green_or_red == 'green':
-                path_index = np.random.choice([6, 8, 10])
-            elif task == 'straight' and green_or_red == 'red':
-                path_index = np.random.choice([7, 9, 11])
-            elif task == 'right':
-                path_index = np.random.choice([12, 13, 14])
+        if task == 'left' and green_or_red == 'green':
+            path_num = [0, 2, 4]
+            if path_index is None:
+                path_index = np.random.choice(path_num)
+            else:
+                path_index = path_num[path_index]
+        elif task == 'left' and green_or_red == 'red':
+            path_num = [1, 3, 5]
+            if path_index is None:
+                path_index = np.random.choice(path_num)
+            else:
+                path_index = path_num[path_index]
+        elif task == 'straight' and green_or_red == 'green':
+            path_num = [6, 8, 10]
+            if path_index is None:
+                path_index = np.random.choice(path_num)
+            else:
+                path_index = path_num[path_index]
+        elif task == 'straight' and green_or_red == 'red':
+            path_num = [7, 9, 11]
+            if path_index is None:
+                path_index = np.random.choice(path_num)
+            else:
+                path_index = path_num[path_index]
+        elif task == 'right':
+            path_num = [12, 13, 14]
+            if path_index is None:
+                path_index = np.random.choice(path_num)
+            else:
+                path_index = path_num[path_index]
         self.ref_encoding = [0., 0., 1.]                                  # todo: delete
         self.path = self.path_all[path_index]
         self.path_index = path_index

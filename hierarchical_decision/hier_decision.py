@@ -52,11 +52,11 @@ class HierarchicalDecision(object):
         self.path_list = self.stg.generate_path(self.env.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.env.light_phase])
         # ------------------build graph for tf.function in advance-----------------------
         obs, all_info = self.env.reset()
-        mask, future_n_point = all_info['mask'], all_info['future_n_point']
+        mask, path_index = all_info['mask'], all_info['path_index']
         obs = tf.convert_to_tensor(obs[np.newaxis, :], dtype=tf.float32)
         mask = tf.convert_to_tensor(mask[np.newaxis, :], dtype=tf.float32)
-        future_n_point = tf.convert_to_tensor(future_n_point[np.newaxis, :], dtype=tf.float32)
-        self.is_safe(obs, mask, future_n_point)
+        path_index = tf.expand_dims(path_index, axis=0)
+        self.is_safe(obs, mask, path_index)
         self.policy.run_batch(obs, mask)
         self.policy.obj_value_batch(obs, mask)
         # ------------------build graph for tf.function in advance-----------------------
@@ -81,21 +81,21 @@ class HierarchicalDecision(object):
         return self.obs
 
     @tf.function
-    def is_safe(self, obses, masks, future_n_point):
-        self.model.reset(obses)
+    def is_safe(self, obses, masks, path_index):
+        self.model.reset(obses, path_index)
         punish = 0.
         for step in range(5):
             action, _ = self.policy.run_batch(obses, masks)
-            obses, _, _, _, veh2veh4real, veh2road4real, veh2line4real = self.model.rollout_out(action, future_n_point[:, :, step])
+            obses, _, _, _, veh2veh4real, veh2road4real, veh2line4real = self.model.rollout_out(action)
             punish += veh2veh4real[0]
         return False if punish > 0 else True
 
-    def safe_shield(self, real_obs, real_mask, real_future_n_point):
+    def safe_shield(self, real_obs, real_mask, path_index_real):
         action_safe_set = [[[0., -1.]]]
         real_obs = tf.convert_to_tensor(real_obs[np.newaxis, :], dtype=tf.float32)
         real_mask = tf.convert_to_tensor(real_mask[np.newaxis, :], dtype=tf.float32)
-        real_future_n_point = tf.convert_to_tensor(real_future_n_point[np.newaxis, :], dtype=tf.float32)
-        if not self.is_safe(real_obs, real_mask, real_future_n_point):
+        path_index_real = tf.expand_dims(path_index_real, axis=0)
+        if not self.is_safe(real_obs, real_mask, path_index_real):
             print('SAFETY SHIELD STARTED!')
             return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), np.zeros(shape=(self.env.other_number)), True
         else:
@@ -106,14 +106,14 @@ class HierarchicalDecision(object):
         self.step_counter += 1
         self.path_list = self.stg.generate_path(self.env.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.env.light_phase])
         with self.step_timer:
-            obs_list, mask_list, future_n_point_list = [], [], []
+            obs_list, mask_list, path_index_list = [], [], []
             # select optimal path
             for path in self.path_list:
                 self.env.set_traj(path)
-                vector, mask_vector, future_n_point = self.env._get_obs()
+                vector, mask_vector, _ = self.env._get_obs()
                 obs_list.append(vector)
                 mask_list.append(mask_vector)
-                future_n_point_list.append(future_n_point)
+                path_index_list.append(path.path_index)
             all_obs = tf.stack(obs_list, axis=0).numpy()
             all_mask = tf.stack(mask_list, axis=0).numpy()
 
@@ -139,11 +139,11 @@ class HierarchicalDecision(object):
             else:
                 path_index = self.old_index
             self.env.set_traj(self.path_list[path_index])
-            obs_real, mask_real, future_n_point_real = obs_list[path_index], mask_list[path_index], future_n_point_list[path_index]
+            obs_real, mask_real, path_index_real = obs_list[path_index], mask_list[path_index], path_index_list[path_index]
 
             # obtain safe action
             with self.ss_timer:
-                safe_action, weights, is_ss = self.safe_shield(obs_real, mask_real, future_n_point_real)
+                safe_action, weights, is_ss = self.safe_shield(obs_real, mask_real, path_index_real)
             print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
         self.render(path_values, path_index, weights)
         self.recorder.record(obs_real, safe_action, self.step_timer.mean, path_index, path_values, self.ss_timer.mean, is_ss)
@@ -304,7 +304,7 @@ class HierarchicalDecision(object):
 
         # plot own car
         abso_obs = self.env._convert_to_abso(self.obs)
-        obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_other = self.env._split_all(abso_obs)
+        obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other = self.env._split_all(abso_obs)
         ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi = obs_ego
         devi_longi, devi_lateral, devi_phi, devi_v = obs_track
 
@@ -319,6 +319,7 @@ class HierarchicalDecision(object):
 
         # plot real time traj
         color = ['blue', 'coral', 'darkcyan', 'pink']
+        print(path_index)
         for i, item in enumerate(self.path_list):
             if i == path_index:
                 plt.plot(item.path[0], item.path[1], color=color[i], alpha=1.0)
@@ -395,7 +396,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('experiment-2021-11-09-20-16-22', 300000, logdir)
+    hier_decision = HierarchicalDecision('experiment-2021-11-11-23-53-20', 300000, logdir)
 
     for i in range(300):
         for _ in range(200):

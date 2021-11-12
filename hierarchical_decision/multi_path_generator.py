@@ -19,7 +19,7 @@ class MultiPathGenerator(object):
         self.path_list = []
         for path_index in range(task_path_num):
             ref = ReferencePath(task, light_phase)
-            ref.set_path(light_phase, path_index)
+            ref.set_path(task, light_phase, path_index)
             self.path_list.append(ref)
         return self.path_list
 
