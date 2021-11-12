@@ -586,6 +586,29 @@ def deal_with_phi_diff(phi_diff):
     return phi_diff
 
 
+def get_bezier_middle_point(control_point1, control_point4, task=None):
+    weight_dict = {'left': 1/2, 'straight': 1/2, 'right': 1/3}
+    x1, y1, phi1 = control_point1
+    x4, y4, phi4 = control_point4
+    phi1 = phi1 * pi / 180
+    phi4 = phi4 * pi / 180
+
+    if task is None:
+        k = 1 / 2
+    else:
+        k = weight_dict[task]
+    print(task, k)
+    x2 = x1*((cos(phi1)**2) * k + sin(phi1)**2) + y1*(-sin(phi1)*cos(phi1) * (1-k)) + x4*((cos(phi1)**2) * (1-k)) + y4*(sin(phi1)*cos(phi1) * (1-k))
+    y2 = x1*(-sin(phi1)*cos(phi1) * (1-k)) + y1*(cos(phi1)**2 + (sin(phi1)**2) * k) + x4*(sin(phi1)*cos(phi1) * (1-k)) + y4*((sin(phi1)**2) * (1-k))
+
+    x3 = x1*(cos(phi4)**2) * (1-k) + y1*(sin(phi4)*cos(phi4) * (1-k)) + x4*((cos(phi4)**2)* k + sin(phi4)**2) + y4*(-sin(phi4)*cos(phi4) * (1-k))
+    y3 = x1*(sin(phi4)*cos(phi4) * (1-k)) + y1*((sin(phi4)**2) * (1-k)) + x4*(-sin(phi4)*cos(phi4)*(1-k)) + y4*(cos(phi4)**2 + (sin(phi4)**2) * k)
+
+    control_point2 = x2, y2
+    control_point3 = x3, y3
+    return control_point2, control_point3
+
+
 class ReferencePath(object):
     def __init__(self, task, mode=None, ref_index=None):
         self.mode = mode
@@ -594,6 +617,7 @@ class ReferencePath(object):
         self.task = task
         self.path_list = []
         self.path_len_list = []
+        self.control_points = []
         self._construct_ref_path(self.task)
         self.ref_index = np.random.choice(len(self.path_list)) if ref_index is None else ref_index
         self.path = self.path_list[self.ref_index]
@@ -615,10 +639,12 @@ class ReferencePath(object):
             start_offsets = [LANE_WIDTH*0.5] #TODO: temp
             for start_offset in start_offsets:
                 for end_offset in end_offsets:
-                    control_point1 = start_offset, -CROSSROAD_SIZE/2
-                    control_point2 = start_offset, -CROSSROAD_SIZE/2 + control_ext
-                    control_point3 = -CROSSROAD_SIZE/2 + control_ext, end_offset
-                    control_point4 = -CROSSROAD_SIZE/2, end_offset
+                    control_point1 = start_offset, -CROSSROAD_SIZE/2, 90
+                    # control_point2 = start_offset, -CROSSROAD_SIZE/2 + control_ext
+                    # control_point3 = -CROSSROAD_SIZE/2 + control_ext, end_offset
+                    control_point4 = -CROSSROAD_SIZE/2, end_offset, 180
+                    control_point2, control_point3 = get_bezier_middle_point(control_point1, control_point4, task)
+                    self.control_points.append([control_point1,control_point2,control_point3,control_point4])
 
                     node = np.asfortranarray([[control_point1[0], control_point2[0], control_point3[0], control_point4[0]],
                                               [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]],
@@ -647,10 +673,12 @@ class ReferencePath(object):
             start_offsets = [LANE_WIDTH*0.5]
             for start_offset in start_offsets:
                 for end_offset in end_offsets:
-                    control_point1 = start_offset, -CROSSROAD_SIZE/2
-                    control_point2 = start_offset, -CROSSROAD_SIZE/2 + control_ext
-                    control_point3 = end_offset, CROSSROAD_SIZE/2 - control_ext
-                    control_point4 = end_offset, CROSSROAD_SIZE/2
+                    control_point1 = start_offset, -CROSSROAD_SIZE/2, 90
+                    # control_point2 = start_offset, -CROSSROAD_SIZE/2 + control_ext
+                    # control_point3 = end_offset, CROSSROAD_SIZE/2 - control_ext
+                    control_point4 = end_offset, CROSSROAD_SIZE/2, 90
+                    control_point2, control_point3 = get_bezier_middle_point(control_point1, control_point4, task)
+                    self.control_points.append([control_point1,control_point2,control_point3,control_point4])
 
                     node = np.asfortranarray([[control_point1[0], control_point2[0], control_point3[0], control_point4[0]],
                                               [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]]
@@ -681,10 +709,13 @@ class ReferencePath(object):
 
             for start_offset in start_offsets:
                 for end_offset in end_offsets:
-                    control_point1 = start_offset, -CROSSROAD_SIZE/2
-                    control_point2 = start_offset, -CROSSROAD_SIZE/2 + control_ext
-                    control_point3 = CROSSROAD_SIZE/2 - control_ext, end_offset
-                    control_point4 = CROSSROAD_SIZE/2, end_offset
+                    control_point1 = start_offset, -CROSSROAD_SIZE/2, 90
+                    # control_point2 = start_offset, -CROSSROAD_SIZE/2 + control_ext
+                    # control_point3 = CROSSROAD_SIZE/2 - control_ext, end_offset
+                    control_point4 = CROSSROAD_SIZE/2, end_offset, 0
+                    control_point2, control_point3 = get_bezier_middle_point(control_point1, control_point4, task)
+
+                    self.control_points.append([control_point1,control_point2,control_point3,control_point4])
 
                     node = np.asfortranarray([[control_point1[0], control_point2[0], control_point3[0], control_point4[0]],
                                               [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]],
