@@ -39,7 +39,7 @@ LIGHT_PHASE_TO_GREEN_OR_RED = {0: 'green', 1: 'red', 2: 'red', 3:'red'}  # 0: gr
 TASK_ENCODING = dict(left=[1.0, 0.0, 0.0], straight=[0.0, 1.0, 0.0], right=[0.0, 0.0, 1.0])
 LIGHT_ENCODING = {0: [1.0, 0.0], 1: [0.0, 1.0], 2: [0.0, 1.0], 3: [0.0, 1.0]}
 REF_ENCODING = {0: [1.0, 0.0, 0.0], 1: [0.0, 1.0, 0.0], 2: [0.0, 0.0, 1.0]}
-
+REF_NUM = {'left': 3, 'right': 3, 'straight': 3}
 SUMOCFG_DIR = os.path.dirname(__file__) + "/sumo_files/cross.sumocfg"
 VEHICLE_MODE_DICT = dict(left=OrderedDict(dl=2, du=2, ud=2, ul=2),
                          straight=OrderedDict(dl=2, du=2, ru=2, ur=2),

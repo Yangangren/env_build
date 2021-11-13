@@ -134,30 +134,67 @@ class Preprocessor(object):
         self.args = args
 
     def convert_ego_coordinate(self, obs):
-        obs_ego = obs[:, :self.args.other_start_dim]
-        obses_ego_all = np.reshape(np.tile(obs_ego, (1, self.args.other_number)), (-1, self.args.other_start_dim))
+        obs_ego = obs[:, :self.args.ego_info_dim]
+        obs_ego_track = obs[:, self.args.ego_info_dim: self.args.ego_info_dim + self.args.track_info_dim]
+        obs_ego_future_point = obs[:, self.args.ego_info_dim + self.args.track_info_dim:
+               self.args.ego_info_dim + self.args.track_info_dim + self.args.future_point_num * self.args.per_path_info_dim]
+        obs_ego_light_ref_task = obs[:, self.args.ego_info_dim + self.args.track_info_dim +
+                                        self.args.future_point_num * self.args.per_path_info_dim: self.args.other_start_dim]
+
+        # convert future points
+        obs_ego_all = np.reshape(np.tile(obs_ego, (1, self.args.future_point_num)), (-1, self.args.ego_info_dim))
+        obs_ego_future_point = np.reshape(obs_ego_future_point, (-1, self.args.per_path_info_dim))
+        transformed_x, transformed_y, transformed_d = np_shift_and_rotate_coordination(obs_ego_future_point[:, 0], obs_ego_future_point[:, 1], obs_ego_future_point[:, 2],
+                                                                                       obs_ego_all[:, 3], obs_ego_all[:, 4], obs_ego_all[:, 5])
+
+        obs_ego_future_point_transformed = np.stack([transformed_x, transformed_y, transformed_d, obs_ego_future_point[:, -1]], axis=-1)
+        obs_ego_future_point_transformed = np.reshape(obs_ego_future_point_transformed, (-1, self.args.future_point_num * self.args.per_path_info_dim))
+
+        # convert obs_other
+        obs_ego_all = np.reshape(np.tile(obs_ego, (1, self.args.other_number)), (-1, self.args.ego_info_dim))
         obs_other = np.reshape(obs[:, self.args.other_start_dim:], (-1, self.args.per_other_dim))
 
         transformed_x, transformed_y, transformed_d = np_shift_and_rotate_coordination(obs_other[:, 0], obs_other[:, 1], obs_other[:, 3],
-                                                                                    obses_ego_all[:, 3], obses_ego_all[:, 4], obses_ego_all[:, 5])
+                                                                                    obs_ego_all[:, 3], obs_ego_all[:, 4], obs_ego_all[:, 5])
+
         obs_other_transformed = np.stack([transformed_x, transformed_y, obs_other[:, 2], transformed_d], axis=-1)
         obs_other_transformed = np.concatenate([obs_other_transformed, obs_other[:, 4:]], axis=1)
         obs_other_reshaped = np.reshape(obs_other_transformed, (-1, self.args.per_other_dim * self.args.other_number))
-        obs_transformed = np.concatenate([obs_ego, obs_other_reshaped], axis=1)
+
+        obs_transformed = np.concatenate([obs_ego, obs_ego_track, obs_ego_future_point_transformed,
+                                          obs_ego_light_ref_task, obs_other_reshaped], axis=1)
         return np.squeeze(obs_transformed)
 
     def tf_convert_ego_coordinate(self, obs):
-        obs_ego = obs[:, :self.args.other_start_dim]
-        obses_ego_all = tf.reshape(tf.tile(obs_ego, (1, self.args.other_number)), (-1, self.args.other_start_dim))
+        obs_ego = obs[:, :self.args.ego_info_dim]
+        obs_ego_track = obs[:, self.args.ego_info_dim: self.args.ego_info_dim + self.args.track_info_dim]
+        obs_ego_future_point = obs[:, self.args.ego_info_dim + self.args.track_info_dim:
+                                      self.args.ego_info_dim + self.args.track_info_dim + self.args.future_point_num * self.args.per_path_info_dim]
+        obs_ego_light_ref_task = obs[:, self.args.ego_info_dim + self.args.track_info_dim +
+                                        self.args.future_point_num * self.args.per_path_info_dim: self.args.other_start_dim]
+
+        # convert future points
+        obs_ego_all = tf.reshape(tf.tile(obs_ego, (1, self.args.future_point_num)), (-1, self.args.ego_info_dim))
+        obs_ego_future_point = tf.reshape(obs_ego_future_point, (-1, self.args.per_path_info_dim))
+        transformed_x, transformed_y, transformed_d = tf_shift_and_rotate_coordination(obs_ego_future_point[:, 0], obs_ego_future_point[:, 1], obs_ego_future_point[:, 2],
+                                                                                       obs_ego_all[:, 3], obs_ego_all[:, 4], obs_ego_all[:, 5])
+
+        obs_ego_future_point_transformed = tf.stack([transformed_x, transformed_y, transformed_d, obs_ego_future_point[:, -1]], axis=-1)
+        obs_ego_future_point_transformed = tf.reshape(obs_ego_future_point_transformed, (-1, self.args.future_point_num * self.args.per_path_info_dim))
+
+        # convert obs_other
+        obs_ego_all = tf.reshape(tf.tile(obs_ego, (1, self.args.other_number)), (-1, self.args.ego_info_dim))
         obs_other = tf.reshape(obs[:, self.args.other_start_dim:], (-1, self.args.per_other_dim))
 
         transformed_x, transformed_y, transformed_d = tf_shift_and_rotate_coordination(obs_other[:, 0], obs_other[:, 1], obs_other[:, 3],
-                                                                                    obses_ego_all[:, 3], obses_ego_all[:, 4], obses_ego_all[:, 5])
+                                                                                       obs_ego_all[:, 3], obs_ego_all[:, 4], obs_ego_all[:, 5])
 
         obs_other_transformed = tf.stack([transformed_x, transformed_y, obs_other[:, 2], transformed_d], axis=-1)
         obs_other_transformed = tf.concat([obs_other_transformed, obs_other[:, 4:]], axis=1)
         obs_other_reshaped = tf.reshape(obs_other_transformed, (-1, self.args.per_other_dim * self.args.other_number))
-        obs_transformed = tf.concat([obs_ego, obs_other_reshaped], axis=1)
+
+        obs_transformed = tf.concat([obs_ego, obs_ego_track, obs_ego_future_point_transformed,
+                                     obs_ego_light_ref_task, obs_other_reshaped], axis=1)
         return obs_transformed
 
     def process_rew(self, rew):

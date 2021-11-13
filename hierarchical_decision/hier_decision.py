@@ -319,7 +319,6 @@ class HierarchicalDecision(object):
 
         # plot real time traj
         color = ['blue', 'coral', 'darkcyan', 'pink']
-        print(path_index)
         for i, item in enumerate(self.path_list):
             if i == path_index:
                 plt.plot(item.path[0], item.path[1], color=color[i], alpha=1.0)
