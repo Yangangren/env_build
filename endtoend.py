@@ -12,11 +12,13 @@ from collections import OrderedDict
 from math import cos, sin, pi, sqrt
 import random
 from random import choice
-
+import matplotlib.patches as mpatch
 import gym
 import matplotlib.pyplot as plt
 import numpy as np
 from gym.utils import seeding
+from LasVSim.sensor_module import *
+from LasVSim.simulator import Settings
 
 # gym.envs.user_defined.toyota_env.
 from dynamics_and_models import VehicleDynamics, ReferencePath, EnvironmentModel
@@ -46,7 +48,7 @@ class CrossroadEnd2endAllRela(gym.Env):
     def __init__(self,
                  mode='training',
                  multi_display=False,
-                 state_mode='fix',  # 'dyna'
+                 state_mode='dyna',  # 'dyna'
                  future_point_num=25,
                  **kwargs):
         self.mode = mode
@@ -95,6 +97,13 @@ class CrossroadEnd2endAllRela(gym.Env):
         self.ref_path = None
         self.future_n_point = None
 
+        """Load sensor module."""
+        setting_dir = os.path.dirname(__file__)
+        self.settings = Settings(file_path=setting_dir + '/LasVSim/Library/default_simulation_setting.xml')
+        step_length = (self.settings.step_length *
+                       self.settings.sensor_frequency)
+        self.sensors = Sensors(step_length=step_length,
+                               sensor_info=self.settings.sensors)
         if not multi_display:
             self.traffic = Traffic(self.step_length,
                                    mode=self.mode,
@@ -386,6 +395,13 @@ class CrossroadEnd2endAllRela(gym.Env):
 
         name_setting = name_settings[exit_]
 
+        ego_state = [self.ego_dynamics['x'], self.ego_dynamics['y'], self.ego_dynamics['v_x'], self.ego_dynamics['phi']]
+        all_vehicles = list(filter(lambda v: Para.CROSSROAD_SIZE/2 + 40 > v['x'] > -Para.CROSSROAD_SIZE/2 - 40 and
+                                             Para.CROSSROAD_SIZE/2 + 40 > v['y'] > -Para.CROSSROAD_SIZE/2 - 40, self.all_other))
+        self.sensors.update(pos=ego_state, vehicles=all_vehicles)
+        self.detected_vehicles = self.sensors.getVisibleVehicles()
+        self.surrounding_objects_numbers = len(self.detected_vehicles)
+
         def filter_interested_other(vs, task):
             dl, du, dr, rd, rl, ru, ur, ud, ul, lu, lr, ld = [], [], [], [], [], [], [], [], [], [], [], []
             for v in vs:
@@ -447,8 +463,8 @@ class CrossroadEnd2endAllRela(gym.Env):
                 ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < Para.CROSSROAD_SIZE/2+10, ur))  # interest of straight
             elif task == 'right':
                 ur = list(filter(lambda v: v['x'] < Para.CROSSROAD_SIZE/2+10 and v['y'] < Para.CROSSROAD_SIZE/2, ur))  # interest of right
-            ud = list(filter(lambda v: max(ego_y-2, -Para.CROSSROAD_SIZE/2) < v['y'] < Para.CROSSROAD_SIZE/2 and ego_x > v['x'], ud))  # interest of left
-            ul = list(filter(lambda v: -Para.CROSSROAD_SIZE/2-10 < v['x'] < ego_x and v['y'] < Para.CROSSROAD_SIZE/2, ul))  # interest of left
+            ud = list(filter(lambda v: max(ego_y-8, -Para.CROSSROAD_SIZE/2) < v['y'] < Para.CROSSROAD_SIZE/2 and ego_x > v['x'] - 6, ud))  # interest of left
+            ul = list(filter(lambda v: -Para.CROSSROAD_SIZE/2-15 < v['x'] and v['y'] < Para.CROSSROAD_SIZE/2 + 20, ul))  # interest of left
 
             lu = lu  # not interest in case of traffic light
             lr = list(filter(lambda v: -Para.CROSSROAD_SIZE/2-10 < v['x'] < Para.CROSSROAD_SIZE/2+10, lr))  # interest of right
@@ -496,7 +512,7 @@ class CrossroadEnd2endAllRela(gym.Env):
                     tmp_v_mode = slice_or_fill(eval(mode), mode2fillvalue[mode], num)
                     tmp_v.extend(tmp_v_mode)
             elif self.state_mode == 'dyna':
-                for mode, num in VEHICLE_MODE_DICT[task].items():
+                for mode in VEHICLE_MODE_DICT[task].keys():
                     tmp_v.extend(eval(mode))
                 while len(tmp_v) < self.veh_num:
                     if self.training_task == 'left':
@@ -511,7 +527,7 @@ class CrossroadEnd2endAllRela(gym.Env):
 
             return tmp_v
 
-        self.interested_other = filter_interested_other(self.all_other, self.training_task)
+        self.interested_other = filter_interested_other(self.detected_vehicles, self.training_task)
 
         for other in self.interested_other:
             other_x, other_y, other_v, other_phi, other_l, other_w, other_turn_rad, other_mask = \
@@ -692,6 +708,15 @@ class CrossroadEnd2endAllRela(gym.Env):
                                  y + line_length * sin(phi*pi/180.)
                 plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
 
+            def draw_sensor_range(x_ego, y_ego, a_ego, l_bias, w_bias, angle_bias, angle_range, dist_range, color):
+                x_sensor = x_ego + l_bias * cos(a_ego) - w_bias * sin(a_ego)
+                y_sensor = y_ego + l_bias * sin(a_ego) + w_bias * cos(a_ego)
+                theta1 = a_ego + angle_bias - angle_range / 2
+                theta2 = a_ego + angle_bias + angle_range / 2
+                sensor = mpatch.Wedge([x_sensor, y_sensor], dist_range, theta1=theta1 * 180 / pi,
+                                       theta2=theta2 * 180 / pi, fc=color, alpha=0.2)
+                ax.add_patch(sensor)
+
             # plot cars
             for veh in self.all_other:
                 veh_x = veh['x']
@@ -702,6 +727,43 @@ class CrossroadEnd2endAllRela(gym.Env):
                 if is_in_plot_area(veh_x, veh_y):
                     plot_phi_line(veh_x, veh_y, veh_phi, 'black')
                     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
+
+            # plot own car
+            obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other = self._split_all(self.obs)
+            ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi = obs_ego
+            devi_longi, devi_lateral, devi_phi, devi_v = obs_track
+
+            plot_phi_line(ego_x, ego_y, ego_phi, 'fuchsia')
+            draw_rotate_rec(ego_x, ego_y, ego_phi, self.ego_l, self.ego_w, 'fuchsia')
+
+            ax.plot(self.ref_path.path[0], self.ref_path.path[1], color='g')
+            _, point = self.ref_path._find_closest_point(ego_x, ego_y)
+            path_x, path_y, path_phi, path_v = point[0], point[1], point[2], point[3]
+            plt.plot(path_x, path_y, 'g.')
+
+            # plot reference point
+            plt.plot(self.ref_path.path[0], self.ref_path.path[1], color='gray')
+            for i in range(int(len(obs_future_point) / self.per_path_info_dim)):
+                current_point = obs_future_point[i * self.per_path_info_dim : (i + 1) * self.per_path_info_dim]
+                plt.plot(current_point[0], current_point[1], 'm.')
+
+            # plot sensors
+            draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
+                              angle_range=2 * pi, dist_range=35, color='thistle')
+            draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
+                              angle_range=70 * pi / 180, dist_range=40, color="slategray")
+            draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
+                              angle_range=90 * pi / 180, dist_range=30, color="slategray")
+
+            # plot vehicles from sensors
+            # for veh in self.detected_vehicles:
+            #     veh_x = veh['x']
+            #     veh_y = veh['y']
+            #     veh_phi = veh['phi']
+            #     veh_l = veh['l']
+            #     veh_w = veh['w']
+            #     plot_phi_line(veh_x, veh_y, veh_phi, 'lime')
+            #     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'lime')
 
             # plot interested participants
             if weights is not None:
@@ -723,25 +785,6 @@ class CrossroadEnd2endAllRela(gym.Env):
                     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
                 if i in index_top_k_in_weights:
                     plt.text(veh_x, veh_y, "{:.2f}".format(weights[i]), color='red', fontsize=15)
-
-            # plot own car
-            obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other = self._split_all(self.obs)
-            ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi = obs_ego
-            devi_longi, devi_lateral, devi_phi, devi_v = obs_track
-
-            plot_phi_line(ego_x, ego_y, ego_phi, 'red')
-            draw_rotate_rec(ego_x, ego_y, ego_phi, self.ego_l, self.ego_w, 'red')
-
-            ax.plot(self.ref_path.path[0], self.ref_path.path[1], color='g')
-            _, point = self.ref_path._find_closest_point(ego_x, ego_y)
-            path_x, path_y, path_phi, path_v = point[0], point[1], point[2], point[3]
-            plt.plot(path_x, path_y, 'g.')
-
-            # plot reference point
-            plt.plot(self.ref_path.path[0], self.ref_path.path[1], color='gray')
-            for i in range(int(len(obs_future_point) / self.per_path_info_dim)):
-                current_point = obs_future_point[i * self.per_path_info_dim : (i + 1) * self.per_path_info_dim]
-                plt.plot(current_point[0], current_point[1], 'm.')
 
             # text
             text_x, text_y_start = -110, 60
@@ -788,7 +831,8 @@ class CrossroadEnd2endAllRela(gym.Env):
             #             plt.text(text_x, text_y_start-next(ge), 'track_error={:.4f}, collision_risk={:.4f}'.format(value[0], value[1]), fontsize=14, color=color[i], fontstyle='italic')
             #         else:
             #             plt.text(text_x, text_y_start-next(ge), 'track_error={:.4f}, collision_risk={:.4f}'.format(value[0], value[1]), fontsize=12, color=color[i], fontstyle='italic')
-
+            plt.xlim(-(square_length / 2 + extension), square_length / 2 + extension)
+            plt.ylim(-(square_length / 2 + extension), square_length / 2 + extension)
             plt.show()
             plt.pause(0.001)
 

@@ -1,0 +1,59 @@
+<routes>
+	<vType id="car_1" length="5.087" width="1.868" accel="2.6" decel="4.5" apparentDecel="4.5" emergencyDecel="4.5" sigma="0.2"
+		   tau="1" minGap="1" maxSpeed="40" color="62,62,62,235" vClass="passenger" guiShape="passenger" impatience="0"
+		   laneChangeModel="SL2015" carFollowModel="Krauss" speedFactor="normc(0.8,0.1,0.6,1.0)" latAlignment="center" minGapLat="0.1"
+		   maxSpeedLat="1" lcSpeedGain="3" lcKeepRight="0" lcSpeedGainRight="1"/><!--BMW 5xu/>-->
+
+	<vType id="car_2" length="4.753" width="1.800" accel="2.6" decel="4.5" apparentDecel="4.5" emergencyDecel="4.5" sigma="0.2"
+		   tau="1" minGap="1" maxSpeed="40" color="255,255,255,186" vClass="passenger" guiShape="passenger" impatience="0"
+		   laneChangeModel="SL2015" carFollowModel="Krauss" speedFactor="normc(0.8,0.1,0.6,1.0)" latAlignment="center" minGapLat="0.1"
+		   maxSpeedLat="1" lcSpeedGain="3" lcKeepRight="0" lcSpeedGainRight="1"/><!--dazhong suteng/>-->
+
+	<vType id="car_3" length="3.975" width="1.709" accel="2.6" decel="4.5" apparentDecel="4.5" emergencyDecel="4.5" sigma="0.2"
+		   tau="1" minGap="1" maxSpeed="40" color="24,0,255,255" vClass="passenger" guiShape="passenger" impatience="0"
+		   laneChangeModel="SL2015" carFollowModel="Krauss" speedFactor="normc(0.8,0.1,0.6,0.9)" latAlignment="center" minGapLat="0.1"
+		   maxSpeedLat="1" lcSpeedGain="3" lcKeepRight="0" lcSpeedGainRight="1" /><!--fute jianianhua/>-->
+
+	<vType id="truck_1" length="6.8" width="2.55" accel="2" decel="4.5" apparentDecel="4.5" emergencyDecel="4.5" sigma="0.2"
+		   tau="1" minGap="1" maxSpeed="25" color="255,0,0,255" vClass="passenger" guiShape="truck" impatience="0"
+		   laneChangeModel="SL2015" carFollowModel="Krauss" speedFactor="normc(0.7,0.1,0.6,0.8)" latAlignment="center" minGapLat="0.1"
+		   maxSpeedLat="1" lcSpeedGain="3" lcKeepRight="0" lcSpeedGainRight="1"/><!--yiqijiefang J6L/>-->
+
+	<vType id="self_car" length="5." width="2.1" accel="3.5" decel="4.2" sigma="0.0" guiShape="passenger/wagon" color="1,0,1" maxSpeed="40"/>
+
+	<route id="self_route" edges="-gneE18" />
+
+
+<!--	<flow id="carflow_1ane_2_1" type="car_1" begin="0" end="0.1" number="18" from="-gneE18" to="-gneE18" departLane="2" departPos="random"  departSpeed="30"/>-->
+<!--&lt;!&ndash;	<flow id="carflow_1ane_2.2" type="car_2" begin="0" end="5" number="18" from="-gneE18" to="-gneE18" departLane="2" departPos="random"  departSpeed="30"/>&ndash;&gt;-->
+<!--&lt;!&ndash;	<flow id="carflow_1ane_2.3" type="car_3" begin="0" end="5" number="7" from="-gneE18" to="-gneE18" departLane="2" departPos="random"  departSpeed="27"/>&ndash;&gt;-->
+
+<!--	<flow id="carflow_1ane_1_1" type="car_1" begin="0" end="0.1" number="10" from="-gneE18" to="-gneE18" departLane="1" departPos="random"  departSpeed="30"/>-->
+<!--&lt;!&ndash;	<flow id="carflow_1ane_1.2" type="car_2" begin="0" end="5" number="10" from="-gneE18" to="-gneE18" departLane="1" departPos="random"  departSpeed="30"/>&ndash;&gt;-->
+<!--&lt;!&ndash;	<flow id="carflow_1ane_1.3" type="car_3" begin="0" end="5" number="29" from="-gneE18" to="-gneE18" departLane="1" departPos="random"  departSpeed="27"/>&ndash;&gt;-->
+
+<!--	<flow id="carflow_1ane_0_1" type="car_3" begin="0" end="0.1" number="20" from="-gneE18" to="-gneE18" departLane="0" departPos="random"  departSpeed="27"/>-->
+<!--&lt;!&ndash;	<flow id="carflow_1ane_0_2" type="truck_1" begin="0" end="0.1" number="35" from="-gneE18" to="-gneE18" departLane="0" departPos="random"  departSpeed="24"/>&ndash;&gt;-->
+
+
+<!--	<flow id="carflow_1ane_2_4" type="car_1" begin="0" end="900000"  from="-gneE18" to="-gneE18" departLane="2" departPos="0"  departSpeed="30" vehsPerHour="1200"/>-->
+
+
+<!--	<flow id="carflow_1ane_1_4" type="car_3" begin="0" end="900000"  from="-gneE18" to="-gneE18" departLane="1" departPos="0"  departSpeed="27" vehsPerHour="1200"/>-->
+
+
+<!--	<flow id="carflow_1ane_0_4" type="truck_1" begin="0" end="900000"  from="-gneE18" to="-gneE18" departLane="0" departPos="0"  departSpeed="24" vehsPerHour="1200"/>-->
+
+
+	<flow id="carflow_1ane_3_1" type="car_1" begin="0" end="900000"  from="-gneE18" to="-gneE18" departLane="3" departPos="0"  departSpeed="27" period="4.0"/>
+	<flow id="carflow_1ane_2_1" type="car_1" begin="1" end="900000"  from="-gneE18" to="-gneE18" departLane="2" departPos="0"  departSpeed="27" period="4.0"/>
+	<flow id="carflow_1ane_1_1" type="car_3" begin="2" end="900000"  from="-gneE18" to="-gneE18" departLane="1" departPos="0"  departSpeed="27" period="4.0"/>
+	<flow id="carflow_1ane_0_1" type="truck_1" begin="3" end="900000"  from="-gneE18" to="-gneE18" departLane="0" departPos="0"  departSpeed="24" period="4.0"/>
+
+	<flow id="carflow_1ane_3_2" type="car_1" begin="2" end="900000"  from="-gneE18" to="-gneE18" departLane="3" departPos="0"  departSpeed="27" period="4.0"/>
+	<flow id="carflow_1ane_2_2" type="car_2" begin="3" end="900000"  from="-gneE18" to="-gneE18" departLane="2" departPos="0"  departSpeed="27" period="4.0"/>
+	<flow id="carflow_1ane_1_2" type="car_2" begin="4" end="900000"  from="-gneE18" to="-gneE18" departLane="1" departPos="0"  departSpeed="27" period="4.0"/>
+	<flow id="carflow_1ane_0_2" type="car_3" begin="5" end="900000"  from="-gneE18" to="-gneE18" departLane="0" departPos="0"  departSpeed="27" period="4.0"/>
+
+
+</routes>

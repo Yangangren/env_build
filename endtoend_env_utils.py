@@ -29,7 +29,7 @@ class Para:
     PER_OTHER_INFO_DIM = 7
 
     # MAX NUM
-    MAX_VEH_NUM = 8  # to be align with VEHICLE_MODE_DICT
+    MAX_VEH_NUM = 10  # to be align with VEHICLE_MODE_DICT
     MAX_BIKE_NUM = 0  # to be align with BIKE_MODE_DICT
     MAX_PERSON_NUM = 0  # to be align with PERSON_MODE_DICT
 

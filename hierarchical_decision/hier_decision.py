@@ -11,6 +11,7 @@ import datetime
 import shutil
 import time
 import json
+import matplotlib.patches as mpatch
 import os
 import heapq
 from math import cos, sin, pi
@@ -262,16 +263,25 @@ class HierarchicalDecision(object):
             else:
                 return False
 
-        def draw_rotate_rec(x, y, a, l, w, c):
+        def draw_rotate_rec(x, y, a, l, w, c, facecolor='white'):
             bottom_left_x, bottom_left_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
             ax.add_patch(plt.Rectangle((x + bottom_left_x, y + bottom_left_y), w, l, edgecolor=c,
-                                       facecolor='white', angle=-(90 - a), zorder=50))
+                                       facecolor=facecolor, angle=-(90 - a), zorder=50))
 
         def plot_phi_line(x, y, phi, color):
             line_length = 3
             x_forw, y_forw = x + line_length * cos(phi * pi / 180.), \
                              y + line_length * sin(phi * pi / 180.)
             plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
+
+        def draw_sensor_range(x_ego, y_ego, a_ego, l_bias, w_bias, angle_bias, angle_range, dist_range, color):
+            x_sensor = x_ego + l_bias * cos(a_ego) - w_bias * sin(a_ego)
+            y_sensor = y_ego + l_bias * sin(a_ego) + w_bias * cos(a_ego)
+            theta1 = a_ego + angle_bias - angle_range / 2
+            theta2 = a_ego + angle_bias + angle_range / 2
+            sensor = mpatch.Wedge([x_sensor, y_sensor], dist_range, theta1=theta1 * 180 / pi,
+                                   theta2=theta2 * 180 / pi, fc=color, alpha=0.2)
+            ax.add_patch(sensor)
 
         # plot cars
         for veh in self.env.all_other:
@@ -309,8 +319,16 @@ class HierarchicalDecision(object):
         devi_longi, devi_lateral, devi_phi, devi_v = obs_track
 
         plot_phi_line(ego_x, ego_y, ego_phi, 'fuchsia')
-        draw_rotate_rec(ego_x, ego_y, ego_phi, self.env.ego_l, self.env.ego_w, 'fuchsia')
+        draw_rotate_rec(ego_x, ego_y, ego_phi, self.env.ego_l, self.env.ego_w, 'fuchsia', facecolor='pink')
         self.hist_posi.append((ego_x, ego_y))
+
+        # plot sensors
+        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
+                          angle_range=2 * pi, dist_range=70, color='thistle')
+        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
+                          angle_range=70 * pi / 180, dist_range=80, color="slategray")
+        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
+                          angle_range=90 * pi / 180, dist_range=60, color="slategray")
 
         # plot history
         xs = [pos[0] for pos in self.hist_posi]
@@ -377,10 +395,13 @@ class HierarchicalDecision(object):
                 else:
                     plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=12,
                              color=color[i], fontstyle='italic')
+        plt.xlim(-(square_length / 2 + extension), square_length / 2 + extension)
+        plt.ylim(-(square_length / 2 + extension), square_length / 2 + extension)
         plt.show()
         plt.pause(0.001)
         if self.logdir is not None:
             plt.savefig(self.logdir + '/episode{}'.format(self.episode_counter) + '/step{}.pdf'.format(self.step_counter))
+        plt.cla()
 
 
 def plot_and_save_ith_episode_data(logdir, i):

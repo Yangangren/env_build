@@ -1,0 +1,15 @@
+<configuration>
+	<input>
+	<net-file value="finalantingwithcross.net.xml"/>
+	<route-files value="walkingdead.rou.xml,whatnowyeah.rou.xml"/>
+	</input>
+<processing>
+
+	 <step-length value="0.1"/>
+	 <lateral-resolution value="1.7"/>
+</processing>
+
+<gui_only>
+	<gui-settings-file value="grid-map-viewsetting.xml"/>
+</gui_only>
+</configuration>
