@@ -64,7 +64,7 @@ class CrossroadEnd2endAdv(gym.Env):
         self.ego_info_dim = 6
         self.per_tracking_info_dim = 3
         self.per_veh_info_dim = 5
-        self.adv_action_dim = 4
+        self.adv_action_dim = 2
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(self.action_number,), dtype=np.float32)
 
         self.seed()
@@ -119,7 +119,7 @@ class CrossroadEnd2endAdv(gym.Env):
         self.reward_info = None
         self.done_type = 'not_done_yet'
         if self.mode == 'training':
-            if np.random.random() > 0.9:
+            if np.random.random() > 1.0:
                 self.virtual_red_light_vehicle = True
             else:
                 self.virtual_red_light_vehicle = False
