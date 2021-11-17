@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # =====================================
-# @Time    : 2020/6/10
+# @Time    : 2020/11/08
 # @Author  : Yang Guan (Tsinghua Univ.)
 # @FileName: traffic.py
 # =====================================
@@ -14,7 +14,6 @@ import random
 import sys
 from collections import defaultdict
 from math import fabs, cos, sin, pi
-import copy
 
 if 'SUMO_HOME' in os.environ:
     tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
@@ -35,7 +34,7 @@ SIM_PERIOD = 1.0 / 10
 
 class Traffic(object):
 
-    def __init__(self, step_length, mode, init_n_ego_dict, training_task='left'):  # mode 'display' or 'training'
+    def __init__(self, step_length, mode, init_n_ego_dict):  # mode 'display' or 'training'
         self.random_traffic = None
         self.sim_time = 0
         self.n_ego_vehicles = defaultdict(list)
@@ -46,18 +45,8 @@ class Traffic(object):
         self.collision_ego_id = None
         self.v_light = None
         self.n_ego_dict = init_n_ego_dict
-        # dict(DL1=dict(x=1.875, y=-30, v=3, a=90, l=4.8, w=2.2),
-        #      UR1=dict(x=-1.875, y=30, v=3, a=-90, l=4.8, w=2.2),
-        #      DR1=dict(x=5.625, y=-30, v=3, a=90, l=4.8, w=2.2),
-        #      RU1=dict(x=5.625, y=-30, v=3, a=90, l=4.8, w=2.2))
-
+        self.training_light_phase = None
         self.mode = mode
-        self.training_light_phase = 0
-        self.training_task = training_task
-        self.first_add = True
-        if training_task == 'right':
-            if random.random() > 0.5:
-                self.training_light_phase = 2
 
         try:
             traci.start(
@@ -94,7 +83,7 @@ class Traffic(object):
                                                 traci.constants.VAR_ANGLE,
                                                 traci.constants.VAR_SIGNALS,
                                                 traci.constants.VAR_SPEED,
-                                                # traci.constants.VAR_TYPE,
+                                                traci.constants.VAR_TYPE,
                                                 # traci.constants.VAR_EMERGENCY_DECEL,
                                                 # traci.constants.VAR_LANE_INDEX,
                                                 # traci.constants.VAR_LANEPOSITION,
@@ -108,14 +97,12 @@ class Traffic(object):
             else:
                 traci.trafficlight.setPhase('0', 0)
 
-            # if self.mode == "training":
-            #     traci.trafficlight.setPhase('0', self.training_light_phase)
             traci.simulationStep()
 
     def __del__(self):
         traci.close()
 
-    def add_self_car(self, n_ego_dict):
+    def add_self_car(self, n_ego_dict, with_delete=True):
         for egoID, ego_dict in n_ego_dict.items():
             ego_v_x = ego_dict['v_x']
             ego_v_y = ego_dict['v_y']
@@ -125,14 +112,15 @@ class Traffic(object):
             ego_phi = ego_dict['phi']
             ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo = _convert_car_coord_to_sumo_coord(ego_x, ego_y, ego_phi, ego_l)
             edgeID, lane = xy2_edgeID_lane(ego_x, ego_y)
-            try:
-                traci.vehicle.remove(egoID)
-            except traci.exceptions.TraCIException:
-                print('Don\'t worry, it\'s been handled well')
-            traci.simulationStep()
-            traci.vehicle.addLegacy(vehID=egoID, routeID=ego_dict['routeID'],
-                                    # depart=0, pos=20, lane=lane, speed=ego_dict['v_x'],
-                                    typeID='self_car')
+            if with_delete:
+                try:
+                    traci.vehicle.remove(egoID)
+                except traci.exceptions.TraCIException:
+                    print('Don\'t worry, it\'s been handled well')
+                traci.simulationStep()
+                traci.vehicle.addLegacy(vehID=egoID, routeID=ego_dict['routeID'],
+                                        # depart=0, pos=20, lane=lane, speed=ego_dict['v_x'],
+                                        typeID='self_car')
             traci.vehicle.moveToXY(egoID, edgeID, lane, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keepRoute=1)
             traci.vehicle.setLength(egoID, ego_dict['l'])
             traci.vehicle.setWidth(egoID, ego_dict['w'])
@@ -145,25 +133,35 @@ class Traffic(object):
         for ego_id in self.n_ego_dict.keys():
             if ego_id in random_traffic:
                 del random_traffic[ego_id]
-
         return random_traffic
 
-    def init_traffic(self, init_n_ego_dict):
+    def init_light(self):
+        if random.random() > 0.7:
+            self.training_light_phase = 3
+        else:
+            self.training_light_phase = 0
+        # if self.training_task == 'right':   # todo
+        #     if random.random() > 0.5:
+        #         self.training_light_phase = 2
+        traci.trafficlight.setPhase('0', self.training_light_phase)
+        # traci.trafficlight.setPhaseDuration('0', 10000)
+        traci.simulationStep()
+        self._get_traffic_light()
+        return self.v_light
+
+    def init_traffic(self, init_n_ego_dict, training_task):
+        self.training_task = training_task
+        self.ego_route = TASK2ROUTEID[self.training_task]
         self.sim_time = 0
         self.n_ego_vehicles = defaultdict(list)
         self.collision_flag = False
         self.n_ego_collision_flag = {}
         self.collision_ego_id = None
-        self.v_light = None
-        self.training_light_phase = 0
-        if self.training_task == 'right':
-            if random.random() > 0.5:
-                self.training_light_phase = 2
         self.n_ego_dict = init_n_ego_dict
-        traci.trafficlight.setPhase('0', self.training_light_phase)
-        random_traffic = self.generate_random_traffic()
-
         self.add_self_car(init_n_ego_dict)
+        traci.simulationStep()
+        random_traffic = self.generate_random_traffic()
+        self.add_self_car(init_n_ego_dict, with_delete=False)
 
         # move ego to the given position and remove conflict cars
         for egoID, ego_dict in self.n_ego_dict.items():
@@ -175,6 +173,9 @@ class Traffic(object):
                 a_in_sumo = random_traffic[veh][traci.constants.VAR_ANGLE]
                 veh_l = random_traffic[veh][traci.constants.VAR_LENGTH]
                 veh_v = random_traffic[veh][traci.constants.VAR_SPEED]
+                # veh_sig = random_traffic[veh][traci.constants.VAR_SIGNALS]
+                # 10: left and brake 9: right and brake 1: right 8: brake 0: no signal 2: left
+
                 x, y, a = _convert_sumo_coord_to_car_coord(x_in_sumo, y_in_sumo, a_in_sumo, veh_l)
                 x_in_ego_coord, y_in_ego_coord, a_in_ego_coord = shift_and_rotate_coordination(x, y, a, ego_x,
                                                                                                ego_y, ego_phi)
@@ -183,10 +184,12 @@ class Traffic(object):
                                                                                                            y_in_ego_coord,
                                                                                                            a_in_ego_coord)
                 if (-5 < x_in_ego_coord < 1 * (ego_v_x) + ego_l/2. + veh_l/2. + 2 and abs(y_in_ego_coord) < 3) or \
-                        (-5 < ego_x_in_veh_coord < 1 * (veh_v) + ego_l/2. + veh_l/2. + 2 and abs(ego_y_in_veh_coord) <3) or \
-                        (-3.75 < ego_x < 1 and -3.75 < x < 0 and y < 10):
+                        (-5 < ego_x_in_veh_coord < 1 * (veh_v) + ego_l/2. + veh_l/2. + 2 and abs(ego_y_in_veh_coord) <3):
                     traci.vehicle.moveToXY(veh, '4i', 1, -80, 1.85, 180, 2)
-
+                    # traci.vehicle.remove(vehID=veh)
+                # if 0<x_in_sumo<3.5 and -22<y_in_sumo<-15:# and veh_sig!=1 and veh_sig!=9:
+                #     traci.vehicle.moveToXY(veh, '4o', 1, -80, 1.85, 180,2)
+                #     traci.vehicle.remove(vehID=veh)
 
     def _get_vehicles(self):
         self.n_ego_vehicles = defaultdict(list)
@@ -205,8 +208,9 @@ class Traffic(object):
                     # transfer x,y,a in car coord
                     x, y, a = _convert_sumo_coord_to_car_coord(x_in_sumo, y_in_sumo, a_in_sumo, length)
                     v = veh_info_dict[veh][traci.constants.VAR_SPEED]
+                    type = veh_info_dict[veh][traci.constants.VAR_TYPE]
                     self.n_ego_vehicles[egoID].append(dict(x=x, y=y, v=v, phi=a, l=length,
-                                                           w=width, route=route))
+                                                           w=width, route=route, type=type))
 
     def _get_traffic_light(self):
         self.v_light = traci.trafficlight.getPhase('0')
@@ -238,8 +242,8 @@ class Traffic(object):
                                                                                            self.n_ego_dict[egoID]['l'])
             egdeID, lane = xy2_edgeID_lane(ego_x, ego_y)
             keeproute = 1
-            if self.training_task == 'left':
-                keeproute = 2 if ego_x > 0 and ego_y > -7 else 1
+            # if self.training_task == 'left':  # TODO
+            #     keeproute = 2 if ego_x > 0 and ego_y > -7 else 1
             try:
                 traci.vehicle.moveToXY(egoID, egdeID, lane, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keeproute)
             except traci.exceptions.TraCIException:
@@ -282,5 +286,39 @@ class Traffic(object):
         self.n_ego_collision_flag = flag_dict
 
 
+def test_traffic():
+    import numpy as np
+    from dynamics_and_models import ReferencePath
+
+    def _reset_init_state():
+        ref_path = ReferencePath('straight','0')
+        random_index = int(np.random.random()*(900+500)) + 700
+        x, y, phi = ref_path.indexs2points(random_index)
+        v = 8 * np.random.random()
+        return dict(ego=dict(v_x=v,
+                             v_y=0,
+                             r=0,
+                             x=x.numpy(),
+                             y=y.numpy(),
+                             phi=phi.numpy(),
+                             l=4.8,
+                             w=2.2,
+                             routeID='du',
+                             ))
+
+    init_state = dict(ego=dict(v_x=8., v_y=0, r=0, x=-30, y=1.5, phi=180, l=4.8, w=2.2, routeID='dl',))
+    # init_state = _reset_init_state()
+    traffic = Traffic(100., mode='training', init_n_ego_dict=init_state, training_task='left')
+    traffic.init_traffic(init_state)
+    traffic.sim_step()
+    for i in range(100000000):
+        # for j in range(50):
+            # traffic.set_own_car(init_state)
+            # traffic.sim_step()
+        # init_state = _reset_init_state()
+        # traffic.init_traffic(init_state)
+        traffic.sim_step()
+
+
 if __name__ == "__main__":
-    pass
+    test_traffic()

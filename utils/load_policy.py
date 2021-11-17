@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # =====================================
-# @Time    : 2021/3/3
+# @Time    : 2020/11/30
 # @Author  : Yang Guan (Tsinghua Univ.)
 # @FileName: load_policy.py
 # =====================================
@@ -19,33 +19,40 @@ from utils.preprocessor import Preprocessor
 
 class LoadPolicy(object):
     def __init__(self, exp_dir, iter):
-        # model_dir = exp_dir + '/models'
-        model_dir = exp_dir
+        model_dir = exp_dir + '/models'
         parser = argparse.ArgumentParser()
         params = json.loads(open(exp_dir + '/config.json').read())
         for key, val in params.items():
             parser.add_argument("-" + key, default=val)
         self.args = parser.parse_args()
-        env = CrossroadEnd2end(training_task=self.args.env_kwargs_training_task,
-                               num_future_data=self.args.env_kwargs_num_future_data)
+        env = CrossroadEnd2end(future_point_num=self.args.num_rollout_list_for_policy_update[0])
         self.policy = Policy4Toyota(self.args)
         self.policy.load_weights(model_dir, iter)
-        self.preprocessor = Preprocessor((self.args.obs_dim,), self.args.obs_preprocess_type, self.args.reward_preprocess_type,
-                                         self.args.obs_scale, self.args.reward_scale, self.args.reward_shift,
-                                         gamma=self.args.gamma)
-        # self.preprocessor.load_params(load_dir)
-        init_obs = env.reset()
-        self.run(init_obs)
-        self.values(init_obs)
+        self.preprocessor = Preprocessor(self.args.obs_scale, self.args.reward_scale, self.args.reward_shift,
+                                         args=self.args, gamma=self.args.gamma)
+        init_obs, all_info = env.reset()
+        mask = all_info['mask']
+        self.run_batch(init_obs[np.newaxis, :], mask[np.newaxis, :])
+        self.obj_value_batch(init_obs[np.newaxis, :], mask[np.newaxis, :])
 
     @tf.function
-    def run(self, obs):
-        processed_obs = self.preprocessor.np_process_obses(obs)
-        action, logp = self.policy.compute_action(processed_obs[np.newaxis, :])
-        return action[0]
+    def run_batch(self, obses, masks):
+        obses_transformed = self.preprocessor.tf_convert_ego_coordinate(obses)
+        processed_obses = self.preprocessor.process_obs(obses_transformed)
+        states, weights = self._get_states(processed_obses, masks)
+        actions = self.policy.compute_mode(states)
+        return actions, weights
 
     @tf.function
-    def values(self, obs):
-        processed_obs = self.preprocessor.np_process_obses(obs)
-        values = self.policy.compute_vs(processed_obs[np.newaxis, :])
-        return values[0]
+    def obj_value_batch(self, obses, masks):
+        obses_transformed = self.preprocessor.tf_convert_ego_coordinate(obses)
+        processed_obses = self.preprocessor.process_obs(obses_transformed)
+        states, _ = self._get_states(processed_obses, masks)
+        values = self.policy.compute_obj_v(states)
+        return values
+
+    def _get_states(self, mb_obs, mb_mask):
+        mb_obs_others, mb_attn_weights = self.policy.compute_attn(mb_obs[:, self.args.other_start_dim:], mb_mask)
+        mb_state = tf.concat((mb_obs[:, :self.args.other_start_dim], mb_obs_others), axis=1)
+        return mb_state, mb_attn_weights
+

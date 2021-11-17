@@ -1,0 +1,10 @@
+<configuration>
+<input>
+	<net-file value="G30_zhengzhou.net.xml"/>
+	<route-files value="grid-map-traffic_VehicleOnly.rou.xml"/>
+</input>
+<processing>
+	 <step-length value="0.1"/>
+	 <lateral-resolution value="0.375"/>
+</processing>
+</configuration>

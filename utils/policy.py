@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # =====================================
-# @Time    : 2021/3/3
+# @Time    : 2020/9/1
 # @Author  : Yang Guan (Tsinghua Univ.)
 # @FileName: policy.py
 # =====================================
@@ -10,9 +10,9 @@
 import tensorflow as tf
 from tensorflow.keras.optimizers.schedules import PolynomialDecay
 
-from utils.model import MLPNet
+from utils.model import MLPNet, AttentionNet
 
-NAME2MODELCLS = dict([('MLP', MLPNet),])
+NAME2MODELCLS = dict([('MLP', MLPNet), ('Attention', AttentionNet)])
 
 
 class Policy4Toyota(tf.Module):
@@ -21,25 +21,37 @@ class Policy4Toyota(tf.Module):
     tfd = tfp.distributions
     tfb = tfp.bijectors
     tf.config.experimental.set_visible_devices([], 'GPU')
+    tf.config.threading.set_inter_op_parallelism_threads(1)
+    tf.config.threading.set_intra_op_parallelism_threads(1)
 
     def __init__(self, args):
         super().__init__()
         self.args = args
-        obs_dim, act_dim = self.args.obs_dim, self.args.act_dim
+        obs_dim, act_dim = self.args.state_dim, self.args.act_dim
         n_hiddens, n_units, hidden_activation = self.args.num_hidden_layers, self.args.num_hidden_units, self.args.hidden_activation
-        value_model_cls, policy_model_cls = NAME2MODELCLS[self.args.value_model_cls], \
-                                            NAME2MODELCLS[self.args.policy_model_cls]
+        value_model_cls, policy_model_cls, attn_model_cls = NAME2MODELCLS[self.args.value_model_cls], \
+                                                            NAME2MODELCLS[self.args.policy_model_cls], \
+                                                            NAME2MODELCLS[self.args.attn_model_cls]
         self.policy = policy_model_cls(obs_dim, n_hiddens, n_units, hidden_activation, act_dim * 2, name='policy',
                                        output_activation=self.args.policy_out_activation)
         policy_lr_schedule = PolynomialDecay(*self.args.policy_lr_schedule)
         self.policy_optimizer = self.tf.keras.optimizers.Adam(policy_lr_schedule, name='adam_opt')
 
-        self.vs = value_model_cls(obs_dim, n_hiddens, n_units, hidden_activation, 2, name='vs')
-        value_lr_schedule = PolynomialDecay(*self.args.value_lr_schedule)
-        self.value_optimizer = self.tf.keras.optimizers.Adam(value_lr_schedule, name='adam_opt')
+        self.obj_v = value_model_cls(obs_dim, n_hiddens, n_units, hidden_activation, 1, name='obj_v',
+                                     output_activation='softplus')
+        obj_value_lr_schedule = PolynomialDecay(*self.args.value_lr_schedule)
+        self.obj_value_optimizer = self.tf.keras.optimizers.Adam(obj_value_lr_schedule, name='objv_adam_opt')
 
-        self.models = (self.vs, self.policy,)
-        self.optimizers = (self.value_optimizer, self.policy_optimizer)
+        # add AttentionNet
+        attn_in_total_dim, attn_in_per_dim, attn_out_dim = self.args.attn_in_total_dim, \
+                                                           self.args.attn_in_per_dim, \
+                                                           self.args.attn_out_dim
+        self.attn_net = attn_model_cls(attn_in_total_dim, attn_in_per_dim, attn_out_dim, name='attn_net')
+        attn_lr_schedule = PolynomialDecay(*self.args.attn_lr_schedule)
+        self.attn_optimizer = self.tf.keras.optimizers.Adam(attn_lr_schedule, name='adam_opt_attn')
+
+        self.models = (self.obj_v, self.policy, self.attn_net)
+        self.optimizers = (self.obj_value_optimizer, self.policy_optimizer, self.attn_optimizer)
 
     def save_weights(self, save_dir, iteration):
         model_pairs = [(model.name, model) for model in self.models]
@@ -59,13 +71,6 @@ class Policy4Toyota(tf.Module):
     def set_weights(self, weights):
         for i, weight in enumerate(weights):
             self.models[i].set_weights(weight)
-
-    @tf.function
-    def apply_gradients(self, iteration, grads):
-        value_len = len(self.vs.trainable_weights)
-        value_grad, policy_grad = grads[:value_len], grads[value_len:]
-        self.value_optimizer.apply_gradients(zip(value_grad, self.vs.trainable_weights))
-        self.policy_optimizer.apply_gradients(zip(policy_grad, self.policy.trainable_weights))
 
     @tf.function
     def compute_mode(self, obs):
@@ -100,9 +105,14 @@ class Policy4Toyota(tf.Module):
                 return actions, logps
 
     @tf.function
-    def compute_vs(self, obs):
-        with self.tf.name_scope('compute_vs') as scope:
-            return self.vs(obs)
+    def compute_obj_v(self, obs):
+        with self.tf.name_scope('compute_obj_v') as scope:
+            return tf.squeeze(self.obj_v(obs), axis=1)
+
+    @tf.function
+    def compute_attn(self, obs_others, mask):
+        with self.tf.name_scope('compute_attn') as scope:
+            return self.attn_net([obs_others, mask]) # return (logits, weights) tuple
 
 
 if __name__ == '__main__':

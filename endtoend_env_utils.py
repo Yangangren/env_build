@@ -2,31 +2,54 @@
 # -*- coding: utf-8 -*-
 
 # =====================================
-# @Time    : 2020/6/10
+# @Time    : 2020/11/08
 # @Author  : Yang Guan (Tsinghua Univ.)
 # @FileName: endtoend_env_utils.py
 # =====================================
 
 import math
-from collections import OrderedDict
 import os
+import numpy as np
+from collections import OrderedDict
 
-L, W = 4.8, 2.0
-LANE_WIDTH = 3.75
-LANE_NUMBER = 2
-CROSSROAD_SIZE = 36
-EXPECTED_V = 8.
-dirname = os.path.dirname(__file__)
-SUMOCFG_DIR = dirname + "/sumo_files/cross.sumocfg"
-VEHICLE_MODE_DICT = dict(left=OrderedDict(dl=1, du=1, ud=2, ul=2),
-                         straight=OrderedDict(dl=1, du=1, ud=1, ru=2, ur=2),
-                         right=OrderedDict(dr=1, ur=2, lr=2))
+
+class Para:
+    # MAP
+    L, W = 4.8, 2.0
+    LANE_WIDTH = 3.75
+    LANE_NUMBER = 2
+    CROSSROAD_SIZE = 36
+    # DIM
+    EGO_ENCODING_DIM = 6
+    TRACK_ENCODING_DIM = 4
+    PER_PATH_INFO_DIM = 4
+    LIGHT_ENCODING_DIM = 2
+    TASK_ENCODING_DIM = 3
+    REF_ENCODING_DIM = 3
+    PER_OTHER_INFO_DIM = 7
+
+    # MAX NUM
+    MAX_VEH_NUM = 10  # to be align with VEHICLE_MODE_DICT
+    MAX_BIKE_NUM = 0  # to be align with BIKE_MODE_DICT
+    MAX_PERSON_NUM = 0  # to be align with PERSON_MODE_DICT
+
+
+
+LIGHT_PHASE_TO_GREEN_OR_RED = {0: 'green', 1: 'red', 2: 'red', 3:'red'}  # 0: green, 1: red
+TASK_ENCODING = dict(left=[1.0, 0.0, 0.0], straight=[0.0, 1.0, 0.0], right=[0.0, 0.0, 1.0])
+LIGHT_ENCODING = {0: [1.0, 0.0], 1: [0.0, 1.0], 2: [0.0, 1.0], 3: [0.0, 1.0]}
+REF_ENCODING = {0: [1.0, 0.0, 0.0], 1: [0.0, 1.0, 0.0], 2: [0.0, 0.0, 1.0]}
+REF_NUM = {'left': 2, 'right': 2, 'straight': 2}
+SUMOCFG_DIR = os.path.dirname(__file__) + "/sumo_files/cross.sumocfg"
+VEHICLE_MODE_DICT = dict(left=OrderedDict(dl=2, du=2, ud=2, ul=2),
+                         straight=OrderedDict(dl=2, du=2, ru=2, ur=2),
+                         right=OrderedDict(dr=2, du=2, ur=2, lr=2))
 
 
 def dict2flat(inp):
     out = []
     for key, val in inp.items():
-        out.extend([key]*val)
+        out.extend([key] * val)
     return out
 
 
@@ -58,7 +81,7 @@ ROUTE2MODE = {('1o', '2i'): 'dr', ('1o', '3i'): 'du', ('1o', '4i'): 'dl',
               ('4o', '1i'): 'ld', ('4o', '2i'): 'lr', ('4o', '3i'): 'lu'}
 
 MODE2TASK = {'dr': 'right', 'du': 'straight', 'dl': 'left',
-             'rd': 'left', 'ru': 'right', 'rl': ' straight',
+             'rd': 'left', 'ru': 'right', 'rl': 'straight',
              'ud': 'straight', 'ur': 'left', 'ul': 'right',
              'ld': 'right', 'lr': 'straight', 'lu': 'left'}
 
@@ -72,39 +95,26 @@ MODE2ROUTE = {'dr': ('1o', '2i'), 'du': ('1o', '3i'), 'dl': ('1o', '4i'),
 
 def judge_feasible(orig_x, orig_y, task):  # map dependant
     def is_in_straight_before1(orig_x, orig_y):
-        return 0 < orig_x < 3.75 and orig_y <= -18
+        return 0 < orig_x < Para.LANE_WIDTH and orig_y <= -Para.CROSSROAD_SIZE / 2
 
     def is_in_straight_before2(orig_x, orig_y):
-        return 3.75 < orig_x < 7.5 and orig_y <= -18
+        return Para.LANE_WIDTH < orig_x < Para.LANE_WIDTH * 2 and orig_y <= -Para.CROSSROAD_SIZE / 2
 
     def is_in_straight_after(orig_x, orig_y):
-        return 0 < orig_x < 3.75 * 2 and orig_y >= 18
+        return 0 < orig_x < Para.LANE_WIDTH * Para.LANE_NUMBER and orig_y >= Para.CROSSROAD_SIZE / 2
 
     def is_in_left(orig_x, orig_y):
-        return 0 < orig_y < 3.75 * 2 and orig_x < -18
+        return 0 < orig_y < Para.LANE_WIDTH * Para.LANE_NUMBER and orig_x < -Para.CROSSROAD_SIZE / 2
 
     def is_in_right(orig_x, orig_y):
-        return -3.75 * 2 < orig_y < 0 and orig_x > 18
+        return -Para.LANE_WIDTH * Para.LANE_NUMBER < orig_y < 0 and orig_x > Para.CROSSROAD_SIZE / 2
 
     def is_in_middle(orig_x, orig_y):
-        return True if -18 < orig_y < 18 and -18 < orig_x < 18 else False
+        return True if -Para.CROSSROAD_SIZE / 2 < orig_y < Para.CROSSROAD_SIZE / 2 and -Para.CROSSROAD_SIZE / 2 < orig_x < Para.CROSSROAD_SIZE / 2 else False
 
-    def is_in_middle_left(orig_x, orig_y):
-        return True if -18 < orig_y < 7.5 and -18 < orig_x < 7.5 else False
-        # if -18 < orig_y < 18 and -18 < orig_x < 18:
-        #     if -3.75 * 2 < orig_x < 3.75 * 2:
-        #         return True if -18 < orig_y < 18 else False
-        #     elif orig_x > 3.75 * 2:
-        #         return True if orig_x - (18 + 3.75 * 2) < orig_y < -orig_x + (18 + 3.75 * 2) else False
-        #     else:
-        #         return True if -orig_x - (18 + 3.75 * 2) < orig_y < orig_x + (18 + 3.75 * 2) else False
-        # else:
-        #     return False
-
-    # judge feasible for turn left
     if task == 'left':
         return True if is_in_straight_before1(orig_x, orig_y) or is_in_left(orig_x, orig_y) \
-                       or is_in_middle_left(orig_x, orig_y) else False
+                       or is_in_middle(orig_x, orig_y) else False
     elif task == 'straight':
         return True if is_in_straight_before1(orig_x, orig_y) or is_in_straight_after(orig_x, orig_y) \
                        or is_in_middle(orig_x, orig_y) else False
@@ -151,6 +161,15 @@ def rotate_coordination(orig_x, orig_y, orig_d, coordi_rotate_d):
         transformed_d = transformed_d
     return transformed_x, transformed_y, transformed_d
 
+def rotate_coordination_vec(orig_x, orig_y, orig_d, coordi_rotate_d):
+    coordi_rotate_d_in_rad = coordi_rotate_d * np.pi / 180
+    transformed_x = orig_x * np.cos(coordi_rotate_d_in_rad) + orig_y * np.sin(coordi_rotate_d_in_rad)
+    transformed_y = -orig_x * np.sin(coordi_rotate_d_in_rad) + orig_y * np.cos(coordi_rotate_d_in_rad)
+    transformed_d = orig_d - coordi_rotate_d
+    transformed_d = np.where(transformed_d>180, transformed_d - 360, transformed_d)
+    transformed_d = np.where(transformed_d<=-180, transformed_d + 360, transformed_d)
+    return transformed_x, transformed_y, transformed_d
+
 
 def shift_and_rotate_coordination(orig_x, orig_y, orig_d, coordi_shift_x, coordi_shift_y, coordi_rotate_d):
     shift_x, shift_y = shift_coordination(orig_x, orig_y, coordi_shift_x, coordi_shift_y)
@@ -177,6 +196,8 @@ def cal_info_in_transform_coordination(filtered_objects, x, y, rotate_d):  # rot
         width = obj['w']
         length = obj['l']
         route = obj['route']
+        turn_rad = obj['turn_rad']
+        exist = obj['exist']
         shifted_x, shifted_y = shift_coordination(orig_x, orig_y, x, y)
         trans_x, trans_y, trans_heading = rotate_coordination(shifted_x, shifted_y, orig_heading, rotate_d)
         trans_v = orig_v
@@ -186,7 +207,9 @@ def cal_info_in_transform_coordination(filtered_objects, x, y, rotate_d):  # rot
                         'phi': trans_heading,
                         'w': width,
                         'l': length,
-                        'route': route,})
+                        'route': route,
+                        'turn_rad': turn_rad,
+                        'exist': exist})
     return results
 
 
