@@ -58,11 +58,12 @@ class Para:
     # DIM
     EGO_ENCODING_DIM = 6
     TRACK_ENCODING_DIM = 4
+    PER_PATH_INFO_DIM = 4
     LIGHT_ENCODING_DIM = 2
     TASK_ENCODING_DIM = 3
     REF_ENCODING_DIM = 3
     HIS_ACT_ENCODING_DIM = 4
-    PER_OTHER_INFO_DIM = 10
+    PER_OTHER_INFO_DIM = 7
 
     # MAX NUM
     MAX_VEH_NUM = 10  # to be align with VEHICLE_MODE_DICT
@@ -94,7 +95,7 @@ TASK_ENCODING = dict(left=[1.0, 0.0, 0.0], straight=[0.0, 1.0, 0.0], right=[0.0,
 LIGHT_ENCODING = {0: [1.0, 0.0], 1: [1.0, 0.0], 2: [1.0, 1.0], 3: [0.0, 1.0], 4: [0.0, 1.0], 5: [0.0, 1.0],
                   6: [0.0, 1.0], 7: [0.0, 1.0], 8: [0.0, 1.0], 9: [0.0, 1.0]}
 REF_ENCODING = {0: [1.0, 0.0, 0.0], 1: [0.0, 1.0, 0.0], 2: [0.0, 0.0, 1.0]}
-
+REF_NUM = {'left': 3, 'right': 3, 'straight': 2}
 SUMOCFG_DIR = os.path.dirname(__file__) + "/sumo_files/cross.sumocfg"
 VEHICLE_MODE_DICT = dict(left=OrderedDict(dl=2, du=2, ud=2, ul=2),
                          straight=OrderedDict(dl=2, du=2, ru=2, ur=2),

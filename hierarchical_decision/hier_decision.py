@@ -11,6 +11,7 @@ import datetime
 import shutil
 import time
 import json
+import matplotlib.patches as mpatch
 import os
 import heapq
 from math import cos, sin, pi
@@ -19,13 +20,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
-from env_build.dynamics_and_models import EnvironmentModel, ReferencePath
-from env_build.endtoend import CrossroadEnd2endMix
-from env_build.endtoend_env_utils import *
+from dynamics_and_models import EnvironmentModel, ReferencePath
+from endtoend import CrossroadEnd2endMix
+from endtoend_env_utils import *
 from multi_path_generator import MultiPathGenerator
-from env_build.utils.load_policy import LoadPolicy
-from env_build.utils.misc import TimerStat
-from env_build.utils.recorder import Recorder
+from utils.load_policy import LoadPolicy
+from utils.misc import TimerStat
+from utils.recorder import Recorder
 
 
 class HierarchicalDecision(object):
@@ -56,7 +57,7 @@ class HierarchicalDecision(object):
         obs = tf.convert_to_tensor(obs[np.newaxis, :], dtype=tf.float32)
         mask = tf.convert_to_tensor(mask[np.newaxis, :], dtype=tf.float32)
         future_n_point = tf.convert_to_tensor(future_n_point[np.newaxis, :], dtype=tf.float32)
-        self.is_safe(obs, mask, future_n_point)
+        # self.is_safe(obs, mask, future_n_point)
         self.policy.run_batch(obs, mask)
         self.policy.obj_value_batch(obs, mask)
         # ------------------build graph for tf.function in advance-----------------------
@@ -92,15 +93,17 @@ class HierarchicalDecision(object):
         return False if punish > 0 else True
 
     def safe_shield(self, real_obs, real_mask, real_future_n_point):
-        action_safe_set = [[[0., -1.]]]
+        # action_safe_set = [[[0., -1.]]]
         real_obs = tf.convert_to_tensor(real_obs[np.newaxis, :], dtype=tf.float32)
         real_mask = tf.convert_to_tensor(real_mask[np.newaxis, :], dtype=tf.float32)
-        real_future_n_point = tf.convert_to_tensor(real_future_n_point[np.newaxis, :], dtype=tf.float32)
-        if not self.is_safe(real_obs, real_mask, real_future_n_point):
-            print('SAFETY SHIELD STARTED!')
-            return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), True
-        else:
-            return self.policy.run_batch(real_obs, real_mask).numpy()[0], False
+        # real_future_n_point = tf.convert_to_tensor(real_future_n_point[np.newaxis, :], dtype=tf.float32)
+        # if not self.is_safe(real_obs, real_mask, real_future_n_point):
+        #     print('SAFETY SHIELD STARTED!')
+        #     return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), True
+        # else:
+        #     return self.policy.run_batch(real_obs, real_mask).numpy()[0], False
+        action, weight = self.policy.run_batch(real_obs, real_mask)
+        return action.numpy()[0], weight.numpy()[0], False
 
     def step(self):
         self.step_counter += 1
@@ -143,15 +146,16 @@ class HierarchicalDecision(object):
 
             # obtain safe action
             with self.ss_timer:
-                safe_action, is_ss = self.safe_shield(obs_real, mask_real, future_n_point_real)
-            print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
-        self.render(path_values, path_index)
+                safe_action, weights, is_ss = self.safe_shield(obs_real, mask_real, future_n_point_real)
+            # print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
+        self.render(path_values, path_index, weights)
         self.recorder.record(obs_real, safe_action, self.step_timer.mean, path_index, path_values, self.ss_timer.mean, is_ss)
         self.obs, r, done, info = self.env.step(safe_action)
         return done
 
-    def render(self, path_values, path_index):
-        extension = 40
+    def render(self, path_values, path_index, weights):
+        square_length = Para.CROSSROAD_SIZE_LAT
+        extension = 48
         dotted_line_style = '--'
         solid_line_style = '-'
 
@@ -161,7 +165,7 @@ class HierarchicalDecision(object):
         plt.ion()
 
         plt.cla()
-        ax = plt.axes([-0.05, -0.05, 1.1, 1.1])
+        ax = plt.axes([-0.00, -0.00, 1.0, 1.0])
         for ax in self.fig.get_axes():
             ax.axis('off')
         ax.axis("equal")
@@ -319,7 +323,7 @@ class HierarchicalDecision(object):
                                                                                   lane_width_flag[
                                                                                   :Para.LANE_NUMBER_LAT_IN])], color='black')
 
-        # traffic light
+
         v_light = self.env.light_phase
         light_line_width = 2
         if v_light == 0 or v_light == 1:
@@ -429,61 +433,51 @@ class HierarchicalDecision(object):
             else:
                 return False
 
-        def draw_rotate_rec(type, x, y, a, l, w, color, linestyle='-', patch=False):
-            RU_x, RU_y, _ = rotate_coordination(l / 2, w / 2, 0, -a)
-            RD_x, RD_y, _ = rotate_coordination(l / 2, -w / 2, 0, -a)
-            LU_x, LU_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
-            LD_x, LD_y, _ = rotate_coordination(-l / 2, -w / 2, 0, -a)
-            if patch:
-                if type in ['bicycle_1', 'bicycle_2', 'bicycle_3']:
-                    item_color = 'purple'
-                elif type == 'DEFAULT_PEDTYPE':
-                    item_color = 'lime'
-                else:
-                    item_color = 'lightgray'
-                ax.add_patch(plt.Rectangle((x + LU_x, y + LU_y), w, l, edgecolor=item_color,facecolor=item_color, angle=-(90 - a), zorder=30))
-            else:
-                ax.plot([RU_x + x, RD_x + x], [RU_y + y, RD_y + y], color=color, linestyle=linestyle)
-                ax.plot([RU_x + x, LU_x + x], [RU_y + y, LU_y + y], color=color, linestyle=linestyle)
-                ax.plot([LD_x + x, RD_x + x], [LD_y + y, RD_y + y], color=color, linestyle=linestyle)
-                ax.plot([LD_x + x, LU_x + x], [LD_y + y, LU_y + y], color=color, linestyle=linestyle)
+        def draw_rotate_rec(x, y, a, l, w, c, facecolor='white', alpha=None):
+            bottom_left_x, bottom_left_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
+            ax.add_patch(plt.Rectangle((x + bottom_left_x, y + bottom_left_y), w, l, edgecolor=c,
+                                       facecolor=facecolor, angle=-(90 - a), alpha=alpha, zorder=50))
 
-        def draw_rotate_batch_rec(x, y, a, l, w):
-            RU_x, RU_y, _ = rotate_coordination_vec(l / 2, w / 2, np.zeros_like(l), -a)
-            RD_x, RD_y, _ = rotate_coordination_vec(l / 2, -w / 2, np.zeros_like(l), -a)
-            LU_x, LU_y, _ = rotate_coordination_vec(-l / 2, w / 2, np.zeros_like(l), -a)
-            LD_x, LD_y, _ = rotate_coordination_vec(-l / 2, -w / 2, np.zeros_like(l), -a)
-            ax.plot([RU_x + x, RD_x + x], [RU_y + y, RD_y + y], color='k')
-            ax.plot([RU_x + x, LU_x + x], [RU_y + y, LU_y + y], color='k')
-            ax.plot([LD_x + x, RD_x + x], [LD_y + y, RD_y + y], color='k')
-            ax.plot([LD_x + x, LU_x + x], [LD_y + y, LU_y + y], color='k')
-
-
-        def plot_phi_line(type, x, y, phi, color):
-            if type in ['bicycle_1', 'bicycle_2', 'bicycle_3']:
-                line_length = 2
-            elif type == 'DEFAULT_PEDTYPE':
-                line_length = 1
-            else:
-                line_length = 5
+        def plot_phi_line(x, y, phi, color):
+            line_length = 3
             x_forw, y_forw = x + line_length * cos(phi * pi / 180.), \
                              y + line_length * sin(phi * pi / 180.)
             plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
 
-        # plot others
-        filted_all_other = [item for item in self.env.all_other if is_in_plot_area(item['x'], item['y'])]
-        other_xs = np.array([item['x'] for item in filted_all_other], np.float32)
-        other_ys = np.array([item['y'] for item in filted_all_other], np.float32)
-        other_as = np.array([item['phi'] for item in filted_all_other], np.float32)
-        other_ls = np.array([item['l'] for item in filted_all_other], np.float32)
-        other_ws = np.array([item['w'] for item in filted_all_other], np.float32)
+        def draw_sensor_range(x_ego, y_ego, a_ego, l_bias, w_bias, angle_bias, angle_range, dist_range, color):
+            x_sensor = x_ego + l_bias * cos(a_ego) - w_bias * sin(a_ego)
+            y_sensor = y_ego + l_bias * sin(a_ego) + w_bias * cos(a_ego)
+            theta1 = a_ego + angle_bias - angle_range / 2
+            theta2 = a_ego + angle_bias + angle_range / 2
+            sensor = mpatch.Wedge([x_sensor, y_sensor], dist_range, theta1=theta1 * 180 / pi,
+                                   theta2=theta2 * 180 / pi, fc=color, alpha=0.2)
+            ax.add_patch(sensor)
 
-        draw_rotate_batch_rec(other_xs, other_ys, other_as, other_ls, other_ws)
+        # plot cars
+        for veh in self.env.all_other:
+            veh_x = veh['x']
+            veh_y = veh['y']
+            veh_phi = veh['phi']
+            veh_l = veh['l']
+            veh_w = veh['w']
+            if is_in_plot_area(veh_x, veh_y):
+                plot_phi_line(veh_x, veh_y, veh_phi, 'black')
+                draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
+
+        # plot vehicles from sensors
+        for veh in self.env.detected_vehicles:
+            veh_x = veh['x']
+            veh_y = veh['y']
+            veh_phi = veh['phi']
+            veh_l = veh['l']
+            veh_w = veh['w']
+            plot_phi_line(veh_x, veh_y, veh_phi, 'lime')
+            draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'lime')
 
         # plot interested others
-        # if weights is not None:
-        #     assert weights.shape == (self.other_number,), print(weights.shape)
-        # index_top_k_in_weights = weights.argsort()[-4:][::-1]
+        if weights is not None:
+            assert weights.shape == (self.args.other_number,), print(weights.shape)
+            index_top_k_in_weights = weights.argsort()[-4:][::-1]
         for i in range(len(self.env.interested_other)):
             item = self.env.interested_other[i]
             item_mask = item['exist']
@@ -492,21 +486,52 @@ class HierarchicalDecision(object):
             item_phi = item['phi']
             item_l = item['l']
             item_w = item['w']
-            item_type = item['type']
-            if is_in_plot_area(item_x, item_y):
-                plot_phi_line(item_type, item_x, item_y, item_phi, 'black')
-                draw_rotate_rec(item_type, item_x, item_y, item_phi, item_l, item_w, color='m', linestyle=':', patch=True)
-            # if i in index_top_k_in_weights:
-            #     plt.text(item_x, item_y, "{:.2f}".format(weights[i]), color='red', fontsize=15)
+            # if is_in_plot_area(item_x, item_y):
+            #     plot_phi_line(item_x, item_y, item_phi, 'black')
+            #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='m')
+            # if (weights is not None) and (item_mask == 1.0):
+            #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='lime', facecolor='lime', alpha=weights[i])
+                # plt.text(item_x, item_y, "{:.2f}".format(weights[i]), color='red', fontsize=15)
+
+        # plot_interested vehs
+        # for mode, num in self.env.veh_mode_dict.items():
+        #     for i in range(num):
+        #         veh = self.env.interested_vehs[mode][i]
+        #         veh_x = veh['x']
+        #         veh_y = veh['y']
+        #         veh_phi = veh['phi']
+        #         veh_l = veh['l']
+        #         veh_w = veh['w']
+        #         task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
+        #
+        #         if is_in_plot_area(veh_x, veh_y):
+        #             plot_phi_line(veh_x, veh_y, veh_phi, 'black')
+        #             task = MODE2TASK[mode]
+        #             color = task2color[task]
+        #             draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, facecolor=color)
 
         # plot own car
         abso_obs = self.env._convert_to_abso(self.obs)
-        obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac,obs_other = self.env._split_all(abso_obs)
+        obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other = self.env._split_all(abso_obs)
         ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi = obs_ego
         devi_longi, devi_lateral, devi_phi, devi_v = obs_track
 
-        plot_phi_line('self_car', ego_x, ego_y, ego_phi, 'red')
-        draw_rotate_rec('self_car', ego_x, ego_y, ego_phi, self.env.ego_l, self.env.ego_w, 'red')
+        plot_phi_line(ego_x, ego_y, ego_phi, 'fuchsia')
+        draw_rotate_rec(ego_x, ego_y, ego_phi, self.env.ego_l, self.env.ego_w, 'fuchsia', facecolor='pink')
+        self.hist_posi.append((ego_x, ego_y))
+
+        # plot sensors
+        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
+                          angle_range=2 * pi, dist_range=70, color='thistle')
+        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
+                          angle_range=70 * pi / 180, dist_range=80, color="slategray")
+        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
+                          angle_range=90 * pi / 180, dist_range=60, color="slategray")
+
+        # plot history
+        xs = [pos[0] for pos in self.hist_posi]
+        ys = [pos[1] for pos in self.hist_posi]
+        plt.scatter(np.array(xs), np.array(ys), color='fuchsia', alpha=0.1)
 
         # plot real time traj
         color = ['blue', 'coral', 'darkcyan', 'pink']
@@ -516,10 +541,11 @@ class HierarchicalDecision(object):
             else:
                 plt.plot(item.path[0], item.path[1], color=color[i], alpha=0.3)
         _, point = self.env.ref_path._find_closest_point(ego_x, ego_y)
+        # plt.plot(path_x, path_y, 'g.')
         path_x, path_y, path_phi, path_v = point[0], point[1], point[2], point[3]
 
         # text
-        text_x, text_y_start = -110, 60
+        text_x, text_y_start = -120, 60
         ge = iter(range(0, 1000, 4))
         plt.text(text_x, text_y_start - next(ge), 'ego_x: {:.2f}m'.format(ego_x))
         plt.text(text_x, text_y_start - next(ge), 'ego_y: {:.2f}m'.format(ego_y))
@@ -536,14 +562,16 @@ class HierarchicalDecision(object):
         plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(path_v))
         plt.text(text_x, text_y_start - next(ge), 'v_y: {:.2f}m/s'.format(ego_v_y))
         plt.text(text_x, text_y_start - next(ge), 'yaw_rate: {:.2f}rad/s'.format(ego_r))
-
+        plt.text(text_x, text_y_start - next(ge), ' ')
+        plt.text(text_x, text_y_start - next(ge), 'light: {}'.format(self.env.light_phase))
+        plt.text(text_x, text_y_start - next(ge), ' ')
         if self.env.action is not None:
             steer, a_x = self.env.action[0], self.env.action[1]
             plt.text(text_x, text_y_start - next(ge),
                      r'steer: {:.2f}rad (${:.2f}\degree$)'.format(steer, steer * 180 / np.pi))
             plt.text(text_x, text_y_start - next(ge), 'a_x: {:.2f}m/s^2'.format(a_x))
 
-        text_x, text_y_start = 70, 60
+        text_x, text_y_start = 76, 60
         ge = iter(range(0, 1000, 4))
 
         # done info
@@ -552,19 +580,21 @@ class HierarchicalDecision(object):
         # reward info
         if self.env.reward_info is not None:
             for key, val in self.env.reward_info.items():
-                plt.text(text_x, text_y_start - next(ge), '{}: {:.4f}'.format(key, val))
+                plt.text(text_x, text_y_start - next(ge), 'rew_{}: {:.4f}'.format(key, val))
 
         # indicator for trajectory selection
-        text_x, text_y_start = 25, -30
-        ge = iter(range(0, 1000, 6))
-        if path_values is not None:
-            for i, value in enumerate(path_values):
-                if i == path_index:
-                    plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=14,
-                             color=color[i], fontstyle='italic')
-                else:
-                    plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=12,
-                             color=color[i], fontstyle='italic')
+        # text_x, text_y_start = 25, -30
+        # ge = iter(range(0, 1000, 6))
+        # if path_values is not None:
+        #     for i, value in enumerate(path_values):
+        #         if i == path_index:
+        #             plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=14,
+        #                      color=color[i], fontstyle='italic')
+        #         else:
+        #             plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=12,
+        #                      color=color[i], fontstyle='italic')
+        plt.xlim(-(square_length / 2 + extension), square_length / 2 + extension)
+        plt.ylim(-(square_length / 2 + extension), square_length / 2 + extension)
         plt.show()
         plt.pause(0.001)
         if self.logdir is not None:
@@ -583,7 +613,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('experiment-2021-11-08-10-35-44_scale_lr-3', 200000, logdir)
+    hier_decision = HierarchicalDecision('experiment-2021-11-13-19-55-15', 300000, logdir)
 
     for i in range(300):
         for _ in range(200):

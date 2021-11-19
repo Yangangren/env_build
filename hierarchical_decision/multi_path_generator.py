@@ -6,7 +6,7 @@
 # @Author  : Yang Guan; Yangang Ren (Tsinghua Univ.)
 # @FileName: hier_decision.py
 # =====================================
-from env_build.dynamics_and_models import ReferencePath
+from dynamics_and_models import ReferencePath
 
 
 class MultiPathGenerator(object):

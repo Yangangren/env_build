@@ -23,15 +23,6 @@ tf.config.threading.set_intra_op_parallelism_threads(1)
 
 class VehicleDynamics(object):
     def __init__(self, ):
-        # self.vehicle_params = dict(C_f=-128915.5,  # front wheel cornering stiffness [N/rad]
-        #                            C_r=-85943.6,  # rear wheel cornering stiffness [N/rad]
-        #                            a=1.06,  # distance from CG to front axle [m]
-        #                            b=1.85,  # distance from CG to rear axle [m]
-        #                            mass=1412.,  # mass [kg]
-        #                            I_z=1536.7,  # Polar moment of inertia at CG [kg*m^2]
-        #                            miu=1.0,  # tire-road friction coefficient
-        #                            g=9.81,  # acceleration of gravity [m/s^2]
-        #                            )
         self.vehicle_params = dict(C_f=-155495.0,  # front wheel cornering stiffness [N/rad]
                                    C_r=-155495.0,  # rear wheel cornering stiffness [N/rad]
                                    a=1.19,  # distance from CG to front axle [m]
@@ -791,6 +782,7 @@ class ReferencePath(object):
         self._construct_ref_path(self.task)
         self.path = None
         self.ref_encoding = None
+        self.path_index = None
         self.set_path(green_or_red)
 
     def set_path(self, green_or_red='green', path_index=None):
@@ -801,7 +793,7 @@ class ReferencePath(object):
 
     def get_future_n_point(self, ego_x, ego_y, n, dt=0.1):  # not include the current closest point
         idx, _ = self._find_closest_point(ego_x, ego_y)
-        future_n_x, future_n_y, future_n_phi, future_n_v = [], [], [], []
+        future_n_point = []
         for _ in range(n):
             x, y, phi, v = self.idx2point(idx)
             ds = v * dt
@@ -814,13 +806,8 @@ class ReferencePath(object):
                 x, y = next_x, next_y
                 idx += 1
             x, y, phi, v = self.idx2point(idx)
-            future_n_x.append(x)
-            future_n_y.append(y)
-            future_n_phi.append(phi)
-            future_n_v.append(v)
-        future_n_point = np.stack([np.array(future_n_x, dtype=np.float32), np.array(future_n_y, dtype=np.float32),
-                                   np.array(future_n_phi, dtype=np.float32), np.array(future_n_v, dtype=np.float32)],
-                                  axis=0)
+            future_n_point.extend([x, y, phi, v])
+        future_n_point = np.array(future_n_point)
         return future_n_point
 
     def tracking_error_vector(self, ego_x, ego_y, ego_phi, ego_v):

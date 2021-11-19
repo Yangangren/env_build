@@ -10,12 +10,12 @@
 import tensorflow as tf
 from tensorflow.keras.optimizers.schedules import PolynomialDecay
 
-from env_build.utils.model import MLPNet, AttentionNet
+from utils.model import MLPNet, AttentionNet
 
 NAME2MODELCLS = dict([('MLP', MLPNet), ('Attention', AttentionNet)])
 
 
-class AttentionPolicy4Toyota(tf.Module):
+class Policy4Toyota(tf.Module):
     import tensorflow as tf
     import tensorflow_probability as tfp
     tfd = tfp.distributions

@@ -7,9 +7,7 @@
 # @FileName: misc.py
 # =====================================
 
-import os
 import random
-import subprocess
 import time
 
 import numpy as np

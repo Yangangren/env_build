@@ -12,7 +12,7 @@ from collections import OrderedDict
 from math import cos, sin, pi, sqrt
 import random
 from random import choice
-
+import matplotlib.patches as mpatch
 import gym
 import matplotlib
 import matplotlib.pyplot as plt
@@ -20,6 +20,8 @@ from matplotlib.transforms import Affine2D
 from matplotlib.collections import PatchCollection
 import numpy as np
 from gym.utils import seeding
+from LasVSim.sensor_module import *
+from LasVSim.simulator import Settings
 
 from dynamics_and_models import VehicleDynamics, ReferencePath, EnvironmentModel
 from endtoend_env_utils import *
@@ -53,6 +55,7 @@ class CrossroadEnd2endMix(gym.Env):
                  traffic_mode='auto',  # 'auto'
                  **kwargs):
         self.mode = mode
+        self.future_point_num = future_point_num
         self.traffic_mode = traffic_mode
         self.dynamics = VehicleDynamics()
         self.interested_other = None
@@ -61,8 +64,9 @@ class CrossroadEnd2endMix(gym.Env):
         self.ego_dynamics = None
         self.state_mode = state_mode
         self.init_state = {}
+        self.action_number = 2
         self.ego_l, self.ego_w = Para.L, Para.W
-        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
+        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(self.action_number,), dtype=np.float32)
 
         self.seed()
         self.light_phase = None
@@ -71,6 +75,7 @@ class CrossroadEnd2endMix(gym.Env):
         self.step_length = 100  # ms
 
         self.step_time = self.step_length / 1000.0
+        self.init_state = None
         self.obs = None
         self.action = None
 
@@ -83,8 +88,9 @@ class CrossroadEnd2endMix(gym.Env):
         self.ref_info_dim = Para.REF_ENCODING_DIM
         self.his_act_info_dim = Para.HIS_ACT_ENCODING_DIM
         self.per_other_info_dim = Para.PER_OTHER_INFO_DIM
-        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.light_info_dim,
-                                    self.task_info_dim, self.ref_info_dim, self.his_act_info_dim])
+        self.per_path_info_dim = Para.PER_PATH_INFO_DIM
+        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_point_num * self.per_path_info_dim,
+                                    self.light_info_dim, self.task_info_dim, self.ref_info_dim])
         self.veh_num = Para.MAX_VEH_NUM
         self.bike_num = Para.MAX_BIKE_NUM
         self.person_num = Para.MAX_PERSON_NUM
@@ -97,14 +103,20 @@ class CrossroadEnd2endMix(gym.Env):
         self.env_model = None
         self.ref_path = None
         self.future_n_point = None
-        self.future_point_num = future_point_num
+
 
         self.vector_noise = False
         if self.vector_noise:
             self.rng = np.random.default_rng(12345)
 
         self.action_store = ActionStore(maxlen=2)
-
+        """Load sensor module."""
+        setting_dir = os.path.dirname(__file__)
+        self.settings = Settings(file_path=setting_dir + '/LasVSim/Library/default_simulation_setting.xml')
+        step_length = (self.settings.step_length *
+                       self.settings.sensor_frequency)
+        self.sensors = Sensors(step_length=step_length,
+                               sensor_info=self.settings.sensors)
         if not multi_display:
             self.traffic = Traffic(self.step_length,
                                    mode=self.mode,
@@ -134,7 +146,7 @@ class CrossroadEnd2endMix(gym.Env):
         self.person_mode_dict = PERSON_MODE_DICT[self.training_task]
         self.env_model = EnvironmentModel()
         self.action_store.reset()
-        self.init_state = self._reset_init_state()
+        self.init_state = self._reset_init_state(LIGHT_PHASE_TO_GREEN_OR_RED[self.light_phase])
         self.traffic.init_traffic(self.init_state, self.training_task)
         self.traffic.sim_step()
         ego_dynamics = self._get_ego_dynamics([self.init_state['ego']['v_x'],
@@ -153,7 +165,7 @@ class CrossroadEnd2endMix(gym.Env):
         self.action = None
         self.reward_info = None
         self.done_type = 'not_done_yet'
-        all_info = dict(future_n_point=self.future_n_point, mask=other_mask_vector)
+        all_info = dict(future_n_point=self.future_n_point, mask=other_mask_vector, path_index=self.ref_path.path_index)
         return self.obs, all_info
 
     def close(self):
@@ -171,7 +183,7 @@ class CrossroadEnd2endMix(gym.Env):
         self.obs, other_mask_vector, self.future_n_point = self._get_obs()
         self.done_type, done = self._judge_done()
         self.reward_info.update({'final_rew': reward})
-        all_info.update({'reward_info': self.reward_info, 'future_n_point': self.future_n_point, 'mask': other_mask_vector})
+        all_info.update({'reward_info': self.reward_info, 'future_n_point': self.future_n_point, 'mask': other_mask_vector, 'path_index': self.ref_path.path_index})
         return self.obs, reward, done, all_info
 
     def _set_observation_space(self, observation):
@@ -316,8 +328,11 @@ class CrossroadEnd2endMix(gym.Env):
         return next_ego_state, next_ego_params
 
     def _get_obs(self, exit_='D'):
-        # comment ego info, add noise to ego_vector
-        # compute track error with noised ego_vector instead of label
+        ego_x = self.ego_dynamics['x']
+        ego_y = self.ego_dynamics['y']
+        ego_phi = self.ego_dynamics['phi']
+        ego_v_x = self.ego_dynamics['v_x']
+
         other_vector, other_mask_vector = self._construct_other_vector_short(exit_)
         ego_vector = self._construct_ego_vector_short()
         if self.vector_noise:
@@ -327,8 +342,8 @@ class CrossroadEnd2endMix(gym.Env):
         track_vector = self.ref_path.tracking_error_vector_vectorized(ego_vector[3], ego_vector[4], ego_vector[5], ego_vector[0]) # 3 for x; 4 foy y
         future_n_point = self.ref_path.get_future_n_point(ego_vector[3], ego_vector[4], self.future_point_num)
         self.light_encoding = LIGHT_ENCODING[self.light_phase]
-        vector = np.concatenate((ego_vector, track_vector, self.light_encoding, self.task_encoding,
-                                 self.ref_path.ref_encoding, self.action_store[0], self.action_store[1], other_vector), axis=0)
+        vector = np.concatenate((ego_vector, track_vector, future_n_point, self.light_encoding, self.task_encoding,
+                                 self.ref_path.ref_encoding, other_vector), axis=0)
         vector = vector.astype(np.float32)
         # vector = self._convert_to_rela(vector)
 
@@ -356,40 +371,40 @@ class CrossroadEnd2endMix(gym.Env):
             return vector + self.rng.multivariate_normal(Para.OTHERS_MEAN, Para.OTHERS_VAR)
 
     def _convert_to_rela(self, obs_abso):
-        obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(obs_abso)
+        obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other = self._split_all(obs_abso)
         obs_other_reshape = self._reshape_other(obs_other)
         ego_x, ego_y = obs_ego[3], obs_ego[4]
         ego = np.array(([ego_x, ego_y] + [0.] * (self.per_other_info_dim - 2)), dtype=np.float32)
         ego = ego[np.newaxis, :]
         rela = obs_other_reshape - ego
         rela_obs_other = self._reshape_other(rela, reverse=True)
-        return np.concatenate([obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, rela_obs_other], axis=0)
+        return np.concatenate([obs_ego, obs_track, obs_light, obs_task, obs_ref, rela_obs_other], axis=0)
 
     def _convert_to_abso(self, obs_rela):
-        obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(obs_rela)
+        obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other = self._split_all(obs_rela)
         obs_other_reshape = self._reshape_other(obs_other)
         ego_x, ego_y = obs_ego[3], obs_ego[4]
         ego = np.array(([ego_x, ego_y] + [0.] * (self.per_other_info_dim - 2)), dtype=np.float32)
         ego = ego[np.newaxis, :]
         abso = obs_other_reshape + ego
         abso_obs_other = self._reshape_other(abso, reverse=True)
-        return np.concatenate([obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, abso_obs_other])
+        return np.concatenate([obs_ego, obs_track, obs_light, obs_task, obs_ref, abso_obs_other])
 
     def _split_all(self, obs):
         obs_ego = obs[:self.ego_info_dim]
         obs_track = obs[self.ego_info_dim:
                         self.ego_info_dim + self.track_info_dim]
-        obs_light = obs[self.ego_info_dim + self.track_info_dim:
-                        self.ego_info_dim + self.track_info_dim + self.light_info_dim]
-        obs_task = obs[self.ego_info_dim + self.track_info_dim + self.light_info_dim:
-                       self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim]
-        obs_ref = obs[self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim:
-                      self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim]
-        obs_his_ac = obs[self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim:
-                         self.other_start_dim]
+        obs_future_point = obs[self.ego_info_dim + self.track_info_dim:
+                               self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim]
+        obs_light = obs[self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim:
+                        self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim]
+        obs_task = obs[self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim:
+                       self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim]
+        obs_ref = obs[self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim:
+                      self.other_start_dim]
         obs_other = obs[self.other_start_dim:]
 
-        return obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, obs_other
+        return obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other
 
     def _split_other(self, obs_other):
         obs_bike = obs_other[:self.bike_num * self.per_other_info_dim]
@@ -426,6 +441,13 @@ class CrossroadEnd2endMix(gym.Env):
                              L=dict(do='4o', di='4i', ro='1o', ri='1i', uo='2o', ui='2i', lo='3o', li='3i'))
 
         name_setting = name_settings[exit_]
+
+        ego_state = [self.ego_dynamics['x'], self.ego_dynamics['y'], self.ego_dynamics['v_x'], self.ego_dynamics['phi']]
+        all_vehicles = list(filter(lambda v: Para.CROSSROAD_SIZE_LAT/2 + 40 > v['x'] > -Para.CROSSROAD_SIZE_LAT/2 - 40 and
+                                             Para.CROSSROAD_SIZE_LON/2 + 40 > v['y'] > -Para.CROSSROAD_SIZE_LON/2 - 40, self.all_other))
+        self.sensors.update(pos=ego_state, vehicles=all_vehicles)
+        self.detected_vehicles = self.sensors.getVisibleVehicles()
+        self.surrounding_objects_numbers = len(self.detected_vehicles)
 
         def filter_interested_other(vs, task):
             dl, du, dr, rd, rl, ru, ur, ud, ul, lu, lr, ld = [], [], [], [], [], [], [], [], [], [], [], []
@@ -739,24 +761,29 @@ class CrossroadEnd2endMix(gym.Env):
             tmp = tmp_b + tmp_p + tmp_v
             return tmp
 
-        self.interested_other = filter_interested_other(self.all_other, self.training_task)
+        self.interested_other = filter_interested_other(self.detected_vehicles, self.training_task)
 
         for other in self.interested_other:
-            other_x, other_y, other_v, other_phi, other_l, other_w, other_type, other_turn_rad, other_mask = \
-                other['x'], other['y'], other['v'], other['phi'], other['l'], other['w'], other['partici_type'], other[
+            other_x, other_y, other_v, other_phi, other_l, other_w, other_turn_rad, other_mask = \
+                other['x'], other['y'], other['v'], other['phi'], other['l'], other['w'], other[
                     'turn_rad'], other['exist']
             other_vector.extend(
-                [other_x, other_y, other_v, other_phi, other_l, other_w] + other_type + [other_turn_rad])
+                [other_x, other_y, other_v, other_phi, other_l, other_w] + [other_turn_rad])
             other_mask_vector.append(other_mask)
-
         return np.array(other_vector, dtype=np.float32), np.array(other_mask_vector, dtype=np.float32)
 
-    def _reset_init_state(self):
+    def _reset_init_state(self, light_color):
         if self.traffic_mode == 'auto':
             if self.training_task == 'left':
-                random_index = int(np.random.random() * (900 + 500)) + 700
+                if light_color == 'green':
+                    random_index = int(np.random.random() * (900 + 500)) + 700
+                else:
+                    random_index = int(np.random.random() * (200)) + 700
             elif self.training_task == 'straight':
-                random_index = int(np.random.random() * (1200 + 500)) + 700
+                if light_color == 'green':
+                    random_index = int(np.random.random() * (1200 + 500)) + 700
+                else:
+                    random_index = int(np.random.random() * (200)) + 700
             else:
                 random_index = int(np.random.random() * (420 + 500)) + 700
         else:
@@ -1115,6 +1142,15 @@ class CrossroadEnd2endMix(gym.Env):
                                  y + line_length * sin(phi * pi / 180.)
                 plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
 
+            def draw_sensor_range(x_ego, y_ego, a_ego, l_bias, w_bias, angle_bias, angle_range, dist_range, color):
+                x_sensor = x_ego + l_bias * cos(a_ego) - w_bias * sin(a_ego)
+                y_sensor = y_ego + l_bias * sin(a_ego) + w_bias * cos(a_ego)
+                theta1 = a_ego + angle_bias - angle_range / 2
+                theta2 = a_ego + angle_bias + angle_range / 2
+                sensor = mpatch.Wedge([x_sensor, y_sensor], dist_range, theta1=theta1 * 180 / pi,
+                                       theta2=theta2 * 180 / pi, fc=color, alpha=0.2)
+                ax.add_patch(sensor)
+
             def get_partici_type_str(partici_type):
                 if partici_type[0] == 1.:
                     return 'bike'
@@ -1137,8 +1173,6 @@ class CrossroadEnd2endMix(gym.Env):
             if weights is not None:
                 assert weights.shape == (self.other_number,), print(weights.shape)
             index_top_k_in_weights = weights.argsort()[-4:][::-1]
-
-            # real locomotion of interested vehicles
             for i in range(len(self.interested_other)):
                 item = self.interested_other[i]
                 item_mask = item['exist']
@@ -1168,6 +1202,13 @@ class CrossroadEnd2endMix(gym.Env):
             real_ego_v_x = self.ego_dynamics['v_x']
             real_ego_v_y = self.ego_dynamics['v_y']
             real_ego_r = self.ego_dynamics['r']
+            # plot sensors
+            draw_sensor_range(real_ego_x, real_ego_y, real_ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
+                              angle_range=2 * pi, dist_range=35, color='thistle')
+            draw_sensor_range(real_ego_x, real_ego_y, real_ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
+                              angle_range=70 * pi / 180, dist_range=40, color="slategray")
+            draw_sensor_range(real_ego_x, real_ego_y, real_ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
+                              angle_range=90 * pi / 180, dist_range=30, color="slategray")
 
             # render noised objects in enabled
             if self.vector_noise:
@@ -1286,6 +1327,7 @@ def test_end2end():
             i += 1
             action = np.array([-0.05, 0.3 + np.random.rand(1)*0.8], dtype=np.float32) # np.random.rand(1)*0.1 - 0.05
             obs, reward, done, info = env.step(action)
+            print(obs.shape)
             obses, actions = obs[np.newaxis, :], action[np.newaxis, :]
             obses = tf.convert_to_tensor(np.tile(obs, (2, 1)), dtype=tf.float32)
             ref_points = tf.convert_to_tensor(np.tile(info['future_n_point'], (2, 1, 1)), dtype=tf.float32)
