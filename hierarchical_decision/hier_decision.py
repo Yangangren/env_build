@@ -163,7 +163,7 @@ class HierarchicalDecision(object):
             self.fig = plt.figure(figsize=(8, 8))
             self.fig_plot = 1
         plt.ion()
-
+        plt.cla()
         ax = plt.axes([-0.00, -0.00, 1.0, 1.0])
         for ax in self.fig.get_axes():
             ax.axis('off')
@@ -320,7 +320,7 @@ class HierarchicalDecision(object):
             #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='m')
             # if (weights is not None) and (item_mask == 1.0):
             #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='lime', facecolor='lime', alpha=weights[i])
-                # plt.text(item_x, item_y, "{:.2f}".format(weights[i]), color='red', fontsize=15)
+            #     plt.text(item_x + 0.05, item_y + 0.15, "{:.2f}".format(weights[i]), color='purple', fontsize=12)
 
         # plot_interested vehs
         # for mode, num in self.env.veh_mode_dict.items():
@@ -428,7 +428,6 @@ class HierarchicalDecision(object):
         plt.pause(0.001)
         if self.logdir is not None:
             plt.savefig(self.logdir + '/episode{}'.format(self.episode_counter) + '/step{}.pdf'.format(self.step_counter))
-        plt.cla()
 
 
 def plot_and_save_ith_episode_data(logdir, i):
