@@ -841,13 +841,13 @@ def test_end2end():
             act_dist = (tfp.distributions.TransformedDistribution(distribution=act_dist, bijector=tfb.Chain(
                                                         [tfb.Affine(scale_identity_multiplier=1.0), tfb.Tanh()])))
             adv_actions = act_dist.sample()
-            print(adv_actions[:, -4:])
             env_model.reset(obses, env.ref_path.ref_index)
             env_model.mode = 'testing'
+            env.render()
             for _ in range(8):
                 obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
                 veh2road4real = env_model.rollout_out(actions, adv_actions)
-            env.render()
+                env_model.render()
             if done:
                 break
         obs = env.reset()
