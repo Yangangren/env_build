@@ -139,8 +139,7 @@ class EnvironmentModel(object):  # all tensors
         adv_actions = tf.reshape(adv_actions, (-1, self.adv_action_dim))
         v_noise, head_noise = adv_actions[:, 0], adv_actions[:, 1]
         v_noise_scale = self.noise_bound[0][0] * v_noise + self.noise_bound[0][1]
-        head_noise_scale = self.noise_bound[1][0] * head_noise + self.noise_bound[1][1]
-
+        head_noise_scale =  self.noise_bound[1][0] * head_noise + self.noise_bound[1][1]
         noise_scaled = tf.stack([v_noise_scale, head_noise_scale], 1)
         adv_actions_scale = tf.reshape(noise_scaled, (-1, self.adv_action_dim * self.veh_num))
         return tf.stack([steer_scale, a_xs_scale], 1), adv_actions_scale
@@ -424,9 +423,8 @@ class EnvironmentModel(object):  # all tensors
         xs_delta = vs / self.base_frequency * tf.cos(phis_rad)
         ys_delta = vs / self.base_frequency * tf.sin(phis_rad)
         phis_rad_delta = tf.where(middle_cond, vs / self.base_frequency * turn_rad, zeros)
-
         next_xs, next_ys, next_vs, next_phis_rad = xs + xs_delta, ys + ys_delta, \
-                                                   vs + vs_noise, phis_rad + phis_rad_delta + phis_noise_rad
+                                                   vs + vs_noise, phis_rad + phis_noise_rad
         next_vs = tf.where(next_vs < 0., tf.zeros_like(next_vs), next_vs)
         next_vs = tf.where(next_vs > 20., 20.0*tf.ones_like(next_vs), next_vs)
         next_phis_rad = tf.where(next_phis_rad > np.pi, next_phis_rad - 2 * np.pi, next_phis_rad)
