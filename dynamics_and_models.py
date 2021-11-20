@@ -88,8 +88,8 @@ class VehicleDynamics(object):
 
 class EnvironmentModel(object):  # all tensors
     def __init__(self, training_task, num_future_data=0, mode='training', noise_bound_v=[[0.225, -0.075]],
-                 noise_bound_phi=[[0.01, 0.01, 0.001, 0.001, 0.001, 0.001, 0.01, 0.01],
-                                  [0.01, 0.01, 0., 0., 0., 0., -0.01, -0.01]]):
+                 noise_bound_phi=[[0.025, 0.025, 0.001, 0.001, 0.001, 0.001, 0.025, 0.025],
+                                  [0.025, 0.025, 0., 0., 0., 0., -0.025, -0.025]]):
         self.task = training_task
         self.mode = mode
         self.vehicle_dynamics = VehicleDynamics()

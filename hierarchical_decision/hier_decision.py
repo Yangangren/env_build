@@ -33,7 +33,7 @@ class HierarchicalDecision(object):
         self.policy = LoadPolicy('../utils/models/{}/{}'.format(task, train_exp_dir), ite)
         self.env = CrossroadEnd2endAdv(training_task=self.task, mode='testing')
         self.args = self.policy.args
-        self.model = EnvironmentModel(self.task, mode='selecting', noise_bound=[[0.0, -0.0], [0.0, 0.0]])
+        self.model = EnvironmentModel(self.task, mode='selecting', noise_bound_v=self.args.noise_bound_v, noise_bound_phi=self.args.noise_bound_phi)
         self.recorder = Recorder()
         self.episode_counter = -1
         self.step_counter = -1
@@ -266,21 +266,21 @@ class HierarchicalDecision(object):
                 draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
         # plot_interested vehs
-        # for mode, num in self.env.veh_mode_dict.items():
-        #     for i in range(num):
-        #         veh = self.env.interested_vehs[mode][i]
-        #         veh_x = veh['x']
-        #         veh_y = veh['y']
-        #         veh_phi = veh['phi']
-        #         veh_l = veh['l']
-        #         veh_w = veh['w']
-        #         task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
-        #
-        #         if is_in_plot_area(veh_x, veh_y):
-        #             plot_phi_line(veh_x, veh_y, veh_phi, 'black')
-        #             task = MODE2TASK[mode]
-        #             color = task2color[task]
-        #             draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color)
+        for mode, num in self.env.veh_mode_dict.items():
+            for i in range(num):
+                veh = self.env.interested_vehs[mode][i]
+                veh_x = veh['x']
+                veh_y = veh['y']
+                veh_phi = veh['phi']
+                veh_l = veh['l']
+                veh_w = veh['w']
+                task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
+
+                if is_in_plot_area(veh_x, veh_y):
+                    plot_phi_line(veh_x, veh_y, veh_phi, 'black')
+                    task = MODE2TASK[mode]
+                    color = task2color[task]
+                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color)
 
         ego_v_x = self.env.ego_dynamics['v_x']
         ego_v_y = self.env.ego_dynamics['v_y']
@@ -408,7 +408,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-11-16-10-26-27', 200000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-11-18-19-21-04', 200000, logdir)
     # hier_decision = HierarchicalDecision('left', 'experiment-2021-03-15-16-39-00', 180000, logdir)
     max_epi_len = 400
     for i in range(100):
