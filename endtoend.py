@@ -41,7 +41,7 @@ def convert_observation_to_space(observation):
     return space
 
 
-class CrossroadEnd2endAdv(gym.Env):
+class CrossroadEnd2endAdvTest(gym.Env):
     def __init__(self,
                  training_task,  # 'left', 'straight', 'right'
                  num_future_data=0,
@@ -810,7 +810,7 @@ class CrossroadEnd2endAdv(gym.Env):
 
 
 def test_end2end():
-    env = CrossroadEnd2endAdv(training_task='left', num_future_data=0)
+    env = CrossroadEnd2endAdvTest(training_task='left', num_future_data=0)
     env_model = EnvironmentModel(training_task='left', num_future_data=0)
     obs = env.reset()
     i = 0
