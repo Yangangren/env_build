@@ -87,7 +87,9 @@ class VehicleDynamics(object):
 
 
 class EnvironmentModel(object):  # all tensors
-    def __init__(self, training_task, num_future_data=0, mode='training', noise_bound=[[0., 0., 0., 0.]]):
+    def __init__(self, training_task, num_future_data=0, mode='training', noise_bound_v=[[0.225, -0.075]],
+                 noise_bound_phi=[[0.025, 0.025, 0.001, 0.001, 0.001, 0.001, 0.025, 0.025],
+                                  [0.025, 0.025, 0., 0., 0., 0., -0.025, -0.025]]):
         self.task = training_task
         self.mode = mode
         self.vehicle_dynamics = VehicleDynamics()
@@ -104,9 +106,10 @@ class EnvironmentModel(object):  # all tensors
         self.ego_info_dim = 6
         self.per_veh_info_dim = 5
         self.per_tracking_info_dim = 3
-        self.adv_action_dim = 4
+        self.adv_action_dim = 2
         self.veh_num = VEH_NUM[self.task]
-        self.noise_bound = noise_bound
+        self.noise_bound_v = noise_bound_v
+        self.noise_bound_phi = noise_bound_phi
 
     def reset(self, obses, ref_indexes=None):  # input are all tensors
         self.obses = obses
@@ -135,10 +138,18 @@ class EnvironmentModel(object):  # all tensors
         steer_scale, a_xs_scale = 0.4 * steer_norm, 2.25 * a_xs_norm-0.75
 
         adv_actions = tf.clip_by_value(adv_actions, -1.05, 1.05)
-        # todo: bound needs to be verified by real data
         # todo: heading angle is radian
-        adv_action_bound = tf.tile(self.noise_bound, [adv_actions.shape[0], self.veh_num])
-        adv_actions_scale = adv_actions * adv_action_bound
+        adv_actions = tf.reshape(adv_actions, (-1, self.adv_action_dim))
+        v_noise, head_noise = adv_actions[:, 0], adv_actions[:, 1]
+
+        v_noise_scale = self.noise_bound_v[0][0] * v_noise + self.noise_bound_v[0][1]
+
+        phi_coff = tf.tile(self.noise_bound_phi[0], [actions.shape[0]])
+        phi_bias = tf.tile(self.noise_bound_phi[1], [actions.shape[0]])
+
+        head_noise_scale =  phi_coff * head_noise + phi_bias
+        noise_scaled = tf.stack([v_noise_scale, head_noise_scale], 1)
+        adv_actions_scale = tf.reshape(noise_scaled, (-1, self.adv_action_dim * self.veh_num))
         return tf.stack([steer_scale, a_xs_scale], 1), adv_actions_scale
 
     def ss(self, obses, actions, lam=0.1):
@@ -336,9 +347,9 @@ class EnvironmentModel(object):  # all tensors
         ego_infos, tracking_infos, veh_infos = obses[:, :self.ego_info_dim],\
                                                obses[:, self.ego_info_dim:
                                                         self.ego_info_dim + self.per_tracking_info_dim * (
-                                                                                         self.num_future_data + 1)], \
+                                                                self.num_future_data + 1)], \
                                                obses[:, self.ego_info_dim + self.per_tracking_info_dim * (
-                                                           self.num_future_data + 1):]
+                                                       self.num_future_data + 1):]
 
         # veh_infos = tf.stop_gradient(veh_infos)   # todo
         next_ego_infos = self.ego_predict(ego_infos, actions)
@@ -412,8 +423,7 @@ class EnvironmentModel(object):  # all tensors
                                      obses_other_reshape[:, :, -1]
         phis_rad = phis * np.pi / 180.
 
-        xs_noise, ys_noise, vs_noise, phis_noise_rad = adv_noises_reshape[:, :, 0], adv_noises_reshape[:, :, 1], \
-                                                       adv_noises_reshape[:, :, 2], adv_noises_reshape[:, :, 3]
+        vs_noise, phis_noise_rad = adv_noises_reshape[:, :, 0], adv_noises_reshape[:, :, 1]
         middle_cond = logical_and(logical_and(xs > -CROSSROAD_SIZE/2, xs < CROSSROAD_SIZE/2),
                                   logical_and(ys > -CROSSROAD_SIZE/2, ys < CROSSROAD_SIZE/2))
         zeros = tf.zeros_like(xs)
@@ -421,10 +431,10 @@ class EnvironmentModel(object):  # all tensors
         xs_delta = vs / self.base_frequency * tf.cos(phis_rad)
         ys_delta = vs / self.base_frequency * tf.sin(phis_rad)
         phis_rad_delta = tf.where(middle_cond, vs / self.base_frequency * turn_rad, zeros)
-
-        next_xs, next_ys, next_vs, next_phis_rad = xs + xs_delta + xs_noise, ys + ys_delta + ys_noise, \
-                                                   vs + vs_noise, phis_rad + phis_rad_delta + phis_noise_rad
+        next_xs, next_ys, next_vs, next_phis_rad = xs + xs_delta, ys + ys_delta, \
+                                                   vs + vs_noise, phis_rad + phis_noise_rad
         next_vs = tf.where(next_vs < 0., tf.zeros_like(next_vs), next_vs)
+        next_vs = tf.where(next_vs > 20., 20.0*tf.ones_like(next_vs), next_vs)
         next_phis_rad = tf.where(next_phis_rad > np.pi, next_phis_rad - 2 * np.pi, next_phis_rad)
         next_phis_rad = tf.where(next_phis_rad <= -np.pi, next_phis_rad + 2 * np.pi, next_phis_rad)
         next_phis = next_phis_rad * 180 / np.pi
@@ -536,7 +546,7 @@ class EnvironmentModel(object):  # all tensors
             # plot cars
             for veh_index in range(int(len(vehs_info) / self.per_veh_info_dim)):
                 veh = vehs_info[self.per_veh_info_dim * veh_index:self.per_veh_info_dim * (veh_index + 1)]
-                veh_x, veh_y, veh_v, veh_phi = veh
+                veh_x, veh_y, veh_v, veh_phi, veh_turn_rad = veh
 
                 if is_in_plot_area(veh_x, veh_y):
                     plot_phi_line(veh_x, veh_y, veh_phi, 'black')

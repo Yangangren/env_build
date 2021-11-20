@@ -64,7 +64,7 @@ class CrossroadEnd2endAdv(gym.Env):
         self.ego_info_dim = 6
         self.per_tracking_info_dim = 3
         self.per_veh_info_dim = 5
-        self.adv_action_dim = 4
+        self.adv_action_dim = 2
         self.action_space = gym.spaces.Box(low=-1, high=1, shape=(self.action_number,), dtype=np.float32)
 
         self.seed()
@@ -119,7 +119,7 @@ class CrossroadEnd2endAdv(gym.Env):
         self.reward_info = None
         self.done_type = 'not_done_yet'
         if self.mode == 'training':
-            if np.random.random() > 0.9:
+            if np.random.random() > 1.0:
                 self.virtual_red_light_vehicle = True
             else:
                 self.virtual_red_light_vehicle = False
@@ -841,13 +841,13 @@ def test_end2end():
             act_dist = (tfp.distributions.TransformedDistribution(distribution=act_dist, bijector=tfb.Chain(
                                                         [tfb.Affine(scale_identity_multiplier=1.0), tfb.Tanh()])))
             adv_actions = act_dist.sample()
-            print(adv_actions[:, -4:])
             env_model.reset(obses, env.ref_path.ref_index)
             env_model.mode = 'testing'
+            env.render()
             for _ in range(8):
                 obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
                 veh2road4real = env_model.rollout_out(actions, adv_actions)
-            env.render()
+                env_model.render()
             if done:
                 break
         obs = env.reset()

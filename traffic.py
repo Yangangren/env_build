@@ -219,8 +219,7 @@ class Traffic(object):
 
     def sim_step(self):
         self.sim_time += SIM_PERIOD
-        if self.mode == 'training':
-            traci.trafficlight.setPhase('0', self.training_light_phase)
+        traci.trafficlight.setPhase('0', self.training_light_phase)
         # else:
         #     if self.sim_time < 5.:
         #         traci.trafficlight.setPhase('0', 2)
