@@ -243,10 +243,10 @@ class HierarchicalDecision(object):
             else:
                 return False
 
-        def draw_rotate_rec(x, y, a, l, w, c):
+        def draw_rotate_rec(x, y, a, l, w, c, facecolor='white'):
             bottom_left_x, bottom_left_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
             ax.add_patch(plt.Rectangle((x + bottom_left_x, y + bottom_left_y), w, l, edgecolor=c,
-                                       facecolor='white', angle=-(90 - a), zorder=50))
+                                       facecolor=facecolor, angle=-(90 - a), zorder=50))
 
         def plot_phi_line(x, y, phi, color):
             line_length = 3
@@ -258,12 +258,16 @@ class HierarchicalDecision(object):
         for veh in self.env.all_vehicles:
             veh_x = veh['x']
             veh_y = veh['y']
+            veh_v = veh['v']
             veh_phi = veh['phi']
             veh_l = veh['l']
             veh_w = veh['w']
             if is_in_plot_area(veh_x, veh_y):
                 plot_phi_line(veh_x, veh_y, veh_phi, 'black')
-                draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
+                if veh_v >= 10 and (-CROSSROAD_SIZE/2 < veh_x < CROSSROAD_SIZE/2) and ((-CROSSROAD_SIZE/2 < veh_y < CROSSROAD_SIZE/2)):
+                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black', facecolor='deeppink')
+                else:
+                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
         # plot_interested vehs
         for mode, num in self.env.veh_mode_dict.items():
@@ -408,7 +412,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-11-20-16-10-05', 200000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-11-20-11-44-43', 200000, logdir)
     step_list = []
     max_epi_len = 400
     for i in range(10):
