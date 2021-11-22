@@ -489,8 +489,8 @@ class HierarchicalDecision(object):
             # if is_in_plot_area(item_x, item_y):
             #     plot_phi_line(item_x, item_y, item_phi, 'black')
             #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='m')
-            # if (weights is not None) and (item_mask == 1.0):
-            #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='lime', facecolor='lime', alpha=weights[i])
+            if (weights is not None) and (item_mask == 1.0):
+                draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='lime', facecolor='lime', alpha=weights[i])
                 # plt.text(item_x, item_y, "{:.2f}".format(weights[i]), color='red', fontsize=15)
 
         # plot_interested vehs
@@ -571,7 +571,7 @@ class HierarchicalDecision(object):
                      r'steer: {:.2f}rad (${:.2f}\degree$)'.format(steer, steer * 180 / np.pi))
             plt.text(text_x, text_y_start - next(ge), 'a_x: {:.2f}m/s^2'.format(a_x))
 
-        text_x, text_y_start = 76, 60
+        text_x, text_y_start = 86, 60
         ge = iter(range(0, 1000, 4))
 
         # done info

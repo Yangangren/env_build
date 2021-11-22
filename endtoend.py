@@ -106,8 +106,6 @@ class CrossroadEnd2endMix(gym.Env):
 
 
         self.vector_noise = False
-        if self.vector_noise:
-            self.rng = np.random.default_rng(12345)
 
         self.action_store = ActionStore(maxlen=2)
         """Load sensor module."""
@@ -789,6 +787,7 @@ class CrossroadEnd2endMix(gym.Env):
         else:
             random_index = MODE2INDEX[self.traffic_mode] + int(np.random.random() * 100)
 
+        random_index = np.random.randint(700, 900, 1)
         x, y, phi, exp_v = self.ref_path.idx2point(random_index)
         v = exp_v * np.random.random()
         routeID = TASK2ROUTEID[self.training_task]

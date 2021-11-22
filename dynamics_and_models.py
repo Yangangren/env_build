@@ -920,7 +920,7 @@ class ReferencePath(object):
                     vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
                     planed_trj_green = xs_1, ys_1, phis_1, vs_green
-                    planed_trj_red = xs_1, ys_1, phis_1, vs_red
+                    planed_trj_red = xs_1[:sl * meter_pointnum_ratio], ys_1[:sl * meter_pointnum_ratio], phis_1[:sl * meter_pointnum_ratio], vs_red[:sl * meter_pointnum_ratio]
                     planed_trj_g.append(planed_trj_green)
                     planed_trj_r.append(planed_trj_red)
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
@@ -972,7 +972,7 @@ class ReferencePath(object):
                     vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
                     planed_trj_green = xs_1, ys_1, phis_1, vs_green
-                    planed_trj_red = xs_1, ys_1, phis_1, vs_red
+                    planed_trj_red = xs_1[:sl * meter_pointnum_ratio], ys_1[:sl * meter_pointnum_ratio], phis_1[:sl * meter_pointnum_ratio], vs_red[:sl * meter_pointnum_ratio]
                     planed_trj_g.append(planed_trj_green)
                     planed_trj_r.append(planed_trj_red)
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
