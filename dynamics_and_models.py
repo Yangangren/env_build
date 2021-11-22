@@ -854,10 +854,10 @@ class ReferencePath(object):
 
                     vs_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] *
                                         len(end_straight_line_x), dtype=np.float32)
-                    vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L))), dtype=np.float32)
+                    vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L / 4))), dtype=np.float32)
                     vs_red_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * dece_dist, endpoint=True, dtype=np.float32)
                     vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True, dtype=np.float32)
-                    vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1) + [8.33] * len(
+                    vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L / 4) - dece_dist // 2) + len(trj_data[0]) - 1) + [8.33] * len(
                             end_straight_line_x), dtype=np.float32)
                     vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
@@ -907,11 +907,11 @@ class ReferencePath(object):
 
                     vs_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] *
                                         len(end_straight_line_x), dtype=np.float32)
-                    vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L))), dtype=np.float32)
+                    vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L / 4))), dtype=np.float32)
                     vs_red_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * dece_dist, endpoint=True, dtype=np.float32)
                     vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True,
                                            dtype=np.float32)
-                    vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1) +
+                    vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L / 4) - dece_dist // 2) + len(trj_data[0]) - 1) +
                                         [8.33] * len(end_straight_line_x), dtype=np.float32)
                     vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
@@ -1012,10 +1012,10 @@ class ReferencePath(object):
 
                 vs_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] *
                                     len(end_straight_line_x), dtype=np.float32)
-                vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L))), dtype=np.float32)
+                vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L / 2))), dtype=np.float32)
                 vs_red_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * dece_dist, endpoint=True, dtype=np.float32)
                 vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True, dtype=np.float32)
-                vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1) + [8.33] * len(
+                vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L / 2) - dece_dist // 2) + len(trj_data[0]) - 1) + [8.33] * len(
                         end_straight_line_x), dtype=np.float32)
                 vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
@@ -1062,11 +1062,11 @@ class ReferencePath(object):
 
                 vs_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] *
                                     len(end_straight_line_x), dtype=np.float32)
-                vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L))), dtype=np.float32)
+                vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L / 2))), dtype=np.float32)
                 vs_red_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * dece_dist, endpoint=True, dtype=np.float32)
                 vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True,
                                        dtype=np.float32)
-                vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1) +
+                vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L / 2) - dece_dist // 2) + len(trj_data[0]) - 1) +
                                     [8.33] * len(end_straight_line_x), dtype=np.float32)
                 vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
@@ -1142,10 +1142,17 @@ class ReferencePath(object):
             future_n_v.append(v)
         if equal_len:
             while len(future_n_x) < self.max_path_len:
-                future_n_x.append(future_n_x[-1])
-                future_n_y.append(future_n_y[-1])
-                future_n_phi.append(future_n_phi[-1])
-                future_n_v.append(future_n_v[-1])
+                if idx < len(xs) - 1:
+                    future_n_x.append(xs[idx])
+                    future_n_y.append(ys[idx])
+                    future_n_phi.append(phis[idx])
+                    future_n_v.append(vs[idx])
+                    idx = idx + 1
+                else:
+                    future_n_x.append(future_n_x[-1])
+                    future_n_y.append(future_n_y[-1])
+                    future_n_phi.append(future_n_phi[-1])
+                    future_n_v.append(future_n_v[-1])
             if len(future_n_x) > self.max_path_len:
                 future_n_x = future_n_x[:self.max_path_len]
                 future_n_y = future_n_y[:self.max_path_len]

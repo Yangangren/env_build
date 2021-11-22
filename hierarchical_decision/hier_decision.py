@@ -145,15 +145,17 @@ class HierarchicalDecision(object):
             # obtain safe action
             with self.ss_timer:
                 safe_action, weights, is_ss = self.safe_shield(obs_real, mask_real, path_index_real)
-            print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
+            # print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
         self.render(path_values, path_index, weights)
         self.recorder.record(obs_real, safe_action, self.step_timer.mean, path_index, path_values, self.ss_timer.mean, is_ss)
         self.obs, r, done, info = self.env.step(safe_action)
+        if done:
+            print(self.env.done_type)
         return done
 
     def render(self, path_values, path_index, weights):
         square_length = Para.CROSSROAD_SIZE
-        extension = 40
+        extension = 48
         lane_width = Para.LANE_WIDTH
         light_line_width = 3
         dotted_line_style = '--'
@@ -318,9 +320,9 @@ class HierarchicalDecision(object):
             # if is_in_plot_area(item_x, item_y):
             #     plot_phi_line(item_x, item_y, item_phi, 'black')
             #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='m')
-            # if (weights is not None) and (item_mask == 1.0):
-            #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='lime', facecolor='lime', alpha=weights[i])
-                # plt.text(item_x, item_y, "{:.2f}".format(weights[i]), color='red', fontsize=15)
+            if (weights is not None) and (item_mask == 1.0):
+                draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='lime', facecolor='lime', alpha=weights[i])
+            #     plt.text(item_x + 0.05, item_y + 0.15, "{:.2f}".format(weights[i]), color='purple', fontsize=12)
 
         # plot_interested vehs
         # for mode, num in self.env.veh_mode_dict.items():
@@ -428,7 +430,6 @@ class HierarchicalDecision(object):
         plt.pause(0.001)
         if self.logdir is not None:
             plt.savefig(self.logdir + '/episode{}'.format(self.episode_counter) + '/step{}.pdf'.format(self.step_counter))
-
 
 
 def plot_and_save_ith_episode_data(logdir, i):
@@ -549,9 +550,9 @@ def select_and_rename_snapshots_of_an_episode(logdir, epinum, num):
     file_num = len(file_list) - 1
     interval = file_num // (num-1)
     start = file_num % (num-1)
-    print(start, file_num, interval)
+    # print(start, file_num, interval)
     selected = [start//2] + [start//2+interval*i for i in range(1, num-1)]
-    print(selected)
+    # print(selected)
     if file_num > 0:
         for i, j in enumerate(selected):
             shutil.copyfile(logdir + '/episode{}/step{}.pdf'.format(epinum, j),
