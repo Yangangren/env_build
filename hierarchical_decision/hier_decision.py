@@ -408,18 +408,21 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-11-18-19-21-04', 200000, logdir)
-    # hier_decision = HierarchicalDecision('left', 'experiment-2021-03-15-16-39-00', 180000, logdir)
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-11-20-16-10-05', 200000, logdir)
+    step_list = []
     max_epi_len = 400
-    for i in range(100):
+    for i in range(10):
         for step in range(max_epi_len):
             done = hier_decision.step()
             if step >= max_epi_len - 1:
                 done = 1
             if done:
                 print('Episode:{}, done type: {}'.format(hier_decision.episode_counter, hier_decision.env.done_type))
+                if hier_decision.env.done_type == 'good_done':
+                    step_list.append(step)
                 break
         hier_decision.reset()
+    print(step_list)
 
 
 def plot_static_path():
