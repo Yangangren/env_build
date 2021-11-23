@@ -19,7 +19,7 @@ import numpy as np
 import tensorflow as tf
 
 from dynamics_and_models import EnvironmentModel, ReferencePath
-from endtoend import CrossroadEnd2end
+from endtoend import CrossroadEnd2endAdvTest
 from endtoend_env_utils import rotate_coordination, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, MODE2TASK
 from hierarchical_decision.multi_path_generator import MultiPathGenerator
 from utils.load_policy import LoadPolicy
@@ -31,8 +31,9 @@ class HierarchicalDecision(object):
     def __init__(self, task, train_exp_dir, ite, logdir=None):
         self.task = task
         self.policy = LoadPolicy('../utils/models/{}/{}'.format(task, train_exp_dir), ite)
-        self.env = CrossroadEnd2end(training_task=self.task, mode='testing')
-        self.model = EnvironmentModel(self.task, mode='selecting')
+        self.env = CrossroadEnd2endAdvTest(training_task=self.task, mode='testing')
+        self.args = self.policy.args
+        self.model = EnvironmentModel(self.task, mode='selecting', noise_bound_v=self.args.noise_bound_v, noise_bound_phi=self.args.noise_bound_phi)
         self.recorder = Recorder()
         self.episode_counter = -1
         self.step_counter = -1
@@ -63,7 +64,7 @@ class HierarchicalDecision(object):
         self.reset()
 
     def reset(self,):
-        self.obs = self.env.reset()
+        self.obs = self.env.reset(mode='evaluating')
         self.recorder.reset()
         self.old_index = 0
         self.hist_posi = []
@@ -92,7 +93,8 @@ class HierarchicalDecision(object):
         punish = 0.
         for step in range(5):
             action = self.policy.run_batch(obs)
-            obs, _, _, _, veh2veh4real, _ = self.model.rollout_out(action)
+            adv_action = tf.zeros(shape=(action.shape[0], self.args.adv_act_dim * self.args.other_num))
+            obs, _, _, _, veh2veh4real, _ = self.model.rollout_out(action, adv_action)
             punish += veh2veh4real[0]
         return False if punish > 0 else True
 
@@ -116,6 +118,8 @@ class HierarchicalDecision(object):
                 obs_list.append(self.env._get_obs())
             all_obs = tf.stack(obs_list, axis=0)
             path_values = self.policy.obj_value_batch(all_obs).numpy()
+            # todo
+            path_values = np.array([1., 1., 30]) * path_values
             old_value = path_values[self.old_index]
             new_index, new_value = int(np.argmin(path_values)), min(path_values)  # value is to approximate (- sum of reward)
             path_index = self.old_index if old_value - new_value < 0.1 else new_index
@@ -127,7 +131,7 @@ class HierarchicalDecision(object):
             # obtain safe action
             with self.ss_timer:
                 safe_action, is_ss = self.safe_shield(self.obs_real, path_index)
-            print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
+            # print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
         self.render(self.path_list, path_values, path_index)
         self.recorder.record(self.obs_real, safe_action, self.step_timer.mean,
                              path_index, path_values, self.ss_timer.mean, is_ss)
@@ -264,21 +268,21 @@ class HierarchicalDecision(object):
                 draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
         # plot_interested vehs
-        # for mode, num in self.env.veh_mode_dict.items():
-        #     for i in range(num):
-        #         veh = self.env.interested_vehs[mode][i]
-        #         veh_x = veh['x']
-        #         veh_y = veh['y']
-        #         veh_phi = veh['phi']
-        #         veh_l = veh['l']
-        #         veh_w = veh['w']
-        #         task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
-        #
-        #         if is_in_plot_area(veh_x, veh_y):
-        #             plot_phi_line(veh_x, veh_y, veh_phi, 'black')
-        #             task = MODE2TASK[mode]
-        #             color = task2color[task]
-        #             draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color)
+        for mode, num in self.env.veh_mode_dict.items():
+            for i in range(num):
+                veh = self.env.interested_vehs[mode][i]
+                veh_x = veh['x']
+                veh_y = veh['y']
+                veh_phi = veh['phi']
+                veh_l = veh['l']
+                veh_w = veh['w']
+                task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
+
+                if is_in_plot_area(veh_x, veh_y):
+                    plot_phi_line(veh_x, veh_y, veh_phi, 'black')
+                    task = MODE2TASK[mode]
+                    color = task2color[task]
+                    draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color)
 
         ego_v_x = self.env.ego_dynamics['v_x']
         ego_v_y = self.env.ego_dynamics['v_y']
@@ -406,13 +410,21 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('left', 'experiment-2021-03-15-16-39-00', 180000, logdir)
-
-    for i in range(300):
-        done = 0
-        while not done:
+    hier_decision = HierarchicalDecision('left', 'experiment-2021-11-23-12-09-57', 200000, logdir)
+    step_list = []
+    max_epi_len = 400
+    for i in range(20):
+        for step in range(max_epi_len):
             done = hier_decision.step()
+            if step >= max_epi_len - 1:
+                done = 1
+            if done:
+                print('Episode:{}, done type: {}'.format(hier_decision.episode_counter, hier_decision.env.done_type))
+                if hier_decision.env.done_type == 'good_done':
+                    step_list.append(step)
+                break
         hier_decision.reset()
+    print(step_list)
 
 
 def plot_static_path():
@@ -512,9 +524,9 @@ def select_and_rename_snapshots_of_an_episode(logdir, epinum, num):
     file_num = len(file_list) - 1
     intervavl = file_num // (num-1)
     start = file_num % (num-1)
-    print(start, file_num, intervavl)
+    # print(start, file_num, intervavl)
     selected = [start//2] + [start//2+intervavl*i-1 for i in range(1, num)]
-    print(selected)
+    # print(selected)
     if file_num > 0:
         for i, j in enumerate(selected):
             shutil.copyfile(logdir + '/episode{}/step{}.pdf'.format(epinum, j),

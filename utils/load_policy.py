@@ -12,7 +12,7 @@ import json
 import tensorflow as tf
 import numpy as np
 
-from endtoend import CrossroadEnd2endAdv
+from endtoend import CrossroadEnd2endAdvTest
 from utils.policy import Policy4Toyota
 from utils.preprocessor import Preprocessor
 
@@ -25,7 +25,7 @@ class LoadPolicy(object):
         for key, val in params.items():
             parser.add_argument("-" + key, default=val)
         self.args = parser.parse_args()
-        env = CrossroadEnd2endAdv(training_task=self.args.env_kwargs_training_task,
+        env = CrossroadEnd2endAdvTest(training_task=self.args.env_kwargs_training_task,
                                num_future_data=self.args.env_kwargs_num_future_data)
         self.policy = Policy4Toyota(self.args)
         self.policy.load_weights(model_dir, iter)
