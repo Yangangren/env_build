@@ -579,6 +579,26 @@ def deal_with_phi_diff(phi_diff):
     phi_diff = tf.where(phi_diff < -180., phi_diff + 360., phi_diff)
     return phi_diff
 
+def get_bezier_control_points(control_point1, control_point4, task=None):
+    weight_dict = {'left': 1/2, 'straight': 3/5, 'right': 3/5}
+    if task is None:
+        weight = 1 / 2
+    else:
+        weight = weight_dict[task]
+    # weight = 3/5
+    x1, y1, phi1 = control_point1
+    x4, y4, phi4 = control_point4
+    phi1 = phi1 * pi / 180
+    phi4 = phi4 * pi / 180
+
+    x2 = x1 * ((cos(phi1) ** 2) * (1-weight) + sin(phi1) ** 2) + y1 * (-sin(phi1) * cos(phi1) * weight) + x4 * ((cos(phi1) ** 2) * weight) + y4 * (sin(phi1) * cos(phi1) * weight)
+    y2 = x1 * (-sin(phi1) * cos(phi1) * weight) + y1 * (cos(phi1) ** 2 + (sin(phi1) ** 2) * (1-weight)) + x4 * (sin(phi1) * cos(phi1) * weight) + y4 * ((sin(phi1) ** 2) * weight)
+    x3 = x1 * (cos(phi4) ** 2) * weight + y1 * (sin(phi4) * cos(phi4) * weight) + x4 * ((cos(phi4) ** 2) * (1-weight) + sin(phi4) ** 2) + y4 * (-sin(phi4) * cos(phi4) * weight)
+    y3 = x1 * (sin(phi4) * cos(phi4) * weight) + y1 * ((sin(phi4) ** 2) * weight) + x4 * (-sin(phi4) * cos(phi4) * weight) + y4 * (cos(phi4) ** 2 + (sin(phi4) ** 2) * (1-weight))
+    control_point2 = x2, y2
+    control_point3 = x3, y3
+    return control_point2, control_point3
+
 
 def get_bezier_middle_point(control_point1, control_point4, task=None):
     weight_dict = {'left': 1/2, 'straight': 1/2, 'right': 1/3}
@@ -631,7 +651,7 @@ class ReferencePath(object):
                     # control_point2 = start_offset, -CROSSROAD_SIZE/2 + control_ext
                     # control_point3 = -CROSSROAD_SIZE/2 + control_ext, end_offset
                     control_point4 = -CROSSROAD_SIZE/2, end_offset, 180
-                    control_point2, control_point3 = get_bezier_middle_point(control_point1, control_point4, task)
+                    control_point2, control_point3 = get_bezier_control_points(control_point1, control_point4, task)
                     self.control_points.append([control_point1,control_point2,control_point3,control_point4])
 
                     node = np.asfortranarray([[control_point1[0], control_point2[0], control_point3[0], control_point4[0]],
@@ -665,7 +685,7 @@ class ReferencePath(object):
                     # control_point2 = start_offset, -CROSSROAD_SIZE/2 + control_ext
                     # control_point3 = end_offset, CROSSROAD_SIZE/2 - control_ext
                     control_point4 = end_offset, CROSSROAD_SIZE/2, 90
-                    control_point2, control_point3 = get_bezier_middle_point(control_point1, control_point4, task)
+                    control_point2, control_point3 = get_bezier_control_points(control_point1, control_point4, task)
                     self.control_points.append([control_point1,control_point2,control_point3,control_point4])
 
                     node = np.asfortranarray([[control_point1[0], control_point2[0], control_point3[0], control_point4[0]],
@@ -701,7 +721,7 @@ class ReferencePath(object):
                     # control_point2 = start_offset, -CROSSROAD_SIZE/2 + control_ext
                     # control_point3 = CROSSROAD_SIZE/2 - control_ext, end_offset
                     control_point4 = CROSSROAD_SIZE/2, end_offset, 0
-                    control_point2, control_point3 = get_bezier_middle_point(control_point1, control_point4, task)
+                    control_point2, control_point3 = get_bezier_control_points(control_point1, control_point4, task)
 
                     self.control_points.append([control_point1,control_point2,control_point3,control_point4])
 
