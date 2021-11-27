@@ -587,23 +587,25 @@ def deal_with_phi_diff(phi_diff):
 
 
 def get_bezier_middle_point(control_point1, control_point4, task=None):
-    weight_dict = {'left': 1/2, 'straight': 1/2, 'right': 1/3}
+    weight_dict = {'left': 3/5, 'straight': 3 / 5, 'right': 3 / 5}
+    if task is None:
+        weight = 1 / 2
+    else:
+        weight = weight_dict[task]
+    # weight = 3/5
     x1, y1, phi1 = control_point1
     x4, y4, phi4 = control_point4
     phi1 = phi1 * pi / 180
     phi4 = phi4 * pi / 180
 
-    if task is None:
-        k = 1 / 2
-    else:
-        k = weight_dict[task]
-    print(task, k)
-    x2 = x1*((cos(phi1)**2) * k + sin(phi1)**2) + y1*(-sin(phi1)*cos(phi1) * (1-k)) + x4*((cos(phi1)**2) * (1-k)) + y4*(sin(phi1)*cos(phi1) * (1-k))
-    y2 = x1*(-sin(phi1)*cos(phi1) * (1-k)) + y1*(cos(phi1)**2 + (sin(phi1)**2) * k) + x4*(sin(phi1)*cos(phi1) * (1-k)) + y4*((sin(phi1)**2) * (1-k))
-
-    x3 = x1*(cos(phi4)**2) * (1-k) + y1*(sin(phi4)*cos(phi4) * (1-k)) + x4*((cos(phi4)**2)* k + sin(phi4)**2) + y4*(-sin(phi4)*cos(phi4) * (1-k))
-    y3 = x1*(sin(phi4)*cos(phi4) * (1-k)) + y1*((sin(phi4)**2) * (1-k)) + x4*(-sin(phi4)*cos(phi4)*(1-k)) + y4*(cos(phi4)**2 + (sin(phi4)**2) * k)
-
+    x2 = x1 * ((cos(phi1) ** 2) * (1 - weight) + sin(phi1) ** 2) + y1 * (-sin(phi1) * cos(phi1) * weight) + x4 * (
+                (cos(phi1) ** 2) * weight) + y4 * (sin(phi1) * cos(phi1) * weight)
+    y2 = x1 * (-sin(phi1) * cos(phi1) * weight) + y1 * (cos(phi1) ** 2 + (sin(phi1) ** 2) * (1 - weight)) + x4 * (
+                sin(phi1) * cos(phi1) * weight) + y4 * ((sin(phi1) ** 2) * weight)
+    x3 = x1 * (cos(phi4) ** 2) * weight + y1 * (sin(phi4) * cos(phi4) * weight) + x4 * (
+                (cos(phi4) ** 2) * (1 - weight) + sin(phi4) ** 2) + y4 * (-sin(phi4) * cos(phi4) * weight)
+    y3 = x1 * (sin(phi4) * cos(phi4) * weight) + y1 * ((sin(phi4) ** 2) * weight) + x4 * (
+                -sin(phi4) * cos(phi4) * weight) + y4 * (cos(phi4) ** 2 + (sin(phi4) ** 2) * (1 - weight))
     control_point2 = x2, y2
     control_point3 = x3, y3
     return control_point2, control_point3
