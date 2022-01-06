@@ -28,7 +28,7 @@ from sumolib import checkBinary
 import traci
 from traci.exceptions import FatalTraCIError
 from endtoend_env_utils import shift_and_rotate_coordination, _convert_car_coord_to_sumo_coord, \
-    _convert_sumo_coord_to_car_coord, xy2_edgeID_lane, SUMOCFG_DIR, TASK2ROUTEID
+    _convert_sumo_coord_to_car_coord, _coordination_simu2sumo, _coordination_sumo2simu, xy2_edgeID_lane, SUMOCFG_DIR, TASK2ROUTEID
 
 SUMO_BINARY = checkBinary('sumo')
 SIM_PERIOD = 1.0 / 10
@@ -235,6 +235,7 @@ class Traffic(object):
             ego_y = ego_dict['y']
             ego_phi = ego_dict['phi']
             ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo = _convert_car_coord_to_sumo_coord(ego_x, ego_y, ego_phi, ego_l)
+            ego_x_in_sumo_final, ego_y_in_sumo_final = _coordination_simu2sumo(ego_x_in_sumo, ego_y_in_sumo)
             edgeID, lane = xy2_edgeID_lane(ego_x, ego_y)
             if with_delete:
                 try:
@@ -245,7 +246,7 @@ class Traffic(object):
                 traci.vehicle.addLegacy(vehID=egoID, routeID=ego_dict['routeID'],
                                         # depart=0, pos=20, lane=lane, speed=ego_dict['v_x'],
                                         typeID='self_car')
-            traci.vehicle.moveToXY(egoID, edgeID, lane, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keepRoute=1)
+            traci.vehicle.moveToXY(egoID, edgeID, lane, ego_x_in_sumo_final, ego_y_in_sumo_final, ego_a_in_sumo, keepRoute=1)
             traci.vehicle.setLength(egoID, ego_dict['l'])
             traci.vehicle.setWidth(egoID, ego_dict['w'])
             traci.vehicle.setSpeed(egoID, math.sqrt(ego_v_x ** 2 + ego_v_y ** 2))
@@ -303,7 +304,8 @@ class Traffic(object):
                 # 10: left and brake 9: right and brake 1: right 8: brake 0: no signal 2: left
 
                 x, y, a = _convert_sumo_coord_to_car_coord(x_in_sumo, y_in_sumo, a_in_sumo, veh_l)
-                x_in_ego_coord, y_in_ego_coord, a_in_ego_coord = shift_and_rotate_coordination(x, y, a, ego_x,
+                x_final, y_final = _coordination_sumo2simu(x, y)
+                x_in_ego_coord, y_in_ego_coord, a_in_ego_coord = shift_and_rotate_coordination(x_final, y_final, a, ego_x,
                                                                                                ego_y, ego_phi)
                 ego_x_in_veh_coord, ego_y_in_veh_coord, ego_a_in_veh_coord = shift_and_rotate_coordination(0, 0, 0,
                                                                                                            x_in_ego_coord,
@@ -346,9 +348,10 @@ class Traffic(object):
                     a_in_sumo = veh_info_dict[veh][traci.constants.VAR_ANGLE]
                     # transfer x,y,a in car coord
                     x, y, a = _convert_sumo_coord_to_car_coord(x_in_sumo, y_in_sumo, a_in_sumo, length)
+                    x_final, y_final = _coordination_sumo2simu(x, y)
                     v = veh_info_dict[veh][traci.constants.VAR_SPEED]
                     type = veh_info_dict[veh][traci.constants.VAR_TYPE]
-                    self.n_ego_vehicles[egoID].append(dict(x=x, y=y, v=v, phi=a, l=length,
+                    self.n_ego_vehicles[egoID].append(dict(x=x_final, y=y_final, v=v, phi=a, l=length,
                                                            w=width, route=route, type=type))
 
     def _get_traffic_light(self):
@@ -379,15 +382,16 @@ class Traffic(object):
 
             ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo = _convert_car_coord_to_sumo_coord(ego_x, ego_y, ego_phi,
                                                                                            self.n_ego_dict[egoID]['l'])
+            ego_x_in_sumo_final, ego_y_in_sumo_final = _coordination_simu2sumo(ego_x_in_sumo, ego_y_in_sumo)
             egdeID, lane = xy2_edgeID_lane(ego_x, ego_y)
             keeproute = 2
             # if self.training_task == 'left':  # TODO
             #     keeproute = 2 if ego_x > 0 and ego_y > -7 else 1
             try:
-                traci.vehicle.moveToXY(egoID, egdeID, lane, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keeproute)
+                traci.vehicle.moveToXY(egoID, egdeID, lane, ego_x_in_sumo_final, ego_y_in_sumo_final, ego_a_in_sumo, keeproute)
             except traci.exceptions.TraCIException:
-                print(egoID, egdeID, lane, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keeproute)
-                traci.vehicle.moveToXY(egoID, egdeID, lane, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keeproute)
+                print(egoID, egdeID, lane, ego_x_in_sumo_final, ego_y_in_sumo_final, ego_a_in_sumo, keeproute)
+                traci.vehicle.moveToXY(egoID, egdeID, lane, ego_x_in_sumo_final, ego_y_in_sumo_final, ego_a_in_sumo, keeproute)
             traci.vehicle.setSpeed(egoID, math.sqrt(ego_v_x**2+ego_v_y**2))
 
     def collision_check(self):  # True: collision

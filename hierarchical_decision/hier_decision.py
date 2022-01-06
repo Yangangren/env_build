@@ -164,7 +164,7 @@ class HierarchicalDecision(object):
             self.fig_plot = 1
         plt.ion()
 
-        plt.cla()
+        plt.clf()
         ax = plt.axes([-0.00, -0.00, 1.0, 1.0])
         for ax in self.fig.get_axes():
             ax.axis('off')
@@ -809,8 +809,8 @@ def select_and_rename_snapshots_of_an_episode(logdir, epinum, num):
 
 
 if __name__ == '__main__':
-    # main()
-    plot_static_path()
+    main()
+    # plot_static_path()
     # plot_and_save_ith_episode_data('./results/good/2021-03-15-23-56-21', 0)
     # select_and_rename_snapshots_of_an_episode('./results/good/2021-03-15-23-56-21', 0, 12)
 

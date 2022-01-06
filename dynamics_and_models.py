@@ -388,7 +388,7 @@ class EnvironmentModel(object):  # all tensors
             dotted_line_style = '--'
             solid_line_style = '-'
 
-            plt.cla()
+            plt.clf()
             ax = plt.axes([-0.05, -0.05, 1.1, 1.1])
             ax = plt.gca()
             ax.spines['top'].set_visible(False)
