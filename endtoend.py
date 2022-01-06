@@ -20,8 +20,6 @@ from matplotlib.transforms import Affine2D
 from matplotlib.collections import PatchCollection
 import numpy as np
 from gym.utils import seeding
-from LasVSim.sensor_module import *
-from LasVSim.simulator import Settings
 
 from dynamics_and_models import VehicleDynamics, ReferencePath, EnvironmentModel
 from endtoend_env_utils import *
@@ -108,13 +106,7 @@ class CrossroadEnd2endMix(gym.Env):
         self.vector_noise = False
 
         self.action_store = ActionStore(maxlen=2)
-        """Load sensor module."""
-        setting_dir = os.path.dirname(__file__)
-        self.settings = Settings(file_path=setting_dir + '/LasVSim/Library/default_simulation_setting.xml')
-        step_length = (self.settings.step_length *
-                       self.settings.sensor_frequency)
-        self.sensors = Sensors(step_length=step_length,
-                               sensor_info=self.settings.sensors)
+
         if not multi_display:
             self.traffic = Traffic(self.step_length,
                                    mode=self.mode,
@@ -333,9 +325,6 @@ class CrossroadEnd2endMix(gym.Env):
 
         other_vector, other_mask_vector = self._construct_other_vector_short(exit_)
         ego_vector = self._construct_ego_vector_short()
-        if self.vector_noise:
-            other_vector = self._add_noise_to_vector(other_vector, 'other')
-            ego_vector = self._add_noise_to_vector(ego_vector, 'ego')
 
         track_vector = self.ref_path.tracking_error_vector_vectorized(ego_vector[3], ego_vector[4], ego_vector[5], ego_vector[0]) # 3 for x; 4 foy y
         future_n_point = self.ref_path.get_future_n_point(ego_vector[3], ego_vector[4], self.future_point_num)
@@ -346,27 +335,6 @@ class CrossroadEnd2endMix(gym.Env):
         # vector = self._convert_to_rela(vector)
 
         return vector, other_mask_vector, future_n_point
-
-    def _add_noise_to_vector(self, vector, vec_type=None):
-        '''
-        Enabled by the 'vector_noise' variable in this class
-        Add noise to the vector of objects, whose order is (x, y, v, phi, l, w) for other and (v_x, v_y, r, x, y, phi) for ego
-
-        Noise is i.i.d for each element in the vector, i.e. the covariance matrix is diagonal
-        Different types of objs lead to different mean and var, which are defined in the 'Para' class in e2e_utils.py
-
-        :params
-            vector: np.array(6,)
-            vec_type: str in ['ego', 'other']
-        :return
-            noise_vec: np.array(6,)
-        '''
-        assert self.vector_noise
-        assert vec_type in ['ego', 'other']
-        if vec_type == 'ego':
-            return vector + self.rng.multivariate_normal(Para.EGO_MEAN, Para.EGO_VAR)
-        elif vec_type == 'other':
-            return vector + self.rng.multivariate_normal(Para.OTHERS_MEAN, Para.OTHERS_VAR)
 
     def _convert_to_rela(self, obs_abso):
         obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other = self._split_all(obs_abso)
@@ -440,12 +408,6 @@ class CrossroadEnd2endMix(gym.Env):
 
         name_setting = name_settings[exit_]
 
-        ego_state = [self.ego_dynamics['x'], self.ego_dynamics['y'], self.ego_dynamics['v_x'], self.ego_dynamics['phi']]
-        all_vehicles = list(filter(lambda v: Para.CROSSROAD_SIZE_LAT/2 + 40 > v['x'] > -Para.CROSSROAD_SIZE_LAT/2 - 40 and
-                                             Para.CROSSROAD_SIZE_LON/2 + 40 > v['y'] > -Para.CROSSROAD_SIZE_LON/2 - 40, self.all_other))
-        self.sensors.update(pos=ego_state, vehicles=all_vehicles)
-        self.detected_vehicles = self.sensors.getVisibleVehicles()
-        self.surrounding_objects_numbers = len(self.detected_vehicles)
 
         def filter_interested_other(vs, task):
             dl, du, dr, rd, rl, ru, ur, ud, ul, lu, lr, ld = [], [], [], [], [], [], [], [], [], [], [], []
@@ -759,7 +721,7 @@ class CrossroadEnd2endMix(gym.Env):
             tmp = tmp_b + tmp_p + tmp_v
             return tmp
 
-        self.interested_other = filter_interested_other(self.detected_vehicles, self.training_task)
+        self.interested_other = filter_interested_other(self.all_other, self.training_task)
 
         for other in self.interested_other:
             other_x, other_y, other_v, other_phi, other_l, other_w, other_turn_rad, other_mask = \
@@ -1161,15 +1123,6 @@ class CrossroadEnd2endMix(gym.Env):
                                  y + line_length * sin(phi * pi / 180.)
                 plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
 
-            def draw_sensor_range(x_ego, y_ego, a_ego, l_bias, w_bias, angle_bias, angle_range, dist_range, color):
-                x_sensor = x_ego + l_bias * cos(a_ego) - w_bias * sin(a_ego)
-                y_sensor = y_ego + l_bias * sin(a_ego) + w_bias * cos(a_ego)
-                theta1 = a_ego + angle_bias - angle_range / 2
-                theta2 = a_ego + angle_bias + angle_range / 2
-                sensor = mpatch.Wedge([x_sensor, y_sensor], dist_range, theta1=theta1 * 180 / pi,
-                                       theta2=theta2 * 180 / pi, fc=color, alpha=0.2)
-                ax.add_patch(sensor)
-
             def get_partici_type_str(partici_type):
                 if partici_type[0] == 1.:
                     return 'bike'
@@ -1211,48 +1164,14 @@ class CrossroadEnd2endMix(gym.Env):
             # plot own car
             abso_obs = self.obs
             obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(abso_obs)
-            noised_ego_v_x, noised_ego_v_y, noised_ego_r, \
-                noised_ego_x, noised_ego_y, noised_ego_phi = obs_ego
+            ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi = obs_ego
             devi_longi, devi_lateral, devi_phi, devi_v = obs_track
 
-            real_ego_x = self.ego_dynamics['x']
-            real_ego_y = self.ego_dynamics['y']
-            real_ego_phi = self.ego_dynamics['phi']
-            real_ego_v_x = self.ego_dynamics['v_x']
-            real_ego_v_y = self.ego_dynamics['v_y']
-            real_ego_r = self.ego_dynamics['r']
-            # plot sensors
-            draw_sensor_range(real_ego_x, real_ego_y, real_ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
-                              angle_range=2 * pi, dist_range=35, color='thistle')
-            draw_sensor_range(real_ego_x, real_ego_y, real_ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
-                              angle_range=70 * pi / 180, dist_range=40, color="slategray")
-            draw_sensor_range(real_ego_x, real_ego_y, real_ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
-                              angle_range=90 * pi / 180, dist_range=30, color="slategray")
-
-            # render noised objects in enabled
-            if self.vector_noise:
-                # noised locomotion of interested vehicles
-                for i in range(len(self.interested_other)):
-                    item = obs_other[self.per_other_info_dim * i : self.per_other_info_dim * (i+1)]
-                    item_x = item[0]
-                    item_y = item[1]
-                    item_phi = item[3]
-                    item_l = item[4]
-                    item_w = item[5]
-                    item_type = get_partici_type_str(item[-3:])
-                    if is_in_plot_area(item_x, item_y):
-                        plot_phi_line(item_type, item_x, item_y, item_phi, 'green')
-                        draw_rotate_rec(item_type, item_x, item_y, item_phi, item_l, item_w, color='green')
-
-                # noised ego car
-                plot_phi_line('self_noised_car', noised_ego_x, noised_ego_y, noised_ego_phi, 'aquamarine')
-                draw_rotate_rec('self_noised_car', noised_ego_x, noised_ego_y, noised_ego_phi, self.ego_l, self.ego_w, 'aquamarine')
-
-            plot_phi_line('self_car', real_ego_x, real_ego_y, real_ego_phi, 'red')
-            draw_rotate_rec('self_car', real_ego_x, real_ego_y, real_ego_phi, self.ego_l, self.ego_w, 'red')
+            plot_phi_line('self_car', ego_x, ego_y, ego_phi, 'red')
+            draw_rotate_rec('self_car', ego_x, ego_y, ego_phi, self.ego_l, self.ego_w, 'red')
 
             ax.plot(self.ref_path.path[0], self.ref_path.path[1], color='g')
-            _, point = self.ref_path._find_closest_point(noised_ego_x, noised_ego_y)
+            _, point = self.ref_path._find_closest_point(ego_x, ego_y)
             path_x, path_y, path_phi, path_v = point[0], point[1], point[2], point[3]
             plt.plot(path_x, path_y, 'g.')
             plt.plot(self.future_n_point[0], self.future_n_point[1], 'g.')
@@ -1284,21 +1203,21 @@ class CrossroadEnd2endMix(gym.Env):
             # text
             text_x, text_y_start = -110, 60
             ge = iter(range(0, 1000, 4))
-            plt.text(text_x, text_y_start - next(ge), 'ego_x: {:.2f}m'.format(real_ego_x))
-            plt.text(text_x, text_y_start - next(ge), 'ego_y: {:.2f}m'.format(real_ego_y))
+            plt.text(text_x, text_y_start - next(ge), 'ego_x: {:.2f}m'.format(ego_x))
+            plt.text(text_x, text_y_start - next(ge), 'ego_y: {:.2f}m'.format(ego_y))
             plt.text(text_x, text_y_start - next(ge), 'path_x: {:.2f}m'.format(path_x))
             plt.text(text_x, text_y_start - next(ge), 'path_y: {:.2f}m'.format(path_y))
             plt.text(text_x, text_y_start - next(ge), 'devi_longi: {:.2f}m'.format(devi_longi))
             plt.text(text_x, text_y_start - next(ge), 'devi_lateral: {:.2f}m'.format(devi_lateral))
             plt.text(text_x, text_y_start - next(ge), 'devi_v: {:.2f}m/s'.format(devi_v))
-            plt.text(text_x, text_y_start - next(ge), r'ego_phi: ${:.2f}\degree$'.format(real_ego_phi))
+            plt.text(text_x, text_y_start - next(ge), r'ego_phi: ${:.2f}\degree$'.format(ego_phi))
             plt.text(text_x, text_y_start - next(ge), r'path_phi: ${:.2f}\degree$'.format(path_phi))
             plt.text(text_x, text_y_start - next(ge), r'devi_phi: ${:.2f}\degree$'.format(devi_phi))
 
-            plt.text(text_x, text_y_start - next(ge), 'v_x: {:.2f}m/s'.format(real_ego_v_x))
+            plt.text(text_x, text_y_start - next(ge), 'v_x: {:.2f}m/s'.format(ego_v_x))
             plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(path_v))
-            plt.text(text_x, text_y_start - next(ge), 'v_y: {:.2f}m/s'.format(real_ego_v_y))
-            plt.text(text_x, text_y_start - next(ge), 'yaw_rate: {:.2f}rad/s'.format(real_ego_r))
+            plt.text(text_x, text_y_start - next(ge), 'v_y: {:.2f}m/s'.format(ego_v_y))
+            plt.text(text_x, text_y_start - next(ge), 'yaw_rate: {:.2f}rad/s'.format(ego_r))
 
             if self.action is not None:
                 steer, a_x = self.action[0], self.action[1]
