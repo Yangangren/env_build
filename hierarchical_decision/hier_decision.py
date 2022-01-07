@@ -447,7 +447,7 @@ class HierarchicalDecision(object):
                 color='lightgray', alpha=0.5))
             ii += 1
 
-    def is_in_plot_area(x, y, tolerance=5):
+        def is_in_plot_area(x, y, tolerance=5):
             if -Para.CROSSROAD_SIZE_LAT / 2 - extension + tolerance < x < Para.CROSSROAD_SIZE_LAT / 2 + extension - tolerance and \
                     -Para.CROSSROAD_SIZE_LON / 2 - extension + tolerance < y < Para.CROSSROAD_SIZE_LON / 2 + extension - tolerance:
                 return True
