@@ -979,8 +979,8 @@ class CrossroadEnd2endMix(gym.Env):
             else:
                 v_color_1, v_color_2, h_color_1, h_color_2 = 'red', 'red', 'orange', 'red'
 
-            lane_width_flag = [Para.LANE_WIDTH_2, Para.LANE_WIDTH_3, Para.LANE_WIDTH_3,
-                               Para.PERSON_LANE_WIDTH + Para.BIKE_LANE_WIDTH]  # Down
+            lane_width_flag = [Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1,
+                               Para.BIKE_LANE_WIDTH_1, Para.PERSON_LANE_WIDTH_2]  # Down
             plt.plot([Para.OFFSET_D, Para.OFFSET_D + sum(lane_width_flag[:1])],
                      [-Para.CROSSROAD_SIZE_LON / 2, -Para.CROSSROAD_SIZE_LON / 2],
                      color=v_color_1, linewidth=light_line_width)
@@ -991,8 +991,8 @@ class CrossroadEnd2endMix(gym.Env):
                      [-Para.CROSSROAD_SIZE_LON / 2, -Para.CROSSROAD_SIZE_LON / 2],
                      color='green', linewidth=light_line_width)
 
-            lane_width_flag = [Para.LANE_WIDTH_2, Para.LANE_WIDTH_3, Para.LANE_WIDTH_3,
-                               Para.PERSON_LANE_WIDTH + Para.BIKE_LANE_WIDTH]  # Up
+            lane_width_flag = [Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1,
+                               Para.BIKE_LANE_WIDTH_1, Para.PERSON_LANE_WIDTH_2]  # Up
             plt.plot([-sum(lane_width_flag[:1]) + Para.OFFSET_U, Para.OFFSET_U],
                      [Para.CROSSROAD_SIZE_LON / 2, Para.CROSSROAD_SIZE_LON / 2],
                      color=v_color_1, linewidth=light_line_width)
@@ -1003,8 +1003,8 @@ class CrossroadEnd2endMix(gym.Env):
                      [Para.CROSSROAD_SIZE_LON / 2, Para.CROSSROAD_SIZE_LON / 2],
                      color='green', linewidth=light_line_width)
 
-            lane_width_flag = [Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1,
-                               Para.PERSON_LANE_WIDTH + Para.BIKE_LANE_WIDTH]  # left
+            lane_width_flag = [Para.LANE_WIDTH_2, Para.LANE_WIDTH_2, Para.LANE_WIDTH_2, Para.LANE_WIDTH_2,
+                               Para.BIKE_LANE_WIDTH_2, Para.PERSON_LANE_WIDTH_2]  # left
             plt.plot([-Para.CROSSROAD_SIZE_LAT / 2, -Para.CROSSROAD_SIZE_LAT / 2],
                      [Para.OFFSET_L, Para.OFFSET_L - sum(lane_width_flag[:1])],
                      color=h_color_1, linewidth=light_line_width)
@@ -1016,57 +1016,50 @@ class CrossroadEnd2endMix(gym.Env):
                      color='green', linewidth=light_line_width)
 
             lane_width_flag = [Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1,
-                               Para.PERSON_LANE_WIDTH + Para.BIKE_LANE_WIDTH]  # right
+                               Para.BIKE_LANE_WIDTH_1, Para.PERSON_LANE_WIDTH_2]  # right
             plt.plot([Para.CROSSROAD_SIZE_LAT / 2, Para.CROSSROAD_SIZE_LAT / 2],
-                     [Para.OFFSET_R + Para.GREEN_BELT_LAT,
-                      Para.OFFSET_R + Para.GREEN_BELT_LAT + sum(lane_width_flag[:1])],
+                     [Para.OFFSET_R,
+                      Para.OFFSET_R + sum(lane_width_flag[:1])],
                      color=h_color_1, linewidth=light_line_width)
             plt.plot([Para.CROSSROAD_SIZE_LAT / 2, Para.CROSSROAD_SIZE_LAT / 2],
-                     [Para.OFFSET_R + Para.GREEN_BELT_LAT + sum(lane_width_flag[:1]),
-                      Para.OFFSET_R + Para.GREEN_BELT_LAT + sum(lane_width_flag[:3])],
+                     [Para.OFFSET_R + sum(lane_width_flag[:1]),
+                      Para.OFFSET_R + sum(lane_width_flag[:3])],
                      color=h_color_2, linewidth=light_line_width)
             plt.plot([Para.CROSSROAD_SIZE_LAT / 2, Para.CROSSROAD_SIZE_LAT / 2],
-                     [Para.OFFSET_R + Para.GREEN_BELT_LAT + sum(lane_width_flag[:3]),
-                      Para.OFFSET_R + Para.GREEN_BELT_LAT + sum(lane_width_flag[:4])],
+                     [Para.OFFSET_R + sum(lane_width_flag[:3]),
+                      Para.OFFSET_R + sum(lane_width_flag[:4])],
                      color='green', linewidth=light_line_width)
 
             # zebra crossing
-            # j1, j2 = 20.5, 6.75
-            # for ii in range(19):
-            #     if ii <= 3:
-            #         continue
-            #     ax.add_patch(
-            #         plt.Rectangle((-Para.CROSSROAD_SIZE_LON / 2 + j1 + ii * 1.6, -Para.CROSSROAD_SIZE_LON / 2 + 0.5),
-            #                       0.8, 4,
-            #                       color='lightgray', alpha=0.5))
-            #     ii += 1
-            # for ii in range(19):
-            #     if ii <= 3:
-            #         continue
-            #     ax.add_patch(
-            #         plt.Rectangle((-Para.CROSSROAD_SIZE_LON / 2 + j1 + ii * 1.6, Para.CROSSROAD_SIZE_LON / 2 - 0.5 - 4),
-            #                       0.8, 4,
-            #                       color='lightgray', alpha=0.5))
-            #     ii += 1
-            # for ii in range(28):
-            #     if ii <= 3:
-            #         continue
-            #     ax.add_patch(
-            #         plt.Rectangle(
-            #             (-Para.CROSSROAD_SIZE_LAT / 2 + 0.5, Para.CROSSROAD_SIZE_LAT / 2 - j2 - 0.8 - ii * 1.6), 4, 0.8,
-            #             color='lightgray',
-            #             alpha=0.5))
-            #     ii += 1
-            # for ii in range(28):
-            #     if ii <= 3:
-            #         continue
-            #     ax.add_patch(
-            #         plt.Rectangle(
-            #             (Para.CROSSROAD_SIZE_LAT / 2 - 0.5 - 4, Para.CROSSROAD_SIZE_LAT / 2 - j2 - 0.8 - ii * 1.6), 4,
-            #             0.8,
-            #             color='lightgray',
-            #             alpha=0.5))
-            #     ii += 1
+            j1, j2 = 0.5, 6.75
+            for ii in range(18):
+                if ii <= 3:
+                    continue
+                ax.add_patch(plt.Rectangle(
+                    (-Para.CROSSROAD_SIZE_LON / 2 + j1 + 0.6 + ii * 1.6, -Para.CROSSROAD_SIZE_LON / 2 + 0.5), 0.8, 4,
+                    color='lightgray', alpha=0.5))
+                ii += 1
+            for ii in range(17):
+                if ii <= 3:
+                    continue
+                ax.add_patch(plt.Rectangle(
+                    (-Para.CROSSROAD_SIZE_LON / 2 + j1 + 1.6 + ii * 1.6, Para.CROSSROAD_SIZE_LON / 2 - 0.5 - 4), 0.8, 4,
+                    color='lightgray', alpha=0.5))
+                ii += 1
+            for ii in range(21):
+                if ii <= 3:
+                    continue
+                ax.add_patch(plt.Rectangle(
+                    (-Para.CROSSROAD_SIZE_LAT / 2 + 0.5, Para.CROSSROAD_SIZE_LAT / 2 - j2 + 10.5 - ii * 1.6), 4, 0.8,
+                    color='lightgray', alpha=0.5))
+                ii += 1
+            for ii in range(21):
+                if ii <= 3:
+                    continue
+                ax.add_patch(plt.Rectangle(
+                    (Para.CROSSROAD_SIZE_LAT / 2 - 0.5 - 4, Para.CROSSROAD_SIZE_LAT / 2 - j2 + 10.5 - ii * 1.6), 4, 0.8,
+                    color='lightgray', alpha=0.5))
+                ii += 1
 
             def is_in_plot_area(x, y, tolerance=5):
                 if -Para.CROSSROAD_SIZE_LAT / 2 - extension + tolerance < x < Para.CROSSROAD_SIZE_LAT / 2 + extension - tolerance and \
