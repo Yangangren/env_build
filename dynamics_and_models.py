@@ -600,10 +600,10 @@ class EnvironmentModel(object):  # all tensors
             plt.plot([Para.OFFSET_D, Para.OFFSET_D + sum(lane_width_flag[:1])],
                      [-Para.CROSSROAD_SIZE_LON / 2, -Para.CROSSROAD_SIZE_LON / 2],
                      color=v_color_1, linewidth=light_line_width)
-            plt.plot([Para.OFFSET_D + sum(lane_width_flag[:1]), Para.OFFSET_D + sum(lane_width_flag[:2])],
+            plt.plot([Para.OFFSET_D + sum(lane_width_flag[:1]), Para.OFFSET_D + sum(lane_width_flag[:3])],
                      [-Para.CROSSROAD_SIZE_LON / 2, -Para.CROSSROAD_SIZE_LON / 2],
                      color=v_color_2, linewidth=light_line_width)
-            plt.plot([Para.OFFSET_D + sum(lane_width_flag[:2]), Para.OFFSET_D + sum(lane_width_flag[:3])],
+            plt.plot([Para.OFFSET_D + sum(lane_width_flag[:3]), Para.OFFSET_D + sum(lane_width_flag[:4])],
                      [-Para.CROSSROAD_SIZE_LON / 2, -Para.CROSSROAD_SIZE_LON / 2],
                      color='green', linewidth=light_line_width)
 
