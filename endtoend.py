@@ -102,9 +102,6 @@ class CrossroadEnd2endMix(gym.Env):
         self.ref_path = None
         self.future_n_point = None
 
-
-        self.vector_noise = False
-
         self.action_store = ActionStore(maxlen=2)
 
         if not multi_display:

@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from tensorflow import logical_and
+from random import choice
 
 from endtoend_env_utils import *
 
@@ -934,59 +935,58 @@ class ReferencePath(object):
 
         elif task == 'straight':
             lane_width_flag = [Para.LANE_WIDTH_1] * Para.LANE_NUMBER_LON_OUT
-            start_xs = [Para.OFFSET_D + Para.LANE_WIDTH_1 * 1.5, Para.OFFSET_D + Para.LANE_WIDTH_1 * 2.5]
-            start_ys = [-Para.CROSSROAD_SIZE_LON / 2, -Para.CROSSROAD_SIZE_LON / 2]
+            start_x = choice([Para.OFFSET_D + Para.LANE_WIDTH_1 * 1.5, Para.OFFSET_D + Para.LANE_WIDTH_1 * 2.5])  # 随机选择一条出发车道进行路径生成
+            start_y = -Para.CROSSROAD_SIZE_LON / 2
             end_xs = [Para.OFFSET_U + sum(lane_width_flag[:i]) + 0.5 * lane_width_flag[i] for i in range(Para.LANE_NUMBER_LON_OUT)]
             end_ys = [Para.CROSSROAD_SIZE_LON / 2] * Para.LANE_NUMBER_LON_OUT
-            for start_x in start_xs:
-                for end_x in end_xs:
-                    control_point1 = start_x, start_ys[start_xs.index(start_x)]  # 左转第一个控制点
-                    control_point4 = end_x, end_ys[end_xs.index(end_x)]  # 左转第四个控制点
-                    control_point2, control_point3 = self.get_bezier_control_points(control_point1[0],
-                                                                                    control_point1[1], pi / 2,
-                                                                                    control_point4[0],
-                                                                                    control_point4[1],
-                                                                                    pi / 2)
-                    # control_point2, control_point3 = get_bezier_middle_point(control_point1, control_point4, task)
-                    self.control_points.append([control_point1, control_point2, control_point3, control_point4])
+            for end_x in end_xs:
+                control_point1 = start_x, start_y  # 左转第一个控制点
+                control_point4 = end_x, end_ys[end_xs.index(end_x)]  # 左转第四个控制点
+                control_point2, control_point3 = self.get_bezier_control_points(control_point1[0],
+                                                                                control_point1[1], pi / 2,
+                                                                                control_point4[0],
+                                                                                control_point4[1],
+                                                                                pi / 2)
+                # control_point2, control_point3 = get_bezier_middle_point(control_point1, control_point4, task)
+                self.control_points.append([control_point1, control_point2, control_point3, control_point4])
 
-                    node = np.asfortranarray(
-                        [[control_point1[0], control_point2[0], control_point3[0], control_point4[0]],
-                         [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]]
-                        , dtype=np.float32)
-                    curve = bezier.Curve(node, degree=3)
-                    s_vals = np.linspace(0, 1.0, int(curve.length) * meter_pointnum_ratio)
-                    trj_data = curve.evaluate_multi(s_vals)
-                    trj_data = trj_data.astype(np.float32)
-                    start_straight_line_x = start_x * np.ones(shape=(sl * meter_pointnum_ratio,),
-                                                                   dtype=np.float32)[:-1]
-                    start_straight_line_y = np.linspace(-Para.CROSSROAD_SIZE_LON / 2 - sl, -Para.CROSSROAD_SIZE_LON / 2,
-                                                        sl * meter_pointnum_ratio, dtype=np.float32)[:-1]
-                    end_straight_line_x = end_x * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[1:]
-                    end_straight_line_y = np.linspace(Para.CROSSROAD_SIZE_LON / 2, Para.CROSSROAD_SIZE_LON / 2 + sl,
-                                                      sl * meter_pointnum_ratio, dtype=np.float32)[1:]
-                    planed_trj = np.append(np.append(start_straight_line_x, trj_data[0]), end_straight_line_x), \
-                                 np.append(np.append(start_straight_line_y, trj_data[1]), end_straight_line_y)
-                    xs_1, ys_1 = planed_trj[0][:-1], planed_trj[1][:-1]
-                    xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
-                    phis_1 = np.arctan2(ys_2 - ys_1, xs_2 - xs_1) * 180 / pi
+                node = np.asfortranarray(
+                    [[control_point1[0], control_point2[0], control_point3[0], control_point4[0]],
+                     [control_point1[1], control_point2[1], control_point3[1], control_point4[1]]]
+                    , dtype=np.float32)
+                curve = bezier.Curve(node, degree=3)
+                s_vals = np.linspace(0, 1.0, int(curve.length) * meter_pointnum_ratio)
+                trj_data = curve.evaluate_multi(s_vals)
+                trj_data = trj_data.astype(np.float32)
+                start_straight_line_x = start_x * np.ones(shape=(sl * meter_pointnum_ratio,),
+                                                               dtype=np.float32)[:-1]
+                start_straight_line_y = np.linspace(-Para.CROSSROAD_SIZE_LON / 2 - sl, -Para.CROSSROAD_SIZE_LON / 2,
+                                                    sl * meter_pointnum_ratio, dtype=np.float32)[:-1]
+                end_straight_line_x = end_x * np.ones(shape=(sl * meter_pointnum_ratio,), dtype=np.float32)[1:]
+                end_straight_line_y = np.linspace(Para.CROSSROAD_SIZE_LON / 2, Para.CROSSROAD_SIZE_LON / 2 + sl,
+                                                  sl * meter_pointnum_ratio, dtype=np.float32)[1:]
+                planed_trj = np.append(np.append(start_straight_line_x, trj_data[0]), end_straight_line_x), \
+                             np.append(np.append(start_straight_line_y, trj_data[1]), end_straight_line_y)
+                xs_1, ys_1 = planed_trj[0][:-1], planed_trj[1][:-1]
+                xs_2, ys_2 = planed_trj[0][1:], planed_trj[1][1:]
+                phis_1 = np.arctan2(ys_2 - ys_1, xs_2 - xs_1) * 180 / pi
 
-                    vs_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] *
-                                        len(end_straight_line_x), dtype=np.float32)
-                    vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L))),
-                        dtype=np.float32)
-                    vs_red_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * dece_dist, endpoint=True, dtype=np.float32)
-                    vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True,
-                                           dtype=np.float32)
-                    vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1) +
-                                        [8.33] * len(end_straight_line_x), dtype=np.float32)
-                    vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
+                vs_green = np.array([8.33] * len(start_straight_line_x) + [7.0] * (len(trj_data[0]) - 1) + [8.33] *
+                                    len(end_straight_line_x), dtype=np.float32)
+                vs_red_0 = np.array([8.33] * (len(start_straight_line_x) - meter_pointnum_ratio * (sl - dece_dist + int(Para.L))),
+                    dtype=np.float32)
+                vs_red_1 = np.linspace(8.33, 0.0, meter_pointnum_ratio * dece_dist, endpoint=True, dtype=np.float32)
+                vs_red_2 = np.linspace(0.0, 0.0, meter_pointnum_ratio * (dece_dist // 2), endpoint=True,
+                                       dtype=np.float32)
+                vs_red_3 = np.array([7.0] * (meter_pointnum_ratio * (int(Para.L) - dece_dist // 2) + len(trj_data[0]) - 1) +
+                                    [8.33] * len(end_straight_line_x), dtype=np.float32)
+                vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
-                    planed_trj_green = xs_1, ys_1, phis_1, vs_green
-                    planed_trj_red = xs_1[:sl * meter_pointnum_ratio], ys_1[:sl * meter_pointnum_ratio], phis_1[:sl * meter_pointnum_ratio], vs_red[:sl * meter_pointnum_ratio]
-                    planed_trj_g.append(planed_trj_green)
-                    planed_trj_r.append(planed_trj_red)
-                    self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
+                planed_trj_green = xs_1, ys_1, phis_1, vs_green
+                planed_trj_red = xs_1[:sl * meter_pointnum_ratio], ys_1[:sl * meter_pointnum_ratio], phis_1[:sl * meter_pointnum_ratio], vs_red[:sl * meter_pointnum_ratio]
+                planed_trj_g.append(planed_trj_green)
+                planed_trj_r.append(planed_trj_red)
+                self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
             self.path_list = {'green': planed_trj_g, 'red': planed_trj_r}
 
         else:
