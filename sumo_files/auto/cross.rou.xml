@@ -52,29 +52,29 @@
 
 <!--    &lt;!&ndash;<flow id="carflow_1.1." type="bicycle_1" beg="0" from="1o" to="4i" departLane="best"&ndash;&gt;-->
 <!--          &lt;!&ndash;departPos="random" departSpeed="random" vehsPerHour="800"/>&ndash;&gt;-->
-<!--    <flow id="carflow_2.1." type="bicycle_1" beg="0" from="1o" to="3i" departLane="best"-->
-<!--          departPos="random" departSpeed="random" vehsPerHour="100"/>-->
+    <flow id="carflow_2.1." type="bicycle_1" beg="0" from="1o" to="3i" departLane="best"
+          departPos="random" departSpeed="random" vehsPerHour="100"/>
 <!--    <flow id="carflow_3.1." type="bicycle_1" beg="0" from="1o" to="2i" departLane="best"-->
 <!--          departPos="random" departSpeed="random" vehsPerHour="100"/>-->
 
 <!--    &lt;!&ndash;<flow id="carflow_1.2." type="bicycle_1" beg="0" from="2o" to="1i" departLane="best"&ndash;&gt;-->
 <!--          &lt;!&ndash;departPos="random" departSpeed="random" vehsPerHour="600"/>&ndash;&gt;-->
-<!--    <flow id="carflow_2.2." type="bicycle_1" beg="0" from="2o" to="4i" departLane="best"-->
-<!--          departPos="random" departSpeed="random" vehsPerHour="80"/>-->
+    <flow id="carflow_2.2." type="bicycle_1" beg="0" from="2o" to="4i" departLane="best"
+          departPos="random" departSpeed="random" vehsPerHour="80"/>
 <!--    <flow id="carflow_3.2." type="bicycle_1" beg="0" from="2o" to="3i" departLane="best"-->
 <!--          departPos="random" departSpeed="random" vehsPerHour="100"/>-->
 
 <!--    &lt;!&ndash;<flow id="carflow_1.3." type="bicycle_1" beg="0" from="3o" to="2i" departLane="best"&ndash;&gt;-->
 <!--          &lt;!&ndash;departPos="random" departSpeed="random" vehsPerHour="800"/>&ndash;&gt;-->
-<!--    <flow id="carflow_2.3." type="bicycle_1" beg="0" from="3o" to="1i" departLane="best"-->
-<!--          departPos="random" departSpeed="random" vehsPerHour="100"/>-->
+    <flow id="carflow_2.3." type="bicycle_1" beg="0" from="3o" to="1i" departLane="best"
+          departPos="random" departSpeed="random" vehsPerHour="100"/>
 <!--    <flow id="carflow_3.3." type="bicycle_1" beg="0" from="3o" to="4i" departLane="best"-->
 <!--          departPos="random" departSpeed="random" vehsPerHour="100"/>-->
 
 <!--    &lt;!&ndash;<flow id="carflow_1.4." type="bicycle_1" beg="0" from="4o" to="3i" departLane="best"&ndash;&gt;-->
 <!--          &lt;!&ndash;departPos="random" departSpeed="random" vehsPerHour="600"/>&ndash;&gt;-->
-<!--    <flow id="carflow_2.4." type="bicycle_1" beg="0" from="4o" to="2i" departLane="best"-->
-<!--          departPos="random" departSpeed="random" vehsPerHour="100"/>-->
+    <flow id="carflow_2.4." type="bicycle_1" beg="0" from="4o" to="2i" departLane="best"
+          departPos="random" departSpeed="random" vehsPerHour="100"/>
 <!--    <flow id="carflow_3.4." type="bicycle_1" beg="0" from="4o" to="1i" departLane="best"-->
 <!--          departPos="random" departSpeed="random" vehsPerHour="100"/>-->
 
