@@ -421,17 +421,17 @@ class CrossroadEnd2endMix(gym.Env):
                     return sorted_list
 
             def cal_turn_rad(v):
-                if not(-Para.CROSSROAD_SIZE_LAT/2 < v['x'] < Para.CROSSROAD_SIZE_LAT/2 and -Para.CROSSROAD_SIZE_LON/2 < v['y'] < Para.CROSSROAD_SIZE_LON/2):
+                if not(-Para.CROSSROAD_SIZE_LAT/2 + Para.L/2 < v['x'] < Para.CROSSROAD_SIZE_LAT/2 - Para.L/2 and -Para.CROSSROAD_SIZE_LON/2 + Para.L/2 < v['y'] < Para.CROSSROAD_SIZE_LON/2 - Para.L/2):
                     turn_rad = 0.
                 else:
                     start = v['route'][0]
-                    end = v['route'][1]
+                    end = v['route'][-1]
                     if (start == name_setting['do'] and end == name_setting['ui']) or (start == name_setting['ro'] and end == name_setting['li'])\
                         or (start == name_setting['uo'] and end == name_setting['di']) or (start == name_setting['lo'] and end == name_setting['ri']):
                         turn_rad = 0.
                     elif (start == name_setting['do'] and end == name_setting['ri']) or (start == name_setting['ro'] and end == name_setting['ui'])\
                         or (start == name_setting['uo'] and end == name_setting['li']) or (start == name_setting['lo'] and end == name_setting['di']):
-                        turn_rad = -1/(Para.CROSSROAD_SIZE_LON / 2 - 3.9 * Para.LANE_WIDTH_1)
+                        turn_rad = -1/sqrt((v['x']-(Para.CROSSROAD_SIZE_LAT/2))**2 + (v['y']-(-Para.CROSSROAD_SIZE_LON/2))**2)
                     elif start == name_setting['do'] and end == name_setting['li']:   # 'dl'
                         turn_rad = 1/sqrt((v['x']-(-Para.CROSSROAD_SIZE_LAT/2))**2 + (v['y']-(-Para.CROSSROAD_SIZE_LON/2))**2)
                     elif start == name_setting['ro'] and end == name_setting['di']:   # 'rd'
@@ -1159,18 +1159,20 @@ class CrossroadEnd2endMix(gym.Env):
             plt.plot(self.future_n_point[0], self.future_n_point[1], 'g.')
 
             # from matplotlib.patches import Circle, Ellipse
-            # cir_right = Circle(xy=(Para.CROSSROAD_SIZE_LAT/2, -Para.CROSSROAD_SIZE_LON/2), radius=Para.CROSSROAD_SIZE_LON / 2 - 3.9 * Para.LANE_WIDTH_1, alpha=0.5)
-            # ax.add_patch(cir_right)
-            # cir_right = Circle(xy=(-Para.CROSSROAD_SIZE_LAT/2, -Para.CROSSROAD_SIZE_LON/2), radius=Para.CROSSROAD_SIZE_LAT / 2 + Para.OFFSET_D + 0.5 * Para.LANE_WIDTH_2, alpha=0.5)
-            # ax.add_patch(cir_right)
-            # cir_right = Circle(xy=(-Para.CROSSROAD_SIZE_LAT/2, -Para.CROSSROAD_SIZE_LON/2), radius=Para.CROSSROAD_SIZE_LON / 2 + Para.OFFSET_L + Para.GREEN_BELT_LAT + 0.5 * Para.LANE_WIDTH_1, alpha=0.5)
-            # ax.add_patch(cir_right)
-            # cir_right = Circle(xy=(-Para.CROSSROAD_SIZE_LAT/2, -Para.CROSSROAD_SIZE_LON/2), radius=0.5*(Para.CROSSROAD_SIZE_LON / 2 + Para.OFFSET_L + Para.GREEN_BELT_LAT + 0.5 * Para.LANE_WIDTH_1)+0.5*(Para.CROSSROAD_SIZE_LAT / 2 + Para.OFFSET_D + 0.5 * Para.LANE_WIDTH_2), alpha=0.5)
-            # ax.add_patch(cir_right)
-            # e = Ellipse(xy=(-Para.CROSSROAD_SIZE_LAT/2, -Para.CROSSROAD_SIZE_LON/2), width=(Para.CROSSROAD_SIZE_LAT / 2 + Para.OFFSET_D + 0.5 * Para.LANE_WIDTH_2) * 2, height=(Para.CROSSROAD_SIZE_LON / 2 + Para.OFFSET_L + Para.GREEN_BELT_LAT + 0.5 * Para.LANE_WIDTH_1) * 2, angle=0.)
-            # ax.add_patch(e)
-            # e = Ellipse(xy=(Para.CROSSROAD_SIZE_LAT/2, -Para.CROSSROAD_SIZE_LON/2), width=(Para.CROSSROAD_SIZE_LAT / 2 + Para.OFFSET_D + 0.5 * Para.LANE_WIDTH_2) * 2, height=(Para.CROSSROAD_SIZE_LON / 2 + Para.OFFSET_L + Para.GREEN_BELT_LAT + 0.5 * Para.LANE_WIDTH_1) * 2, angle=0.)
-            # ax.add_patch(e)
+            # cir_right_dr = Ellipse(xy=(Para.CROSSROAD_SIZE_LAT/2, -Para.CROSSROAD_SIZE_LON/2), width=14, height=20, angle=0., alpha=0.5)
+            # ax.add_patch(cir_right_dr)
+            # cir_right_ru = Ellipse(xy=(Para.CROSSROAD_SIZE_LAT/2, Para.CROSSROAD_SIZE_LON/2), width=16.5, height=15, angle=0., alpha=0.5)
+            # ax.add_patch(cir_right_ru)
+            # cir_right_ul = Ellipse(xy=(-Para.CROSSROAD_SIZE_LAT/2, Para.CROSSROAD_SIZE_LON/2), width=18, height=22, angle=0., alpha=0.5)
+            # ax.add_patch(cir_right_ul)
+            # cir_right_ld = Ellipse(xy=(-Para.CROSSROAD_SIZE_LAT/2, -Para.CROSSROAD_SIZE_LON/2), width=15, height=16, angle=0., alpha=0.5)
+            # ax.add_patch(cir_right_ld)
+            #
+            # cir_left_dl = Ellipse(xy=(-Para.CROSSROAD_SIZE_LAT/2, -Para.CROSSROAD_SIZE_LON/2), width=28, height=38.5, angle=0., alpha=0.5)
+            # ax.add_patch(cir_left_dl)
+            # cir_left_ur = Ellipse(xy=(Para.CROSSROAD_SIZE_LAT/2, Para.CROSSROAD_SIZE_LON/2), width=29.5, height=40, angle=0., alpha=0.5)
+            # ax.add_patch(cir_left_ur)
+
             # plot real time traj
             color = ['blue', 'coral', 'darkcyan', 'pink']
             for i, item in enumerate(self.ref_path.path_list['green']):
