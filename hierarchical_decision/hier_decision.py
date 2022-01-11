@@ -362,13 +362,19 @@ class HierarchicalDecision(object):
         elif v_light == 2:
             v_color_1, v_color_2, h_color_1, h_color_2 = 'orange', 'orange', 'red', 'red'
         elif v_light == 3:
-            v_color_1, v_color_2, h_color_1, h_color_2 = 'red', 'red', 'red', 'green'
+            v_color_1, v_color_2, h_color_1, h_color_2 = 'red', 'red', 'red', 'red'
         elif v_light == 4:
-            v_color_1, v_color_2, h_color_1, h_color_2 = 'red', 'red', 'red', 'orange'
+            v_color_1, v_color_2, h_color_1, h_color_2 = 'red', 'red', 'red', 'green'
         elif v_light == 5:
+            v_color_1, v_color_2, h_color_1, h_color_2 = 'red', 'red', 'red', 'orange'
+        elif v_light == 6:
+            v_color_1, v_color_2, h_color_1, h_color_2 = 'red', 'red', 'red', 'red'
+        elif v_light == 7:
             v_color_1, v_color_2, h_color_1, h_color_2 = 'red', 'red', 'green', 'red'
-        else:
+        elif v_light == 8:
             v_color_1, v_color_2, h_color_1, h_color_2 = 'red', 'red', 'orange', 'red'
+        else:
+            v_color_1, v_color_2, h_color_1, h_color_2 = 'red', 'red', 'red', 'red'
 
         lane_width_flag = [Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1,
                            Para.BIKE_LANE_WIDTH_1, Para.PERSON_LANE_WIDTH_2]  # Down
@@ -397,23 +403,25 @@ class HierarchicalDecision(object):
         lane_width_flag = [Para.LANE_WIDTH_2, Para.LANE_WIDTH_2, Para.LANE_WIDTH_2, Para.LANE_WIDTH_2,
                            Para.BIKE_LANE_WIDTH_2, Para.PERSON_LANE_WIDTH_2]  # left
         plt.plot([-Para.CROSSROAD_SIZE_LAT / 2, -Para.CROSSROAD_SIZE_LAT / 2],
-                 [Para.OFFSET_L, Para.OFFSET_L - sum(lane_width_flag[:1])],
+                 [Para.OFFSET_L, Para.OFFSET_L - sum(lane_width_flag[:2])],
                  color=h_color_1, linewidth=light_line_width, zorder=3)
         plt.plot([-Para.CROSSROAD_SIZE_LAT / 2, -Para.CROSSROAD_SIZE_LAT / 2],
-                 [Para.OFFSET_L - sum(lane_width_flag[:1]), Para.OFFSET_L - sum(lane_width_flag[:3])],
+                 [Para.OFFSET_L - sum(lane_width_flag[:2]),
+                  Para.OFFSET_L - sum(lane_width_flag[:3]) - lane_width_flag[3] / 2],
                  color=h_color_2, linewidth=light_line_width, zorder=3)
         plt.plot([-Para.CROSSROAD_SIZE_LAT / 2, -Para.CROSSROAD_SIZE_LAT / 2],
-                 [Para.OFFSET_L - sum(lane_width_flag[:3]), Para.OFFSET_L - sum(lane_width_flag[:4])],
+                 [Para.OFFSET_L - sum(lane_width_flag[:3]) - lane_width_flag[3] / 2,
+                  Para.OFFSET_L - sum(lane_width_flag[:4])],
                  color='green', linewidth=light_line_width, zorder=3)
 
         lane_width_flag = [Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1, Para.LANE_WIDTH_1,
                            Para.BIKE_LANE_WIDTH_1, Para.PERSON_LANE_WIDTH_2]  # right
         plt.plot([Para.CROSSROAD_SIZE_LAT / 2, Para.CROSSROAD_SIZE_LAT / 2],
                  [Para.OFFSET_R,
-                  Para.OFFSET_R + sum(lane_width_flag[:1])],
+                  Para.OFFSET_R + sum(lane_width_flag[:2])],
                  color=h_color_1, linewidth=light_line_width, zorder=3)
         plt.plot([Para.CROSSROAD_SIZE_LAT / 2, Para.CROSSROAD_SIZE_LAT / 2],
-                 [Para.OFFSET_R + sum(lane_width_flag[:1]),
+                 [Para.OFFSET_R + sum(lane_width_flag[:2]),
                   Para.OFFSET_R + sum(lane_width_flag[:3])],
                  color=h_color_2, linewidth=light_line_width, zorder=3)
         plt.plot([Para.CROSSROAD_SIZE_LAT / 2, Para.CROSSROAD_SIZE_LAT / 2],
