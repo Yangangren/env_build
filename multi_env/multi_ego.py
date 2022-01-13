@@ -18,7 +18,7 @@ import numpy as np
 import tensorflow as tf
 
 from dynamics_and_models import EnvironmentModel
-from endtoend import CrossroadEnd2end
+from endtoend import CrossroadEnd2endMix
 from endtoend_env_utils import rotate_coordination, cal_ego_info_in_transform_coordination, \
     cal_info_in_transform_coordination, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER
 from hierarchical_decision.multi_path_generator import MultiPathGenerator
@@ -41,7 +41,7 @@ class MultiEgo(object):
         self.n_ego_dynamics = {}
         self.n_ego_select_index = {}
         for egoID, ego_dict in init_n_ego_dict.items():
-            self.n_ego_instance[egoID] = CrossroadEnd2end(training_task=NAME2TASK[egoID[:2]], display=True)
+            self.n_ego_instance[egoID] = CrossroadEnd2endMix(training_task=NAME2TASK[egoID[:2]], display=True)
 
         self.mpp = MultiPathGenerator()
         self.virtual_model = dict(left=EnvironmentModel(training_task='left', mode='selecting'),

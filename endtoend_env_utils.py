@@ -29,6 +29,15 @@ class ActionStore(list):
         for i in range(self.maxlen):
             self[i] = np.zeros(2, dtype=np.float32)
 
+
+# L, W = 4.8, 2.0
+# L_BIKE, W_BIKE = 2.0, 0.48
+# LANE_WIDTH = 3.75
+# BIKE_LANE_WIDTH = 2.0
+# PERSON_LANE_WIDTH = 2.0
+# LANE_NUMBER = 3
+# CROSSROAD_SIZE = 50
+# EXPECTED_V = 8.
     
 class Para:
     # MAP
@@ -72,9 +81,9 @@ class Para:
     PER_OTHER_INFO_DIM = 7
 
     # MAX NUM
-    MAX_VEH_NUM = 10  # to be align with VEHICLE_MODE_DICT
-    MAX_BIKE_NUM = 0  # to be align with BIKE_MODE_DICT
-    MAX_PERSON_NUM = 0  # to be align with PERSON_MODE_DICT
+    MAX_VEH_NUM = 8  # to be align with VEHICLE_MODE_DICT
+    MAX_BIKE_NUM = 4  # to be align with BIKE_MODE_DICT
+    MAX_PERSON_NUM = 4  # to be align with PERSON_MODE_DICT
 
     # NOISE
     # (v_x, v_y, r, x, y, phi) for ego
