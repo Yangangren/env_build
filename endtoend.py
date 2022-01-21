@@ -44,7 +44,7 @@ def convert_observation_to_space(observation):
     return space
 
 
-class CrossroadEnd2endMix(gym.Env):
+class CrossroadEnd2endMixPI(gym.Env):
     def __init__(self,
                  mode='training',
                  multi_display=False,
@@ -1246,7 +1246,7 @@ class CrossroadEnd2endMix(gym.Env):
 
 def test_end2end():
     import tensorflow as tf
-    env = CrossroadEnd2endMix()
+    env = CrossroadEnd2endMixPI()
     env_model = EnvironmentModel()
     obs, all_info = env.reset()
     i = 0

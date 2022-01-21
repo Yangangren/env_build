@@ -1199,8 +1199,8 @@ def test_tracking_error_vector():
 
 
 def test_model():
-    from endtoend import CrossroadEnd2endMix
-    env = CrossroadEnd2endMix()
+    from endtoend import CrossroadEnd2endMixPI
+    env = CrossroadEnd2endMixPI()
     model = EnvironmentModel()
     while 1:
         obs, info = env.reset()

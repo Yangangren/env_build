@@ -21,7 +21,7 @@ import numpy as np
 import tensorflow as tf
 
 from dynamics_and_models import EnvironmentModel, ReferencePath
-from endtoend import CrossroadEnd2endMix
+from endtoend import CrossroadEnd2endMixPI
 from endtoend_env_utils import *
 from multi_path_generator import MultiPathGenerator
 from utils.load_policy import LoadPolicy
@@ -33,7 +33,7 @@ class HierarchicalDecision(object):
     def __init__(self, train_exp_dir, ite, logdir=None):
         self.policy = LoadPolicy('../utils/models/{}'.format(train_exp_dir), ite)
         self.args = self.policy.args
-        self.env = CrossroadEnd2endMix(mode='testing', future_point_num=self.args.num_rollout_list_for_policy_update[0])
+        self.env = CrossroadEnd2endMixPI(mode='testing', future_point_num=self.args.num_rollout_list_for_policy_update[0])
         self.model = EnvironmentModel(mode='testing')
         self.recorder = Recorder()
         self.episode_counter = -1

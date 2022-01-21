@@ -17,7 +17,7 @@ from matplotlib.transforms import Affine2D
 from matplotlib.collections import PatchCollection
 from casadi import *
 
-from endtoend import CrossroadEnd2endMix
+from endtoend import CrossroadEnd2endMixPI
 from dynamics_and_models import ReferencePath, EnvironmentModel
 from endtoend_env_utils import Para, REF_ENCODING, L, W, rotate_coordination
 from mpc.main import TimerStat
@@ -435,7 +435,7 @@ class HierarchicalMpc(object):
         self.episode_counter = 0
         self.horizon = 25
         self.num_future_data = 25
-        self.env = CrossroadEnd2endMix()
+        self.env = CrossroadEnd2endMixPI()
         self.model = EnvironmentModel()
         self.obs, _ = self.env.reset()  # todo check
         self.ref_path = ReferencePath(self.task)
