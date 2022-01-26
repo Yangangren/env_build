@@ -50,11 +50,9 @@ class CrossroadEnd2endMixPI(gym.Env):
                  multi_display=False,
                  state_mode='dyna',  # 'dyna'
                  future_point_num=25,
-                 traffic_mode='auto',  # 'auto'
                  **kwargs):
         self.mode = mode
         self.future_point_num = future_point_num
-        self.traffic_mode = traffic_mode
         self.dynamics = VehicleDynamics()
         self.interested_other = None
         self.detected_vehicles = None
@@ -79,15 +77,16 @@ class CrossroadEnd2endMixPI(gym.Env):
 
         self.done_type = 'not_done_yet'
         self.reward_info = None
+        self.per_other_info_dim = Para.PER_OTHER_INFO_DIM
+        self.per_path_info_dim = Para.PER_PATH_INFO_DIM
         self.ego_info_dim = Para.EGO_ENCODING_DIM
         self.track_info_dim = Para.TRACK_ENCODING_DIM
+        self.future_point_info_dim = self.future_point_num * self.per_path_info_dim
         self.light_info_dim = Para.LIGHT_ENCODING_DIM
         self.task_info_dim = Para.TASK_ENCODING_DIM
         self.ref_info_dim = Para.REF_ENCODING_DIM
         self.his_act_info_dim = Para.HIS_ACT_ENCODING_DIM
-        self.per_other_info_dim = Para.PER_OTHER_INFO_DIM
-        self.per_path_info_dim = Para.PER_PATH_INFO_DIM
-        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_point_num * self.per_path_info_dim,
+        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_point_info_dim,
                                     self.light_info_dim, self.task_info_dim, self.ref_info_dim, self.his_act_info_dim])
         self.veh_num = Para.MAX_VEH_NUM
         self.bike_num = Para.MAX_BIKE_NUM
@@ -108,8 +107,7 @@ class CrossroadEnd2endMixPI(gym.Env):
         if not multi_display:
             self.traffic = Traffic(self.step_length,
                                    mode=self.mode,
-                                   init_n_ego_dict=self.init_state,
-                                   traffic_mode=traffic_mode)
+                                   init_n_ego_dict=self.init_state)
             self.reset()
             action = self.action_space.sample()
             observation, _reward, done, _info = self.step(action)
@@ -122,19 +120,17 @@ class CrossroadEnd2endMixPI(gym.Env):
 
     def reset(self, **kwargs):  # kwargs include three keys
         self.light_phase = self.traffic.init_light()
-        if self.traffic_mode == 'auto':
-            self.training_task = choice(['left', 'straight', 'right'])
-        else:
-            self.training_task = self.traffic.case_task()
+        self.training_task = choice(['left', 'straight', 'right'])
         self.task_encoding = TASK_ENCODING[self.training_task]
         self.light_encoding = LIGHT_ENCODING[self.light_phase]
+        # todo
         # for straight path ------ random choice
         Para.START_X = choice([Para.OFFSET_D + Para.LANE_WIDTH_1 * 1.5, Para.OFFSET_D + Para.LANE_WIDTH_1 * 2.5])
         self.ref_path = ReferencePath(self.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.light_phase])
         self.veh_mode_dict = VEHICLE_MODE_DICT[self.training_task]
         self.bicycle_mode_dict = BIKE_MODE_DICT[self.training_task]
         self.person_mode_dict = PERSON_MODE_DICT[self.training_task]
-        self.env_model = EnvironmentModel()
+        self.env_model = EnvironmentModel(future_point_num=self.future_point_num)
         self.action_store.reset()
         self.init_state = self._reset_init_state(LIGHT_PHASE_TO_GREEN_OR_RED[self.light_phase])
         self.traffic.init_traffic(self.init_state, self.training_task)
@@ -331,9 +327,8 @@ class CrossroadEnd2endMixPI(gym.Env):
 
         return vector, other_mask_vector, future_n_point
 
-    def _convert_to_rela(self, obs_abso):    #todo
+    def _convert_to_rela(self, obs_abso):
         obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(obs_abso)
-        # rela_obs_future_point =
         obs_other_reshape = self._reshape_other(obs_other)
         ego_x, ego_y = obs_ego[3], obs_ego[4]
         ego = np.array(([ego_x, ego_y] + [0.] * (self.per_other_info_dim - 2)), dtype=np.float32)
@@ -342,9 +337,8 @@ class CrossroadEnd2endMixPI(gym.Env):
         rela_obs_other = self._reshape_other(rela, reverse=True)
         return np.concatenate([obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_his_ac, rela_obs_other], axis=0)
 
-    def _convert_to_abso(self, obs_rela):    #todo
+    def _convert_to_abso(self, obs_rela):
         obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(obs_rela)
-        # abso_obs_future_point =
         obs_other_reshape = self._reshape_other(obs_other)
         ego_x, ego_y = obs_ego[3], obs_ego[4]
         ego = np.array(([ego_x, ego_y] + [0.] * (self.per_other_info_dim - 2)), dtype=np.float32)
@@ -358,14 +352,14 @@ class CrossroadEnd2endMixPI(gym.Env):
         obs_track = obs[self.ego_info_dim:
                         self.ego_info_dim + self.track_info_dim]
         obs_future_point = obs[self.ego_info_dim + self.track_info_dim:
-                               self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim]
-        obs_light = obs[self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim:
-                        self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim]
-        obs_task = obs[self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim:
-                       self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim]
-        obs_ref = obs[self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim:
-                      self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim + self.his_act_info_dim]
-        obs_his_ac = obs[self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim + self.his_act_info_dim:
+                               self.ego_info_dim + self.track_info_dim + self.future_point_info_dim]
+        obs_light = obs[self.ego_info_dim + self.track_info_dim + self.future_point_info_dim:
+                        self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim]
+        obs_task = obs[self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim:
+                       self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim + self.task_info_dim]
+        obs_ref = obs[self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim + self.task_info_dim:
+                      self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim]
+        obs_his_ac = obs[self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim:
                          self.other_start_dim]
         obs_other = obs[self.other_start_dim:]
 
@@ -724,21 +718,18 @@ class CrossroadEnd2endMixPI(gym.Env):
         return np.array(other_vector, dtype=np.float32), np.array(other_mask_vector, dtype=np.float32)
 
     def _reset_init_state(self, light_color):
-        if self.traffic_mode == 'auto':
-            if self.training_task == 'left':
-                if light_color == 'green':
-                    random_index = int(np.random.random() * (900 + 500)) + 700
-                else:
-                    random_index = int(np.random.random() * (200)) + 700
-            elif self.training_task == 'straight':
-                if light_color == 'green':
-                    random_index = int(np.random.random() * (1200 + 500)) + 700
-                else:
-                    random_index = int(np.random.random() * (200)) + 700
+        if self.training_task == 'left':
+            if light_color == 'green':
+                random_index = int(np.random.random() * (900 + 500)) + 700
             else:
-                random_index = int(np.random.random() * (420 + 500)) + 700
+                random_index = int(np.random.random() * (200)) + 700
+        elif self.training_task == 'straight':
+            if light_color == 'green':
+                random_index = int(np.random.random() * (1200 + 500)) + 700
+            else:
+                random_index = int(np.random.random() * (200)) + 700
         else:
-            random_index = MODE2INDEX[self.traffic_mode] + int(np.random.random() * 100)
+            random_index = int(np.random.random() * (420 + 500)) + 700
 
         x, y, phi, exp_v = self.ref_path.idx2point(random_index)
         v = exp_v * np.random.random()

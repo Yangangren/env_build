@@ -89,23 +89,6 @@ class Para:
     MAX_BIKE_NUM = 4  # to be align with BIKE_MODE_DICT
     MAX_PERSON_NUM = 4  # to be align with PERSON_MODE_DICT
 
-    # NOISE
-    # (v_x, v_y, r, x, y, phi) for ego
-    # (x, y, v, phi, l, w; type encoding (d=3), turn rad) for other
-    EGO_MEAN = np.array([0., 0., 0., 0., 0., 0.], dtype=np.float32)
-    EGO_VAR = np.diag([0.0418, 0.0418, 0., 0.0245, 0.0227, 0.0029*(180./np.pi)**2]).astype(np.float32)
-
-    VEH_MEAN = np.tile(np.zeros((PER_OTHER_INFO_DIM,), dtype=np.float32), MAX_VEH_NUM)
-    VEH_VAR = np.tile(np.array([0.0245, 0.0227, 0.0418, 0.0029*(180./np.pi)**2, 0.0902, 0.0202, 0., 0., 0., 0.,], dtype=np.float32), MAX_VEH_NUM)
-
-    BIKE_MEAN = np.tile(np.zeros((PER_OTHER_INFO_DIM,), dtype=np.float32), MAX_BIKE_NUM)
-    BIKE_VAR = np.tile(np.array([0.172**2, 0.1583**2, 0.1763**2, (0.1707*180./np.pi)**2, 0.1649**2, 0.1091**2, 0., 0., 0., 0.,], dtype=np.float32), MAX_BIKE_NUM)
-
-    PERSON_MEAN = np.tile(np.zeros((PER_OTHER_INFO_DIM,), dtype=np.float32), MAX_PERSON_NUM)
-    PERSON_VAR = np.tile(np.array([0.1102**2, 0.1108**2, 0.1189**2, (0.2289*180./np.pi)**2, 0.1468**2, 0.1405**2, 0., 0., 0., 0.,], dtype=np.float32), MAX_PERSON_NUM)
-
-    OTHERS_MEAN = np.concatenate([BIKE_MEAN, PERSON_MEAN, VEH_MEAN], axis=-1) # order determined in line 735 in e2e.py
-    OTHERS_VAR = np.diag(np.concatenate([BIKE_VAR, PERSON_VAR, VEH_VAR], axis=-1)).astype(np.float32)
 
 
 LIGHT_PHASE_TO_GREEN_OR_RED = {0: 'green', 1: 'green', 2: 'red', 3: 'red',
@@ -126,13 +109,6 @@ PERSON_MODE_DICT = dict(left=OrderedDict(c3=4),
                         straight=OrderedDict(c2=4),  # 0
                         right=OrderedDict(c1=4, c2=0))
 
-MODE2STEP = {'green_only_ego_left_1': 0, 'green_only_ego_right_1': 0, 'green_only_ego_straight_1': 0, 'red_front_veh_left_1':45.5,
-             'red_no_front_veh_left_1': 0, 'yellow_no_front_veh_left_1': 13.5, 'yellow_no_front_veh_left_2': 13.5, 'yellow_front_veh_left_1': 13.5,
-             'yellow_front_veh_left_2': 15.5, 'yellow_mix_left_1': 42.5}
-MODE2INDEX = {'green_only_ego_left_1': 500, 'green_only_ego_right_1': 500, 'green_only_ego_straight_1': 500, 'red_front_veh_left_1':500,
-              'red_no_front_veh_left_1': 500, 'yellow_no_front_veh_left_1': 500, 'yellow_no_front_veh_left_2': 800, 'yellow_front_veh_left_1': 300,
-               'yellow_front_veh_left_2': 300,
-              'yellow_mix_left_1': 300}
 
 def dict2flat(inp):
     out = []
@@ -164,7 +140,7 @@ ROUTE2MODE = {('1o', '2i'): 'dr', ('1o', '3i'): 'du', ('1o', '4i'): 'dl',
               ('4o', '1i'): 'ld', ('4o', '2i'): 'lr', ('4o', '3i'): 'lu'}
 
 MODE2TASK = {'dr': 'right', 'du': 'straight', 'dl': 'left',
-             'rd': 'left', 'ru': 'right', 'rl': ' straight',
+             'rd': 'left', 'ru': 'right', 'rl': 'straight',
              'ud': 'straight', 'ur': 'left', 'ul': 'right',
              'ld': 'right', 'lr': 'straight', 'lu': 'left',
              'ud_b': 'straight', 'du_b': 'straight', 'lr_b': 'straight',
@@ -284,6 +260,8 @@ def cal_info_in_transform_coordination(filtered_objects, x, y, rotate_d):  # rot
         width = obj['w']
         length = obj['l']
         route = obj['route']
+        turn_rad = obj['turn_rad']
+        exist = obj['exist']
         shifted_x, shifted_y = shift_coordination(orig_x, orig_y, x, y)
         trans_x, trans_y, trans_heading = rotate_coordination(shifted_x, shifted_y, orig_heading, rotate_d)
         trans_v = orig_v
@@ -293,13 +271,14 @@ def cal_info_in_transform_coordination(filtered_objects, x, y, rotate_d):  # rot
                         'phi': trans_heading,
                         'w': width,
                         'l': length,
-                        'route': route, })
+                        'route': route,
+                        'turn_rad': turn_rad,
+                        'exist': exist})
     return results
 
 
 def cal_ego_info_in_transform_coordination(ego_dynamics, x, y, rotate_d):
-    orig_x, orig_y, orig_a, corner_points = ego_dynamics['x'], ego_dynamics['y'], ego_dynamics['phi'], ego_dynamics[
-        'Corner_point']
+    orig_x, orig_y, orig_a, corner_points = ego_dynamics['x'], ego_dynamics['y'], ego_dynamics['phi'], ego_dynamics['Corner_point']
     shifted_x, shifted_y = shift_coordination(orig_x, orig_y, x, y)
     trans_x, trans_y, trans_a = rotate_coordination(shifted_x, shifted_y, orig_a, rotate_d)
     trans_corner_points = []

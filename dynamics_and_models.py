@@ -93,30 +93,31 @@ class EnvironmentModel(object):  # all tensors
         self.veh_num = Para.MAX_VEH_NUM
         self.bike_num = Para.MAX_BIKE_NUM
         self.person_num = Para.MAX_PERSON_NUM
+        self.per_other_info_dim = Para.PER_OTHER_INFO_DIM
+        self.per_path_info_dim = Para.PER_PATH_INFO_DIM
+
         self.ego_info_dim = Para.EGO_ENCODING_DIM
         self.track_info_dim = Para.TRACK_ENCODING_DIM
-        self.future_points_dim = self.future_point_num * Para.TRACK_ENCODING_DIM
+        self.future_points_dim = self.future_point_num * self.per_path_info_dim
         self.light_info_dim = Para.LIGHT_ENCODING_DIM
         self.task_info_dim = Para.TASK_ENCODING_DIM
         self.ref_info_dim = Para.REF_ENCODING_DIM
         self.his_act_info_dim = Para.HIS_ACT_ENCODING_DIM
+
         self.other_number = sum([self.veh_num, self.bike_num, self.person_num])
         self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_points_dim, self.light_info_dim,
                                     self.task_info_dim, self.ref_info_dim, self.his_act_info_dim])
-        self.per_other_info_dim = Para.PER_OTHER_INFO_DIM
-        self.per_path_info_dim = Para.PER_PATH_INFO_DIM
-        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_point_num * self.per_path_info_dim,
-                                    self.light_info_dim, self.task_info_dim, self.ref_info_dim])
-        self.steer_store = []
-        self.ref = ReferencePath(task='left', green_or_red='green')
+        # self.steer_store = []
+        # self.ref = ReferencePath(task='left', green_or_red='green')
         # self.path_all = tf.convert_to_tensor(self.ref.path_all, dtype=tf.float32)
-        self.batch_path = None
-        self.path_len = None
+        # self.batch_path = None
+        # self.path_len = None
 
     def reset(self, obses, future_n_points):  # input are all tensors
         self.obses = obses
         self.actions = None
         self.reward_info = None
+        # todo check
         self.future_n_points = future_n_points
         self.path_len = self.future_n_points.shape[-1]
 
@@ -144,7 +145,7 @@ class EnvironmentModel(object):  # all tensors
 
     def compute_rewards(self, obses, actions, untransformed_action, step=0):
         obses = self._convert_to_abso(obses)
-        obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
+        obses_ego, obses_track, obses_future_point, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
         obses_bike, obses_person, obses_veh = self._split_other(obses_other)
 
         with tf.name_scope('compute_reward') as scope:
@@ -307,15 +308,16 @@ class EnvironmentModel(object):  # all tensors
 
     def compute_next_obses(self, obses, actions, untransformed_actions):
         obses = self._convert_to_abso(obses)
-        obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
+        obses_ego, obses_track, obses_future_point, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
         obses_other = tf.stop_gradient(obses_other)
         next_obses_ego = self._ego_predict(obses_ego, actions)
         next_obses_track = self._compute_next_track_info_vectorized(next_obses_ego)
-        # todo
-        next_obses_future_points = obses_future_points
+        # todo check
+        current_index = self._update_future_point(next_obses_ego)
+        next_obses_future_point = self._future_n_data(current_index, self.future_point_num)
         next_obses_his_ac = tf.concat([obses_his_ac[:, -2:], untransformed_actions], axis=-1)
         next_obses_other = self._other_predict(obses_other)
-        next_obses = tf.concat([next_obses_ego, next_obses_track, next_obses_future_points, obses_light, obses_task, obses_ref, next_obses_his_ac, next_obses_other],
+        next_obses = tf.concat([next_obses_ego, next_obses_track, next_obses_future_point, obses_light, obses_task, obses_ref, next_obses_his_ac, next_obses_other],
                                axis=-1)
         next_obses = self._convert_to_rela(next_obses)
         return next_obses
@@ -334,6 +336,12 @@ class EnvironmentModel(object):  # all tensors
         delta_phi = deal_with_phi_diff(ego_phis - ref_phis)
         delta_vs = ego_vxs - ref_vs
         return tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
+
+    def _update_future_point(self, next_ego_infos):
+        _, _, _, ego_xs, ego_ys, _ = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
+        indexes, _ = self._find_closest_point_batch(ego_xs, ego_ys, self.batch_path)
+        future_data = self._future_n_data(indexes, self.future_point_num)
+        return future_data
 
     def _compute_next_track_info_vectorized(self, next_ego_infos):
         ego_vxs, ego_vys, ego_rs, ego_xs, ego_ys, ego_phis = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
@@ -933,6 +941,7 @@ class ReferencePath(object):
         self.set_path(green_or_red)
 
     def set_path(self, green_or_red='green', path_index=None):
+        # todo compare
         if path_index is None:
             path_index = np.random.choice(len(self.path_list[self.green_or_red]))
         self.ref_encoding = REF_ENCODING[path_index]
@@ -1356,7 +1365,7 @@ def test_ref():
 
     ref = ReferencePath('left', '0')
     # print(ref.path_list[ref.judge_traffic_light('0')])
-    path1, path2, path3 = ref.path_list[LIGHT[0]]
+    path1, path2, path3 = ref.path_list[LIGHT_PHASE_TO_GREEN_OR_RED[0]]
     path1, path2, path3 = [ite[1200:-1200] for ite in path1], \
                           [ite[1200:-1200] for ite in path2], \
                           [ite[1200:-1200] for ite in path3]

@@ -15,7 +15,6 @@ import sys
 import numpy as np
 from collections import defaultdict
 from math import fabs, cos, sin, pi
-from endtoend_env_utils import MODE2STEP
 
 if 'SUMO_HOME' in os.environ:
     tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
@@ -36,7 +35,7 @@ SIM_PERIOD = 1.0 / 10
 
 class Traffic(object):
 
-    def __init__(self, step_length, mode, init_n_ego_dict, traffic_mode):  # mode 'display' or 'training'
+    def __init__(self, step_length, mode, init_n_ego_dict):  # mode 'display' or 'training'
         self.random_traffic = None
         self.sim_time = 0
         self.n_ego_vehicles = defaultdict(list)
@@ -49,14 +48,10 @@ class Traffic(object):
         self.n_ego_dict = init_n_ego_dict
         self.training_light_phase = None
         self.mode = mode
-        self.traffic_mode = traffic_mode
-        if self.traffic_mode != "auto":
-            self.file_path = "user_defined\\" + str(self.traffic_mode)
-        else:
-            self.file_path = str(self.traffic_mode)
+
         try:
             traci.start(
-                [SUMO_BINARY, "-c", os.path.dirname(__file__) + "\\sumo_files\\" + str(self.file_path) + "\\cross.sumocfg",
+                [SUMO_BINARY, "-c", os.path.dirname(__file__) + "\\sumo_files\\cross.sumocfg",
                  "--step-length", self.step_time_str,
                  # "--lateral-resolution", "3.5",
                  "--random",
@@ -70,7 +65,7 @@ class Traffic(object):
             print('Retry by other port')
             port = sumolib.miscutils.getFreeSocketPort()
             traci.start(
-                [SUMO_BINARY, "-c", os.path.dirname(__file__) + "/sumo_files/" + str(self.traffic_mode) + "/cross.sumocfg",
+                [SUMO_BINARY, "-c", os.path.dirname(__file__) + "\\sumo_files\\cross.sumocfg",
                  "--step-length", self.step_time_str,
                  "--lateral-resolution", "3.5",
                  "--random",
@@ -119,46 +114,21 @@ class Traffic(object):
 
         self.init_step()
 
-    def case_task(self):
-        print(self.traffic_mode)
-        task = str(self.traffic_mode).split('_')
-        return task[-2]
-
     def init_step(self):
-        if self.traffic_mode == 'auto':
-            while traci.simulation.getTime() < 150:
-                if traci.simulation.getTime() < 145:
-                    traci.trafficlight.setPhase('0', 3)
-                else:
-                    traci.trafficlight.setPhase('0', 0)
-                traci.simulationStep()
-        else:
-            self.case_light = str(self.traffic_mode).split('_')[0]
-            if self.case_light == 'red':
-                self.training_light_phase = 4
-                traci.trafficlight.setPhase('0', self.training_light_phase)
-                traci.simulationStep()
-
-            elif self.case_light == 'green':
-                self.training_light_phase = 0
-                traci.trafficlight.setPhase('0', self.training_light_phase)
-                traci.simulationStep()
-
+        while traci.simulation.getTime() < 150:
+            if traci.simulation.getTime() < 145:
+                traci.trafficlight.setPhase('0', 3)
             else:
-                assert self.case_light == 'yellow', 'no such a phase!'
-                self.training_light_phase = 1
-                traci.trafficlight.setPhase('0', self.training_light_phase)
-                traci.simulationStep()
+                traci.trafficlight.setPhase('0', 0)
 
-            while traci.simulation.getTime() < MODE2STEP[self.traffic_mode]:
-                traci.simulationStep()
+            traci.simulationStep()
 
     def _reset(self):
         self.__del__()
         try:
             traci.start(
                 [SUMO_BINARY, "-c",
-                 os.path.dirname(__file__) + "\\sumo_files\\" + str(self.file_path) + "\\cross.sumocfg",
+                 os.path.dirname(__file__) + "\\sumo_files\\cross.sumocfg",
                  "--step-length", self.step_time_str,
                  # "--lateral-resolution", "3.5",
                  "--random",
@@ -173,7 +143,7 @@ class Traffic(object):
             port = sumolib.miscutils.getFreeSocketPort()
             traci.start(
                 [SUMO_BINARY, "-c",
-                 os.path.dirname(__file__) + "\\sumo_files\\" + str(self.file_path) + "\\cross.sumocfg",
+                 os.path.dirname(__file__) + "\\sumo_files\\cross.sumocfg",
                  "--step-length", self.step_time_str,
                  "--lateral-resolution", "3.5",
                  "--random",
@@ -261,18 +231,14 @@ class Traffic(object):
         return random_traffic
 
     def init_light(self):
-        if self.traffic_mode == 'auto':
-            if random.random() > 0.8:
-                self.training_light_phase = 4  # red
-            else:
-                self.training_light_phase = 0  # green
-            traci.trafficlight.setPhase('0', self.training_light_phase)
-            # traci.trafficlight.setPhaseDuration('0', 10000)
-            traci.simulationStep()
-            self._get_traffic_light()
+        if random.random() > 0.8:
+            self.training_light_phase = 4  # red
         else:
-            self._reset()
-            self._get_traffic_light()
+            self.training_light_phase = 0  # green
+        traci.trafficlight.setPhase('0', self.training_light_phase)
+        # traci.trafficlight.setPhaseDuration('0', 10000)
+        traci.simulationStep()
+        self._get_traffic_light()
         return self.v_light
 
     def init_traffic(self, init_n_ego_dict, training_task):
@@ -313,11 +279,10 @@ class Traffic(object):
                                                                                                            a_in_ego_coord)
                 if (-5 < x_in_ego_coord < 1 * (ego_v_x) + ego_l/2. + veh_l/2. + 2 and abs(y_in_ego_coord) < 3) or \
                         (-5 < ego_x_in_veh_coord < 1 * (veh_v) + ego_l/2. + veh_l/2. + 2 and abs(ego_y_in_veh_coord) <3):
-                    if self.traffic_mode == 'auto':
-                        if veh_type == 'DEFAULT_PEDTYPE':
-                            traci.person.removeStages(veh)
-                        else:
-                            traci.vehicle.remove(veh)
+                    if veh_type == 'DEFAULT_PEDTYPE':
+                        traci.person.removeStages(veh)
+                    else:
+                        traci.vehicle.remove(veh)
 
                     # traci.vehicle.remove(vehID=veh)
                 # if 0<x_in_sumo<3.5 and -22<y_in_sumo<-15:# and veh_sig!=1 and veh_sig!=9:
@@ -359,7 +324,7 @@ class Traffic(object):
 
     def sim_step(self):
         self.sim_time += SIM_PERIOD
-        if (self.traffic_mode != 'auto') and (self.case_light != 'yellow'):
+        if self.mode == 'training':
             traci.trafficlight.setPhase('0', self.training_light_phase)
         traci.simulationStep()
         self._get_vehicles()
