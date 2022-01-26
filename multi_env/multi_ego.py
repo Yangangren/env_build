@@ -18,9 +18,9 @@ import numpy as np
 import tensorflow as tf
 
 from dynamics_and_models import EnvironmentModel
-from endtoend import CrossroadEnd2endMix
+from endtoend import CrossroadEnd2endMixPI
 from endtoend_env_utils import rotate_coordination, cal_ego_info_in_transform_coordination, \
-    cal_info_in_transform_coordination, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER
+    cal_info_in_transform_coordination
 from hierarchical_decision.multi_path_generator import MultiPathGenerator
 from traffic import Traffic
 from utils.load_policy import LoadPolicy
@@ -41,7 +41,7 @@ class MultiEgo(object):
         self.n_ego_dynamics = {}
         self.n_ego_select_index = {}
         for egoID, ego_dict in init_n_ego_dict.items():
-            self.n_ego_instance[egoID] = CrossroadEnd2endMix(training_task=NAME2TASK[egoID[:2]], display=True)
+            self.n_ego_instance[egoID] = CrossroadEnd2endMixPI(training_task=NAME2TASK[egoID[:2]], display=True)
 
         self.mpp = MultiPathGenerator()
         self.virtual_model = dict(left=EnvironmentModel(training_task='left', mode='selecting'),
@@ -233,181 +233,181 @@ class Simulation(object):
         self.traffic.sim_step()
         return 0
 
-    def render(self,):
-        # plot basic map
-        square_length = CROSSROAD_SIZE
-        extension = 40
-        lane_width = LANE_WIDTH
-        light_line_width = 3
-        dotted_line_style = '--'
-        solid_line_style = '-'
-
-        plt.cla()
-        ax = plt.axes([-0.05, -0.05, 1.1, 1.1])
-        for ax in self.fig.get_axes():
-            ax.axis('off')
-        ax.axis("equal")
-
-        # ax.add_patch(plt.Rectangle((-square_length / 2, -square_length / 2),
-        #                            square_length, square_length, edgecolor='black', facecolor='none'))
-        ax.add_patch(plt.Rectangle((-square_length / 2 - extension, -square_length / 2 - extension),
-                                   square_length + 2 * extension, square_length + 2 * extension, edgecolor='black',
-                                   facecolor='none'))
-
-        # ----------horizon--------------
-        plt.plot([-square_length / 2 - extension, -square_length / 2], [0.3, 0.3], color='orange')
-        plt.plot([-square_length / 2 - extension, -square_length / 2], [-0.3, -0.3], color='orange')
-        plt.plot([square_length / 2 + extension, square_length / 2], [0.3, 0.3], color='orange')
-        plt.plot([square_length / 2 + extension, square_length / 2], [-0.3, -0.3], color='orange')
-        #
-        for i in range(1, LANE_NUMBER + 1):
-            linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
-            linewidth = 1 if i < LANE_NUMBER else 2
-            plt.plot([-square_length / 2 - extension, -square_length / 2], [i * lane_width, i * lane_width],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
-            plt.plot([square_length / 2 + extension, square_length / 2], [i * lane_width, i * lane_width],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
-            plt.plot([-square_length / 2 - extension, -square_length / 2], [-i * lane_width, -i * lane_width],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
-            plt.plot([square_length / 2 + extension, square_length / 2], [-i * lane_width, -i * lane_width],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
-
-        # ----------vertical----------------
-        plt.plot([0.3, 0.3], [-square_length / 2 - extension, -square_length / 2], color='orange')
-        plt.plot([-0.3, -0.3], [-square_length / 2 - extension, -square_length / 2], color='orange')
-        plt.plot([0.3, 0.3], [square_length / 2 + extension, square_length / 2], color='orange')
-        plt.plot([-0.3, -0.3], [square_length / 2 + extension, square_length / 2], color='orange')
-
-        #
-        for i in range(1, LANE_NUMBER + 1):
-            linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
-            linewidth = 1 if i < LANE_NUMBER else 2
-            plt.plot([i * lane_width, i * lane_width], [-square_length / 2 - extension, -square_length / 2],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
-            plt.plot([i * lane_width, i * lane_width], [square_length / 2 + extension, square_length / 2],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
-            plt.plot([-i * lane_width, -i * lane_width], [-square_length / 2 - extension, -square_length / 2],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
-            plt.plot([-i * lane_width, -i * lane_width], [square_length / 2 + extension, square_length / 2],
-                     linestyle=linestyle, color='black', linewidth=linewidth)
-
-        v_light = self.traffic.v_light
-        if v_light == 0:
-            v_color, h_color = 'green', 'red'
-        elif v_light == 1:
-            v_color, h_color = 'orange', 'red'
-        elif v_light == 2:
-            v_color, h_color = 'red', 'green'
-        else:
-            v_color, h_color = 'red', 'orange'
-
-        plt.plot([0, lane_width], [-square_length / 2, -square_length / 2],
-                 color=v_color, linewidth=light_line_width)
-        plt.plot([lane_width, 2 * lane_width], [-square_length / 2, -square_length / 2],
-                 color='green', linewidth=light_line_width)
-
-        plt.plot([-2 * lane_width, -lane_width], [square_length / 2, square_length / 2],
-                 color='green', linewidth=light_line_width)
-        plt.plot([-lane_width, 0], [square_length / 2, square_length / 2],
-                 color=v_color, linewidth=light_line_width)
-
-        plt.plot([-square_length / 2, -square_length / 2], [0, -lane_width],
-                 color=h_color, linewidth=light_line_width)
-        plt.plot([-square_length / 2, -square_length / 2], [-lane_width, -2 * lane_width],
-                 color='green', linewidth=light_line_width)
-
-        plt.plot([square_length / 2, square_length / 2], [lane_width, 0],
-                 color=h_color, linewidth=light_line_width)
-        plt.plot([square_length / 2, square_length / 2], [2 * lane_width, lane_width],
-                 color='green', linewidth=light_line_width)
-
-        # ----------Oblique--------------
-        plt.plot([LANE_NUMBER * lane_width, square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
-                 color='black', linewidth=2)
-        plt.plot([LANE_NUMBER * lane_width, square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
-                 color='black', linewidth=2)
-        plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
-                 color='black', linewidth=2)
-        plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
-                 color='black', linewidth=2)
-
-        def is_in_plot_area(x, y, tolerance=5):
-            if -square_length / 2 - extension + tolerance < x < square_length / 2 + extension - tolerance and \
-                    -square_length / 2 - extension + tolerance < y < square_length / 2 + extension - tolerance:
-                return True
-            else:
-                return False
-
-        def draw_rotate_rec(x, y, a, l, w, c):
-            bottom_left_x, bottom_left_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
-            ax.add_patch(plt.Rectangle((x + bottom_left_x, y + bottom_left_y), w, l, edgecolor=c,
-                                       facecolor='white', angle=-(90 - a), zorder=50))
-
-        def plot_phi_line(x, y, phi, color):
-            line_length = 3
-            x_forw, y_forw = x + line_length * cos(phi * pi / 180.), \
-                             y + line_length * sin(phi * pi / 180.)
-            plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
-
-        # plot other cars
-        n_ego_vehicles = {egoID: self.multiego.n_ego_instance[egoID].all_vehicles for egoID in self.multiego.n_ego_dynamics.keys()}
-        n_ego_dynamics = {egoID: self.multiego.n_ego_instance[egoID].ego_dynamics for egoID in self.multiego.n_ego_dynamics.keys()}
-        n_ego_traj = {egoID: self.multiego.mpp.generate_path(NAME2TASK[egoID[:2]]) for egoID in self.multiego.n_ego_dynamics.keys()}
-
-        some_egoID = list(n_ego_vehicles.keys())[0]
-        all_vehicles = cal_info_in_transform_coordination(n_ego_vehicles[some_egoID], 0, 0,
-                                                          -ROTATE_ANGLE[some_egoID[0]])
-        n_ego_dynamics_trans = {}
-        for egoID, ego_dynamics in n_ego_dynamics.items():
-            n_ego_dynamics_trans[egoID] = cal_ego_info_in_transform_coordination(ego_dynamics, 0, 0,
-                                                                             -ROTATE_ANGLE[egoID[0]])
-
-        for veh in all_vehicles:
-            x = veh['x']
-            y = veh['y']
-            a = veh['phi']
-            l = veh['l']
-            w = veh['w']
-            if is_in_plot_area(x, y):
-                draw_rotate_rec(x, y, a, l, w, 'black')
-                plot_phi_line(x, y, a, 'black')
-
-        # plot own car
-        for egoID, ego_info in n_ego_dynamics_trans.items():
-            ego_x = ego_info['x']
-            ego_y = ego_info['y']
-            ego_a = ego_info['phi']
-            ego_l = ego_info['l']
-            ego_w = ego_info['w']
-            self.hist_posi[egoID].append((ego_x, ego_y))
-            draw_rotate_rec(ego_x, ego_y, ego_a, ego_l, ego_w, 'fuchsia')
-            plot_phi_line(ego_x, ego_y, ego_a, 'fuchsia')
-
-        # plot history
-        for egoID in self.init_n_ego_dict.keys():
-            for hist_x, hist_y in self.hist_posi[egoID]:
-                plt.scatter(hist_x, hist_y, color='fuchsia', alpha=0.1)
-
-        # plot trajectory
-        color = ['blue', 'coral', 'darkcyan']
-        for egoID, planed_traj in self.n_ego_traj_trans.items():
-            for i, path in enumerate(planed_traj):
-                alpha = 1
-                if v_color != 'green':
-                    if egoID[:2] in ['DL', 'DU', 'UD', 'UR']:
-                        alpha = 0.2
-                if h_color != 'green':
-                    if egoID[:2] in ['RD', 'RL', 'LR', 'LU']:
-                        alpha = 0.2
-                if planed_traj is not None:
-                    if i == self.multiego.n_ego_select_index[egoID]:
-                        ax.plot(path[0], path[1], color=color[i], alpha=alpha)
-                    else:
-                        ax.plot(path[0], path[1], color=color[i], alpha=0.2)
-        # plt.show()
-        plt.pause(0.001)
-        if self.logdir is not None:
-            plt.savefig(self.logdir + '/episode{}'.format(self.episode_counter) + '/step{}.pdf'.format(self.step_counter))
+    # def render(self,):
+    #     # plot basic map
+    #     square_length = CROSSROAD_SIZE
+    #     extension = 40
+    #     lane_width = LANE_WIDTH
+    #     light_line_width = 3
+    #     dotted_line_style = '--'
+    #     solid_line_style = '-'
+    #
+    #     plt.cla()
+    #     ax = plt.axes([-0.05, -0.05, 1.1, 1.1])
+    #     for ax in self.fig.get_axes():
+    #         ax.axis('off')
+    #     ax.axis("equal")
+    #
+    #     # ax.add_patch(plt.Rectangle((-square_length / 2, -square_length / 2),
+    #     #                            square_length, square_length, edgecolor='black', facecolor='none'))
+    #     ax.add_patch(plt.Rectangle((-square_length / 2 - extension, -square_length / 2 - extension),
+    #                                square_length + 2 * extension, square_length + 2 * extension, edgecolor='black',
+    #                                facecolor='none'))
+    #
+    #     # ----------horizon--------------
+    #     plt.plot([-square_length / 2 - extension, -square_length / 2], [0.3, 0.3], color='orange')
+    #     plt.plot([-square_length / 2 - extension, -square_length / 2], [-0.3, -0.3], color='orange')
+    #     plt.plot([square_length / 2 + extension, square_length / 2], [0.3, 0.3], color='orange')
+    #     plt.plot([square_length / 2 + extension, square_length / 2], [-0.3, -0.3], color='orange')
+    #     #
+    #     for i in range(1, LANE_NUMBER + 1):
+    #         linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
+    #         linewidth = 1 if i < LANE_NUMBER else 2
+    #         plt.plot([-square_length / 2 - extension, -square_length / 2], [i * lane_width, i * lane_width],
+    #                  linestyle=linestyle, color='black', linewidth=linewidth)
+    #         plt.plot([square_length / 2 + extension, square_length / 2], [i * lane_width, i * lane_width],
+    #                  linestyle=linestyle, color='black', linewidth=linewidth)
+    #         plt.plot([-square_length / 2 - extension, -square_length / 2], [-i * lane_width, -i * lane_width],
+    #                  linestyle=linestyle, color='black', linewidth=linewidth)
+    #         plt.plot([square_length / 2 + extension, square_length / 2], [-i * lane_width, -i * lane_width],
+    #                  linestyle=linestyle, color='black', linewidth=linewidth)
+    #
+    #     # ----------vertical----------------
+    #     plt.plot([0.3, 0.3], [-square_length / 2 - extension, -square_length / 2], color='orange')
+    #     plt.plot([-0.3, -0.3], [-square_length / 2 - extension, -square_length / 2], color='orange')
+    #     plt.plot([0.3, 0.3], [square_length / 2 + extension, square_length / 2], color='orange')
+    #     plt.plot([-0.3, -0.3], [square_length / 2 + extension, square_length / 2], color='orange')
+    #
+    #     #
+    #     for i in range(1, LANE_NUMBER + 1):
+    #         linestyle = dotted_line_style if i < LANE_NUMBER else solid_line_style
+    #         linewidth = 1 if i < LANE_NUMBER else 2
+    #         plt.plot([i * lane_width, i * lane_width], [-square_length / 2 - extension, -square_length / 2],
+    #                  linestyle=linestyle, color='black', linewidth=linewidth)
+    #         plt.plot([i * lane_width, i * lane_width], [square_length / 2 + extension, square_length / 2],
+    #                  linestyle=linestyle, color='black', linewidth=linewidth)
+    #         plt.plot([-i * lane_width, -i * lane_width], [-square_length / 2 - extension, -square_length / 2],
+    #                  linestyle=linestyle, color='black', linewidth=linewidth)
+    #         plt.plot([-i * lane_width, -i * lane_width], [square_length / 2 + extension, square_length / 2],
+    #                  linestyle=linestyle, color='black', linewidth=linewidth)
+    #
+    #     v_light = self.traffic.v_light
+    #     if v_light == 0:
+    #         v_color, h_color = 'green', 'red'
+    #     elif v_light == 1:
+    #         v_color, h_color = 'orange', 'red'
+    #     elif v_light == 2:
+    #         v_color, h_color = 'red', 'green'
+    #     else:
+    #         v_color, h_color = 'red', 'orange'
+    #
+    #     plt.plot([0, lane_width], [-square_length / 2, -square_length / 2],
+    #              color=v_color, linewidth=light_line_width)
+    #     plt.plot([lane_width, 2 * lane_width], [-square_length / 2, -square_length / 2],
+    #              color='green', linewidth=light_line_width)
+    #
+    #     plt.plot([-2 * lane_width, -lane_width], [square_length / 2, square_length / 2],
+    #              color='green', linewidth=light_line_width)
+    #     plt.plot([-lane_width, 0], [square_length / 2, square_length / 2],
+    #              color=v_color, linewidth=light_line_width)
+    #
+    #     plt.plot([-square_length / 2, -square_length / 2], [0, -lane_width],
+    #              color=h_color, linewidth=light_line_width)
+    #     plt.plot([-square_length / 2, -square_length / 2], [-lane_width, -2 * lane_width],
+    #              color='green', linewidth=light_line_width)
+    #
+    #     plt.plot([square_length / 2, square_length / 2], [lane_width, 0],
+    #              color=h_color, linewidth=light_line_width)
+    #     plt.plot([square_length / 2, square_length / 2], [2 * lane_width, lane_width],
+    #              color='green', linewidth=light_line_width)
+    #
+    #     # ----------Oblique--------------
+    #     plt.plot([LANE_NUMBER * lane_width, square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
+    #              color='black', linewidth=2)
+    #     plt.plot([LANE_NUMBER * lane_width, square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
+    #              color='black', linewidth=2)
+    #     plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [-square_length / 2, -LANE_NUMBER * lane_width],
+    #              color='black', linewidth=2)
+    #     plt.plot([-LANE_NUMBER * lane_width, -square_length / 2], [square_length / 2, LANE_NUMBER * lane_width],
+    #              color='black', linewidth=2)
+    #
+    #     def is_in_plot_area(x, y, tolerance=5):
+    #         if -square_length / 2 - extension + tolerance < x < square_length / 2 + extension - tolerance and \
+    #                 -square_length / 2 - extension + tolerance < y < square_length / 2 + extension - tolerance:
+    #             return True
+    #         else:
+    #             return False
+    #
+    #     def draw_rotate_rec(x, y, a, l, w, c):
+    #         bottom_left_x, bottom_left_y, _ = rotate_coordination(-l / 2, w / 2, 0, -a)
+    #         ax.add_patch(plt.Rectangle((x + bottom_left_x, y + bottom_left_y), w, l, edgecolor=c,
+    #                                    facecolor='white', angle=-(90 - a), zorder=50))
+    #
+    #     def plot_phi_line(x, y, phi, color):
+    #         line_length = 3
+    #         x_forw, y_forw = x + line_length * cos(phi * pi / 180.), \
+    #                          y + line_length * sin(phi * pi / 180.)
+    #         plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
+    #
+    #     # plot other cars
+    #     n_ego_vehicles = {egoID: self.multiego.n_ego_instance[egoID].all_vehicles for egoID in self.multiego.n_ego_dynamics.keys()}
+    #     n_ego_dynamics = {egoID: self.multiego.n_ego_instance[egoID].ego_dynamics for egoID in self.multiego.n_ego_dynamics.keys()}
+    #     n_ego_traj = {egoID: self.multiego.mpp.generate_path(NAME2TASK[egoID[:2]]) for egoID in self.multiego.n_ego_dynamics.keys()}
+    #
+    #     some_egoID = list(n_ego_vehicles.keys())[0]
+    #     all_vehicles = cal_info_in_transform_coordination(n_ego_vehicles[some_egoID], 0, 0,
+    #                                                       -ROTATE_ANGLE[some_egoID[0]])
+    #     n_ego_dynamics_trans = {}
+    #     for egoID, ego_dynamics in n_ego_dynamics.items():
+    #         n_ego_dynamics_trans[egoID] = cal_ego_info_in_transform_coordination(ego_dynamics, 0, 0,
+    #                                                                          -ROTATE_ANGLE[egoID[0]])
+    #
+    #     for veh in all_vehicles:
+    #         x = veh['x']
+    #         y = veh['y']
+    #         a = veh['phi']
+    #         l = veh['l']
+    #         w = veh['w']
+    #         if is_in_plot_area(x, y):
+    #             draw_rotate_rec(x, y, a, l, w, 'black')
+    #             plot_phi_line(x, y, a, 'black')
+    #
+    #     # plot own car
+    #     for egoID, ego_info in n_ego_dynamics_trans.items():
+    #         ego_x = ego_info['x']
+    #         ego_y = ego_info['y']
+    #         ego_a = ego_info['phi']
+    #         ego_l = ego_info['l']
+    #         ego_w = ego_info['w']
+    #         self.hist_posi[egoID].append((ego_x, ego_y))
+    #         draw_rotate_rec(ego_x, ego_y, ego_a, ego_l, ego_w, 'fuchsia')
+    #         plot_phi_line(ego_x, ego_y, ego_a, 'fuchsia')
+    #
+    #     # plot history
+    #     for egoID in self.init_n_ego_dict.keys():
+    #         for hist_x, hist_y in self.hist_posi[egoID]:
+    #             plt.scatter(hist_x, hist_y, color='fuchsia', alpha=0.1)
+    #
+    #     # plot trajectory
+    #     color = ['blue', 'coral', 'darkcyan']
+    #     for egoID, planed_traj in self.n_ego_traj_trans.items():
+    #         for i, path in enumerate(planed_traj):
+    #             alpha = 1
+    #             if v_color != 'green':
+    #                 if egoID[:2] in ['DL', 'DU', 'UD', 'UR']:
+    #                     alpha = 0.2
+    #             if h_color != 'green':
+    #                 if egoID[:2] in ['RD', 'RL', 'LR', 'LU']:
+    #                     alpha = 0.2
+    #             if planed_traj is not None:
+    #                 if i == self.multiego.n_ego_select_index[egoID]:
+    #                     ax.plot(path[0], path[1], color=color[i], alpha=alpha)
+    #                 else:
+    #                     ax.plot(path[0], path[1], color=color[i], alpha=0.2)
+    #     # plt.show()
+    #     plt.pause(0.001)
+    #     if self.logdir is not None:
+    #         plt.savefig(self.logdir + '/episode{}'.format(self.episode_counter) + '/step{}.pdf'.format(self.step_counter))
 
 
 if __name__ == '__main__':

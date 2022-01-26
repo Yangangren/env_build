@@ -40,6 +40,10 @@ class ActionStore(list):
 # EXPECTED_V = 8.
     
 class Para:
+
+    # Path for straight
+    START_X = None
+
     # MAP
 
     L, W = 4.8, 2.0
@@ -78,7 +82,7 @@ class Para:
     TASK_ENCODING_DIM = 3
     REF_ENCODING_DIM = 3
     HIS_ACT_ENCODING_DIM = 4
-    PER_OTHER_INFO_DIM = 7
+    PER_OTHER_INFO_DIM = 10
 
     # MAX NUM
     MAX_VEH_NUM = 8  # to be align with VEHICLE_MODE_DICT

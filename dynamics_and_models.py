@@ -82,8 +82,9 @@ class VehicleDynamics(object):
 
 
 class EnvironmentModel(object):  # all tensors
-    def __init__(self, mode='training'):
+    def __init__(self, future_point_num=25, mode='training'):
         self.mode = mode
+        self.future_point_num = future_point_num
         self.vehicle_dynamics = VehicleDynamics()
         self.base_frequency = 10.
         self.obses = None
@@ -94,40 +95,63 @@ class EnvironmentModel(object):  # all tensors
         self.person_num = Para.MAX_PERSON_NUM
         self.ego_info_dim = Para.EGO_ENCODING_DIM
         self.track_info_dim = Para.TRACK_ENCODING_DIM
+        self.future_points_dim = self.future_point_num * Para.TRACK_ENCODING_DIM
         self.light_info_dim = Para.LIGHT_ENCODING_DIM
         self.task_info_dim = Para.TASK_ENCODING_DIM
         self.ref_info_dim = Para.REF_ENCODING_DIM
         self.his_act_info_dim = Para.HIS_ACT_ENCODING_DIM
         self.other_number = sum([self.veh_num, self.bike_num, self.person_num])
-        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.light_info_dim,
+        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_points_dim, self.light_info_dim,
                                     self.task_info_dim, self.ref_info_dim, self.his_act_info_dim])
         self.per_other_info_dim = Para.PER_OTHER_INFO_DIM
+        self.per_path_info_dim = Para.PER_PATH_INFO_DIM
+        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_point_num * self.per_path_info_dim,
+                                    self.light_info_dim, self.task_info_dim, self.ref_info_dim])
+        self.steer_store = []
+        self.ref = ReferencePath(task='left', green_or_red='green')
+        # self.path_all = tf.convert_to_tensor(self.ref.path_all, dtype=tf.float32)
+        self.batch_path = None
+        self.path_len = None
 
-    def reset(self, obses):  # input are all tensors
+    def reset(self, obses, future_n_points):  # input are all tensors
         self.obses = obses
         self.actions = None
         self.reward_info = None
+        self.future_n_points = future_n_points
+        self.path_len = self.future_n_points.shape[-1]
 
-    def rollout_out(self, actions, ref_points):  # ref_points [#batch, 4]
+    def rollout_out(self, actions, step=0):  # ref_points [#batch, 4]
         with tf.name_scope('model_step') as scope:
             self.actions = self._action_transformation_for_end2end(actions)
-            rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2bike4real, \
-                veh2person4real, reward_dict = self.compute_rewards(self.obses, self.actions, actions)
+            rewards, rewards4value, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2bike4real, \
+                veh2person4real, veh2speed4real, self.reward_info = self.compute_rewards(self.obses, self.actions, actions, step)
 
-            self.obses = self.compute_next_obses(self.obses, self.actions, actions, ref_points)
+            self.obses = self.compute_next_obses(self.obses, self.actions, actions)
 
-        return self.obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, \
-               veh2bike4real, veh2person4real
+        return self.obses, rewards, rewards4value, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, \
+               veh2bike4real, veh2person4real, veh2speed4real
 
-    def compute_rewards(self, obses, actions, untransformed_action):
-        # obses = self._convert_to_abso(obses)
-        obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
+    def rollout_out_online(self, actions):  # ref_points [#batch, 4]
+        with tf.name_scope('model_step') as scope:
+            self.actions = self._action_transformation_for_end2end(actions)
+            rewards, rewards4value, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2bike4real, \
+                veh2person4real, veh2speed4real, reward_dict = self.compute_rewards(self.obses, self.actions, actions)
+
+            self.obses = self.compute_next_obses(self.obses, self.actions, actions)
+
+        return self.obses, rewards, rewards4value, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, \
+               veh2bike4real, veh2person4real, veh2speed4real
+
+    def compute_rewards(self, obses, actions, untransformed_action, step=0):
+        obses = self._convert_to_abso(obses)
+        obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
         obses_bike, obses_person, obses_veh = self._split_other(obses_other)
 
         with tf.name_scope('compute_reward') as scope:
             bike_infos = tf.stop_gradient(obses_bike)
             person_infos = tf.stop_gradient(obses_person)
             veh_infos = tf.stop_gradient(obses_veh)
+            obses_his_ac = tf.stop_gradient(obses_his_ac)
 
             steers, a_xs = actions[:, 0], actions[:, 1]
             steers_t_minus_2, a_x_t_minus_2 = obses_his_ac[:, 0], obses_his_ac[:, 1]
@@ -149,8 +173,8 @@ class EnvironmentModel(object):  # all tensors
             punish_yaw_rate = -tf.square(obses_ego[:, 2])
 
             # rewards related to tracking error
-            devi_longitudinal = -tf.square(obses_track[:, 0])
-            devi_lateral = -tf.square(obses_track[:, 1])
+            devi_lon = -tf.square(obses_track[:, 0])
+            devi_lat = -tf.square(obses_track[:, 1])
             devi_phi = -tf.cast(tf.square(obses_track[:, 2] * np.pi / 180.), dtype=tf.float32)
             devi_v = -tf.square(obses_track[:, 3])
 
@@ -164,6 +188,11 @@ class EnvironmentModel(object):  # all tensors
                                       dtype=tf.float32), \
                               tf.cast(obses_ego[:, 4] - ego_lws * tf.sin(obses_ego[:, 5] * np.pi / 180.),
                                       dtype=tf.float32)
+
+            delta_ego_vs = obses_track[:, 2]    # delta_ego_vs = ego_vs - ref_vs
+            veh2speed4training = tf.where(delta_ego_vs > 0.0, tf.square(delta_ego_vs), tf.zeros_like(veh_infos[:, 0]))
+            veh2speed4real = tf.where(delta_ego_vs > 0.0, tf.square(delta_ego_vs), tf.zeros_like(veh_infos[:, 0]))
+
             veh2veh4real = tf.zeros_like(veh_infos[:, 0])
             veh2veh4training = tf.zeros_like(veh_infos[:, 0])
 
@@ -229,12 +258,15 @@ class EnvironmentModel(object):  # all tensors
                 veh2road4training += tf.where(logical_and(ego_point[0] < -Para.CROSSROAD_SIZE_LAT / 2, ego_point[1] < Para.OFFSET_L - 1.),
                     tf.sqrt(tf.square(ego_point[0] - -Para.CROSSROAD_SIZE_LAT / 2) + tf.square(ego_point[1] - Para.OFFSET_L + 1.)), tf.zeros_like(veh_infos[:, 0]))
 
-            rewards = 0.01 * devi_v + 0.8 * devi_longitudinal + 0.8 * devi_lateral + 30 * devi_phi + 0.02 * punish_yaw_rate + \
-                      5 * punish_steer0 + 0.4 * punish_steer1 + 5e-2 * punish_steer2 + \
-                      punish_a_x0 + punish_a_x1 + 0.05 * punish_a_x2
+            rewards = 0.01 * devi_v + 0.8 * devi_lon + 0.8 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
+                      5 * punish_steer0 + punish_a_x0   # for MPC
+                    # 5 * punish_steer0 + 0.4 * punish_steer1 + 5e-2 * punish_steer2 + punish_a_x0 + punish_a_x1 + 0.05 * punish_a_x2
 
-            punish_term_for_training = veh2veh4training + veh2road4training + veh2bike4training + veh2person4training
-            real_punish_term = veh2veh4real + veh2road4real + veh2bike4real + veh2person4real
+            rewards4value = 0.01 * devi_v + 0.8 * devi_lon + 0.8 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
+                            5 * punish_steer0 + punish_a_x0
+
+            punish_term_for_training = veh2veh4training + veh2road4training + veh2bike4training + veh2person4training + veh2speed4training
+            real_punish_term = veh2veh4real + veh2road4real + veh2bike4real + veh2person4real + veh2speed4real
 
             reward_dict = dict(punish_steer0=punish_steer0,
                                punish_steer1=punish_steer1,
@@ -244,8 +276,8 @@ class EnvironmentModel(object):  # all tensors
                                punish_a_x2=punish_a_x2,
                                punish_yaw_rate=punish_yaw_rate,
                                devi_v=devi_v,
-                               devi_longitudinal=devi_longitudinal,
-                               devi_lateral=devi_lateral,
+                               devi_longitudinal=devi_lon,
+                               devi_lateral=devi_lat,
                                devi_phi=devi_phi,
                                scaled_punish_steer0=5 * punish_steer0,
                                scaled_punish_steer1=0.4 * punish_steer1,
@@ -255,37 +287,62 @@ class EnvironmentModel(object):  # all tensors
                                scaled_punish_a_x2=0.05 * punish_a_x2,
                                scaled_punish_yaw_rate=0.02 * punish_yaw_rate,
                                scaled_devi_v=0.01 * devi_v,
-                               scaled_devi_longitudinal=0.8 * devi_longitudinal,
-                               scaled_devi_lateral=0.8 * devi_lateral,
+                               scaled_devi_lon=0.8 * devi_lon,
+                               scaled_devi_lat=0.8 * devi_lat,
                                scaled_devi_phi=30 * devi_phi,
                                veh2veh4training=veh2veh4training,
                                veh2road4training=veh2road4training,
                                veh2bike4training=veh2bike4training,
                                veh2person4training=veh2person4training,
+                               veh2speedtraining=veh2speed4training,
+                               veh2speedreal=veh2speed4real,
                                veh2veh4real=veh2veh4real,
                                veh2road4real=veh2road4real,
                                veh2bike2real=veh2bike4real,
                                veh2person2real=veh2person4real
                                )
 
-            return rewards, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2bike4real, \
-                   veh2person4real, reward_dict
+            return rewards, rewards4value, punish_term_for_training, real_punish_term, veh2veh4real, veh2road4real, veh2bike4real, \
+                   veh2person4real, veh2speed4real, reward_dict
 
-    def compute_next_obses(self, obses, actions, untransformed_actions, ref_points):
-        # obses = self._convert_to_abso(obses)
-        obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
+    def compute_next_obses(self, obses, actions, untransformed_actions):
+        obses = self._convert_to_abso(obses)
+        obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
         obses_other = tf.stop_gradient(obses_other)
         next_obses_ego = self._ego_predict(obses_ego, actions)
-        next_obses_track = self._compute_next_track_info_vectorized(next_obses_ego, ref_points)
+        next_obses_track = self._compute_next_track_info_vectorized(next_obses_ego)
+        # todo
+        next_obses_future_points = obses_future_points
         next_obses_his_ac = tf.concat([obses_his_ac[:, -2:], untransformed_actions], axis=-1)
         next_obses_other = self._other_predict(obses_other)
-        next_obses = tf.concat([next_obses_ego, next_obses_track, obses_light, obses_task, obses_ref, next_obses_his_ac, next_obses_other],
+        next_obses = tf.concat([next_obses_ego, next_obses_track, next_obses_future_points, obses_light, obses_task, obses_ref, next_obses_his_ac, next_obses_other],
                                axis=-1)
-        # next_obses = self._convert_to_rela(next_obses)
+        next_obses = self._convert_to_rela(next_obses)
         return next_obses
 
-    def _compute_next_track_info_vectorized(self, next_ego_infos, ref_points):
+    def _compute_next_track_info(self, next_ego_infos, ref_points):
         ego_vxs, ego_vys, ego_rs, ego_xs, ego_ys, ego_phis = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
+        ref_xs, ref_ys, ref_phis, ref_vs = [ref_points[:, i] for i in range(4)]
+        ref_phis_rad = ref_phis * np.pi / 180
+        a, b, c = (ref_xs, ref_ys), (ref_xs + tf.cos(ref_phis_rad), ref_ys + tf.sin(ref_phis_rad)), (ego_xs, ego_ys)
+        dist_a2c = tf.sqrt(tf.square(ego_xs - ref_xs) + tf.square(ego_ys - ref_ys))
+        dist_c2line = tf.abs(tf.sin(ref_phis_rad) * ego_xs - tf.cos(ref_phis_rad) * ego_ys
+                             - tf.sin(ref_phis_rad) * ref_xs + tf.cos(ref_phis_rad) * ref_ys)
+        dist_longdi = tf.sqrt(tf.abs(tf.square(dist_a2c) - tf.square(dist_c2line)))
+        signed_dist_lateral = tf.where(self._judge_is_left(a, b, c), dist_c2line, -dist_c2line)
+        signed_dist_longi = tf.where(self._judge_is_ahead(a, b, c), dist_longdi, -dist_longdi)
+        delta_phi = deal_with_phi_diff(ego_phis - ref_phis)
+        delta_vs = ego_vxs - ref_vs
+        return tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
+
+    def _compute_next_track_info_vectorized(self, next_ego_infos):
+        ego_vxs, ego_vys, ego_rs, ego_xs, ego_ys, ego_phis = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
+
+        # find close point
+        indexes, ref_points = self._find_closest_point_batch(ego_xs, ego_ys, self.batch_path)
+        # find future point
+        future_data = self._future_n_data(indexes, self.future_point_num)
+
         ref_xs, ref_ys, ref_phis, ref_vs = [ref_points[:, i] for i in range(4)]
         ref_phis_rad = ref_phis * np.pi / 180
 
@@ -298,10 +355,45 @@ class EnvironmentModel(object):  # all tensors
 
         delta_phi = deal_with_phi_diff(ego_phis - ref_phis)
         delta_vs = ego_vxs - ref_vs
-        return tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
+        track_error = tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
+        return tf.concat([track_error, future_data], axis=1)
+
+    def _find_closest_point_batch(self, xs, ys, paths):
+        xs_tile = tf.tile(tf.reshape(xs, (-1, 1)), [1, self.path_len])
+        ys_tile = tf.tile(tf.reshape(ys, (-1, 1)), [1, self.path_len])
+        pathx_tile = paths[:, 0, :]
+        pathy_tile = paths[:, 1, :]
+        dist_array = tf.square(xs_tile - pathx_tile) + tf.square(ys_tile - pathy_tile)
+        indexs = tf.argmin(dist_array, 1)
+        ref_points = tf.gather(paths, indices=indexs, axis=-1, batch_dims=1)
+        return indexs, ref_points
+
+    def _future_n_data(self, current_indexs, n):
+        future_data_list = []
+        current_indexs = tf.cast(current_indexs, tf.int32)
+        for _ in range(n):
+            current_indexs += 1
+            current_indexs = tf.where(current_indexs >= self.path_len - 1, self.path_len - 1, current_indexs)
+            ref_points = tf.gather(self.batch_path, indices=current_indexs, axis=-1, batch_dims=1)
+            future_data_list.append(ref_points)
+        return tf.concat(future_data_list, axis=1)
+
+    def _judge_is_left(self, a, b, c):
+        x1, y1 = a
+        x2, y2 = b
+        x3, y3 = c
+        featured = (x1 - x3) * (y2 - y3) - (y1 - y3) * (x2 - x3)
+        return featured > 0.
+
+    def _judge_is_ahead(self, a, b, c):
+        x1, y1 = a
+        x2, y2 = b
+        x3, y3 = c
+        featured = (x2 - x1) * (x3 - x1) + (y2 - y1) * (y3 - y1)
+        return featured >= 0.
 
     def _convert_to_rela(self, obses):
-        obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
+        obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
         obses_other_reshape = self._reshape_other(obses_other)
         ego_x, ego_y = obses_ego[:, 3], obses_ego[:, 4]
         ego = tf.concat([tf.stack([ego_x, ego_y], axis=-1), tf.zeros(shape=(ego_x.shape[0], self.per_other_info_dim - 2))],
@@ -309,10 +401,10 @@ class EnvironmentModel(object):  # all tensors
         ego = tf.expand_dims(ego, 1)
         rela = obses_other_reshape - ego
         rela_obses_other = self._reshape_other(rela, reverse=True)
-        return tf.concat([obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, rela_obses_other], axis=-1)
+        return tf.concat([obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, rela_obses_other], axis=-1)
 
     def _convert_to_abso(self, rela_obses):
-        obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(rela_obses)
+        obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(rela_obses)
         obses_other_reshape = self._reshape_other(obses_other)
         ego_x, ego_y = obses_ego[:, 3], obses_ego[:, 4]
         ego = tf.concat([tf.stack([ego_x, ego_y], axis=-1), tf.zeros(shape=(ego_x.shape[0], self.per_other_info_dim - 2))],
@@ -321,7 +413,7 @@ class EnvironmentModel(object):  # all tensors
         abso = obses_other_reshape + ego
         abso_obses_other = self._reshape_other(abso, reverse=True)
 
-        return tf.concat([obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, abso_obses_other], axis=-1)
+        return tf.concat([obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, abso_obses_other], axis=-1)
 
     def _ego_predict(self, ego_infos, actions):
         ego_next_infos, _ = self.vehicle_dynamics.prediction(ego_infos[:, :6], actions, self.base_frequency)
@@ -355,17 +447,19 @@ class EnvironmentModel(object):  # all tensors
     def _split_all(self, obses):
         obses_ego = obses[:, :self.ego_info_dim]
         obses_track = obses[:, self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
-        obses_light = obses[:, self.ego_info_dim + self.track_info_dim:
-                               self.ego_info_dim + self.track_info_dim + self.light_info_dim]
-        obses_task = obses[:, self.ego_info_dim + self.track_info_dim + self.light_info_dim:
-                              self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim]
-        obses_ref = obses[:, self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim:
-                             self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim]
-        obses_his_ac = obses[:, self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim:
+        obses_future_point = obses[:, self.ego_info_dim + self.track_info_dim:
+                                      self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim]
+        obses_light = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim:
+                               self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim]
+        obses_task = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim:
+                              self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim]
+        obses_ref = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim:
+                             self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim]
+        obses_his_ac = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim:
                                 self.other_start_dim]
         obses_other = obses[:, self.other_start_dim:]
 
-        return obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, obses_other
+        return obses_ego, obses_track, obses_future_point, obses_light, obses_task, obses_ref, obses_his_ac, obses_other
 
     def _split_other(self, obses_other):
         obses_bike = obses_other[:, :self.bike_num * self.per_other_info_dim]
@@ -589,6 +683,7 @@ class EnvironmentModel(object):  # all tensors
                          color='gray', zorder=2)
 
             # traffic light
+            # todo
             v_light = 1
             light_line_width = 2
             if v_light == 0 or v_light == 1:
@@ -978,7 +1073,8 @@ class ReferencePath(object):
                     vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
                     planed_trj_green = xs_1, ys_1, phis_1, vs_green
-                    planed_trj_red = xs_1[:sl * meter_pointnum_ratio], ys_1[:sl * meter_pointnum_ratio], phis_1[:sl * meter_pointnum_ratio], vs_red[:sl * meter_pointnum_ratio]
+                    # planed_trj_red = xs_1[:sl * meter_pointnum_ratio], ys_1[:sl * meter_pointnum_ratio], phis_1[:sl * meter_pointnum_ratio], vs_red[:sl * meter_pointnum_ratio]
+                    planed_trj_red = xs_1, ys_1, phis_1, vs_red
                     planed_trj_g.append(planed_trj_green)
                     planed_trj_r.append(planed_trj_red)
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
@@ -986,7 +1082,8 @@ class ReferencePath(object):
 
         elif task == 'straight':
             lane_width_flag = [Para.LANE_WIDTH_1] * Para.LANE_NUMBER_LON_OUT
-            start_x = choice([Para.OFFSET_D + Para.LANE_WIDTH_1 * 1.5, Para.OFFSET_D + Para.LANE_WIDTH_1 * 2.5])  # 随机选择一条出发车道进行路径生成
+            # start_x only update in env.reset
+            start_x = Para.START_X
             start_y = -Para.CROSSROAD_SIZE_LON / 2
             end_xs = [Para.OFFSET_U + sum(lane_width_flag[:i]) + 0.5 * lane_width_flag[i] for i in range(Para.LANE_NUMBER_LON_OUT)]
             end_ys = [Para.CROSSROAD_SIZE_LON / 2] * Para.LANE_NUMBER_LON_OUT
@@ -1034,7 +1131,8 @@ class ReferencePath(object):
                 vs_red = np.append(np.append(np.append(vs_red_0, vs_red_1), vs_red_2), vs_red_3)
 
                 planed_trj_green = xs_1, ys_1, phis_1, vs_green
-                planed_trj_red = xs_1[:sl * meter_pointnum_ratio], ys_1[:sl * meter_pointnum_ratio], phis_1[:sl * meter_pointnum_ratio], vs_red[:sl * meter_pointnum_ratio]
+                # planed_trj_red = xs_1[:sl * meter_pointnum_ratio], ys_1[:sl * meter_pointnum_ratio], phis_1[:sl * meter_pointnum_ratio], vs_red[:sl * meter_pointnum_ratio]
+                planed_trj_red = xs_1, ys_1, phis_1, vs_red
                 planed_trj_g.append(planed_trj_green)
                 planed_trj_r.append(planed_trj_red)
                 self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
@@ -1086,6 +1184,7 @@ class ReferencePath(object):
                     planed_trj_r.append(planed_trj_red)
                     self.path_len_list.append((sl * meter_pointnum_ratio, len(trj_data[0]), len(xs_1)))
             self.path_list = {'green': planed_trj_g, 'red': planed_trj_r}
+        # print('生成路径长为：', len(planed_trj_r[0][0]))
 
     def _find_closest_point(self, x, y, ratio=10):
         path_len = len(self.path[0])
