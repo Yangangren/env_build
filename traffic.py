@@ -51,7 +51,7 @@ class Traffic(object):
 
         try:
             traci.start(
-                [SUMO_BINARY, "-c", os.path.dirname(__file__) + "\\sumo_files\\cross.sumocfg",
+                [SUMO_BINARY, "-c", os.path.dirname(__file__) + "/sumo_files/cross.sumocfg",
                  "--step-length", self.step_time_str,
                  # "--lateral-resolution", "3.5",
                  "--random",
@@ -65,7 +65,7 @@ class Traffic(object):
             print('Retry by other port')
             port = sumolib.miscutils.getFreeSocketPort()
             traci.start(
-                [SUMO_BINARY, "-c", os.path.dirname(__file__) + "\\sumo_files\\cross.sumocfg",
+                [SUMO_BINARY, "-c", os.path.dirname(__file__) + "/sumo_files/cross.sumocfg",
                  "--step-length", self.step_time_str,
                  "--lateral-resolution", "3.5",
                  "--random",
@@ -128,7 +128,7 @@ class Traffic(object):
         try:
             traci.start(
                 [SUMO_BINARY, "-c",
-                 os.path.dirname(__file__) + "\\sumo_files\\cross.sumocfg",
+                 os.path.dirname(__file__) + "/sumo_files/cross.sumocfg",
                  "--step-length", self.step_time_str,
                  # "--lateral-resolution", "3.5",
                  "--random",
@@ -143,7 +143,7 @@ class Traffic(object):
             port = sumolib.miscutils.getFreeSocketPort()
             traci.start(
                 [SUMO_BINARY, "-c",
-                 os.path.dirname(__file__) + "\\sumo_files\\cross.sumocfg",
+                 os.path.dirname(__file__) + "/sumo_files/cross.sumocfg",
                  "--step-length", self.step_time_str,
                  "--lateral-resolution", "3.5",
                  "--random",

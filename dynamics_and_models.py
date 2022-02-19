@@ -339,7 +339,7 @@ class EnvironmentModel(object):  # all tensors
 
     def _update_future_point(self, next_ego_infos):
         _, _, _, ego_xs, ego_ys, _ = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
-        indexes, _ = self._find_closest_point_batch(ego_xs, ego_ys, self.batch_path)
+        indexes, _ = self._find_closest_point_batch(ego_xs, ego_ys, self.future_n_points)
         future_data = self._future_n_data(indexes, self.future_point_num)
         return future_data
 
@@ -347,7 +347,7 @@ class EnvironmentModel(object):  # all tensors
         ego_vxs, ego_vys, ego_rs, ego_xs, ego_ys, ego_phis = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
 
         # find close point
-        indexes, ref_points = self._find_closest_point_batch(ego_xs, ego_ys, self.batch_path)
+        indexes, ref_points = self._find_closest_point_batch(ego_xs, ego_ys, self.future_n_points)
         # find future point
         future_data = self._future_n_data(indexes, self.future_point_num)
 
@@ -944,11 +944,13 @@ class ReferencePath(object):
         # todo compare
         if path_index is None:
             path_index = np.random.choice(len(self.path_list[self.green_or_red]))
+        self.path_index = path_index
         self.ref_encoding = REF_ENCODING[path_index]
         self.path = self.path_list[green_or_red][path_index]
 
     def get_future_n_point(self, ego_x, ego_y, n, dt=0.1):  # not include the current closest point
         idx, _ = self._find_closest_point(ego_x, ego_y)
+        # future_n_x, future_n_y, future_n_phi, future_n_v = [], [], [], []
         future_n_point = []
         for _ in range(n):
             x, y, phi, v = self.idx2point(idx)
@@ -962,6 +964,13 @@ class ReferencePath(object):
                 x, y = next_x, next_y
                 idx += 1
             x, y, phi, v = self.idx2point(idx)
+        #     future_n_x.append(x)
+        #     future_n_y.append(y)
+        #     future_n_phi.append(phi)
+        #     future_n_v.append(v)
+        # future_n_point = np.stack([np.array(future_n_x, dtype=np.float32), np.array(future_n_y, dtype=np.float32),
+        #                            np.array(future_n_phi, dtype=np.float32), np.array(future_n_v, dtype=np.float32)],
+        #                           axis=0)
             future_n_point.extend([x, y, phi, v])
         future_n_point = np.array(future_n_point)
         return future_n_point
