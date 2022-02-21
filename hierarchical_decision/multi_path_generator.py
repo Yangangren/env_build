@@ -7,21 +7,19 @@
 # @FileName: hier_decision.py
 # =====================================
 from dynamics_and_models import ReferencePath
-from endtoend_env_utils import REF_NUM
-import copy
 
 
 class MultiPathGenerator(object):
     def __init__(self):
         self.path_list = []
-        self.ref = ReferencePath(task='left')
 
-    def generate_path(self, task, light_phase):
-        task_path_num = REF_NUM[task]
-        path_list = []
+    def generate_path(self, task, light):
+        ref = ReferencePath(task)
+        task_path_num = len(ref.path_list['green'])
+        self.path_list = []
         for path_index in range(task_path_num):
-            self.ref.set_path(task, light_phase, path_index)
-            # print(ReferencePath.path_index)
-            path_list.append(copy.deepcopy(self.ref))
-        return path_list
+            ref = ReferencePath(task, light)
+            ref.set_path(light, path_index)
+            self.path_list.append(ref)
+        return self.path_list
 

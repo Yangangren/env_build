@@ -13,12 +13,65 @@ import numpy as np
 from collections import OrderedDict
 
 
+class ActionStore(list):
+    def __init__(self, maxlen=2):
+        super(ActionStore, self).__init__()
+        self.maxlen = maxlen
+        for _ in range(maxlen):
+            self.append(np.zeros(2, dtype=np.float32))
+
+    def put(self, action):
+        assert len(self) == self.maxlen
+        self.pop(0)
+        self.append(action)
+
+    def reset(self):
+        for i in range(self.maxlen):
+            self[i] = np.zeros(2, dtype=np.float32)
+
+
+# L, W = 4.8, 2.0
+# L_BIKE, W_BIKE = 2.0, 0.48
+# LANE_WIDTH = 3.75
+# BIKE_LANE_WIDTH = 2.0
+# PERSON_LANE_WIDTH = 2.0
+# LANE_NUMBER = 3
+# CROSSROAD_SIZE = 50
+# EXPECTED_V = 8.
+
 class Para:
+    # Path for straight
+    START_X = None
+
     # MAP
+
     L, W = 4.8, 2.0
-    LANE_WIDTH = 3.75
-    LANE_NUMBER = 3
-    CROSSROAD_SIZE = 50
+    LANE_WIDTH_1 = 3.2
+    LANE_WIDTH_2 = 2.8
+    WALK_WIDTH = 4.00
+    GREEN_BELT = 2.0
+    BIKE_LANE_WIDTH_1 = 2.0
+    BIKE_LANE_WIDTH_2 = 3.0
+    PERSON_LANE_WIDTH_1 = 1.0
+    PERSON_LANE_WIDTH_2 = 2.0
+
+    OFFSET_L = -0.645
+    OFFSET_R = -0.135
+    OFFSET_U = 1.815
+    OFFSET_D = -2.915
+
+    LANE_NUMBER_LON_IN_U = 3
+    LANE_NUMBER_LON_IN_D = 4
+    LANE_NUMBER_LON_OUT = 2
+    LANE_NUMBER_LAT_IN = 4
+    LANE_NUMBER_LAT_OUT = 3
+
+    CROSSROAD_SIZE_LAT = 30.33
+    CROSSROAD_SIZE_LON = 36.63
+
+    ANGLE_L = 1.353
+    ANGLE_R = 0.787
+
     # DIM
     EGO_ENCODING_DIM = 6
     TRACK_ENCODING_DIM = 4
@@ -26,24 +79,32 @@ class Para:
     LIGHT_ENCODING_DIM = 2
     TASK_ENCODING_DIM = 3
     REF_ENCODING_DIM = 3
-    PER_OTHER_INFO_DIM = 7
+    HIS_ACT_ENCODING_DIM = 4
+    PER_OTHER_INFO_DIM = 10
 
     # MAX NUM
-    MAX_VEH_NUM = 10  # to be align with VEHICLE_MODE_DICT
-    MAX_BIKE_NUM = 0  # to be align with BIKE_MODE_DICT
-    MAX_PERSON_NUM = 0  # to be align with PERSON_MODE_DICT
+    MAX_VEH_NUM = 8  # to be align with VEHICLE_MODE_DICT
+    MAX_BIKE_NUM = 4  # to be align with BIKE_MODE_DICT
+    MAX_PERSON_NUM = 4  # to be align with PERSON_MODE_DICT
 
 
-
-LIGHT_PHASE_TO_GREEN_OR_RED = {0: 'green', 1: 'red', 2: 'red', 3:'red'}  # 0: green, 1: red
+LIGHT_PHASE_TO_GREEN_OR_RED = {0: 'green', 1: 'green', 2: 'red', 3: 'red',
+                               4: 'red', 5: 'red', 6: 'red', 7: 'red', 8: 'red', 9: 'red'}  # 0: green, 1: red
 TASK_ENCODING = dict(left=[1.0, 0.0, 0.0], straight=[0.0, 1.0, 0.0], right=[0.0, 0.0, 1.0])
-LIGHT_ENCODING = {0: [1.0, 0.0], 1: [0.0, 1.0], 2: [0.0, 1.0], 3: [0.0, 1.0]}
+LIGHT_ENCODING = {0: [1.0, 0.0], 1: [1.0, 0.0], 2: [1.0, 1.0], 3: [0.0, 1.0], 4: [0.0, 1.0], 5: [0.0, 1.0],
+                  6: [0.0, 1.0], 7: [0.0, 1.0], 8: [0.0, 1.0], 9: [0.0, 1.0]}
 REF_ENCODING = {0: [1.0, 0.0, 0.0], 1: [0.0, 1.0, 0.0], 2: [0.0, 0.0, 1.0]}
-REF_NUM = {'left': 3, 'right': 3, 'straight': 3}
+REF_NUM = {'left': 3, 'right': 3, 'straight': 2}
 SUMOCFG_DIR = os.path.dirname(__file__) + "/sumo_files/cross.sumocfg"
 VEHICLE_MODE_DICT = dict(left=OrderedDict(dl=2, du=2, ud=2, ul=2),
                          straight=OrderedDict(dl=2, du=2, ru=2, ur=2),
                          right=OrderedDict(dr=2, du=2, ur=2, lr=2))
+BIKE_MODE_DICT = dict(left=OrderedDict(ud_b=4),
+                      straight=OrderedDict(du_b=4),
+                      right=OrderedDict(du_b=2, lr_b=2))  # 2 0
+PERSON_MODE_DICT = dict(left=OrderedDict(c3=4),
+                        straight=OrderedDict(c2=4),  # 0
+                        right=OrderedDict(c1=4, c2=0))
 
 
 def dict2flat(inp):
@@ -60,20 +121,15 @@ def dict2num(inp):
     return out
 
 
-VEH_NUM = dict(left=dict2num(VEHICLE_MODE_DICT['left']),
-               straight=dict2num(VEHICLE_MODE_DICT['straight']),
-               right=dict2num(VEHICLE_MODE_DICT['right']))
-
 VEHICLE_MODE_LIST = dict(left=dict2flat(VEHICLE_MODE_DICT['left']),
                          straight=dict2flat(VEHICLE_MODE_DICT['straight']),
                          right=dict2flat(VEHICLE_MODE_DICT['right']))
-# Things related to lane number: static path generation (which further influences obs initialization),
-# observation formulation (especially other vehicles selection and number), rewards formulation
-# other vehicle prediction
-# feasibility judgement
-# the sumo files, obviously,
-# the render func,
-# it is hard to unify them using one set of code, better be a case-by-case setting.
+BIKE_MODE_LIST = dict(left=dict2flat(BIKE_MODE_DICT['left']),
+                      straight=dict2flat(BIKE_MODE_DICT['straight']),
+                      right=dict2flat(BIKE_MODE_DICT['right']))
+PERSON_MODE_LIST = dict(left=dict2flat(PERSON_MODE_DICT['left']),
+                        straight=dict2flat(PERSON_MODE_DICT['straight']),
+                        right=dict2flat(PERSON_MODE_DICT['right']))
 
 ROUTE2MODE = {('1o', '2i'): 'dr', ('1o', '3i'): 'du', ('1o', '4i'): 'dl',
               ('2o', '1i'): 'rd', ('2o', '3i'): 'ru', ('2o', '4i'): 'rl',
@@ -83,7 +139,9 @@ ROUTE2MODE = {('1o', '2i'): 'dr', ('1o', '3i'): 'du', ('1o', '4i'): 'dl',
 MODE2TASK = {'dr': 'right', 'du': 'straight', 'dl': 'left',
              'rd': 'left', 'ru': 'right', 'rl': 'straight',
              'ud': 'straight', 'ur': 'left', 'ul': 'right',
-             'ld': 'right', 'lr': 'straight', 'lu': 'left'}
+             'ld': 'right', 'lr': 'straight', 'lu': 'left',
+             'ud_b': 'straight', 'du_b': 'straight', 'lr_b': 'straight',
+             'c1': 'straight', 'c2': 'straight', 'c3': 'straight'}
 
 TASK2ROUTEID = {'left': 'dl', 'straight': 'du', 'right': 'dr'}
 
@@ -95,25 +153,25 @@ MODE2ROUTE = {'dr': ('1o', '2i'), 'du': ('1o', '3i'), 'dl': ('1o', '4i'),
 
 def judge_feasible(orig_x, orig_y, task):  # map dependant
     def is_in_straight_before1(orig_x, orig_y):
-        return 0 < orig_x < Para.LANE_WIDTH and orig_y <= -Para.CROSSROAD_SIZE / 2
+        return Para.OFFSET_D < orig_x < Para.LANE_WIDTH_1 + Para.OFFSET_D and orig_y <= -Para.CROSSROAD_SIZE_LON / 2
 
     def is_in_straight_before2(orig_x, orig_y):
-        return Para.LANE_WIDTH < orig_x < Para.LANE_WIDTH * 2 and orig_y <= -Para.CROSSROAD_SIZE / 2
+        return Para.LANE_WIDTH_1 + Para.OFFSET_D < orig_x < Para.LANE_WIDTH_1 * 3 + Para.OFFSET_D and orig_y <= -Para.CROSSROAD_SIZE_LON / 2
 
     def is_in_straight_before3(orig_x, orig_y):
-        return Para.LANE_WIDTH * 2 < orig_x < Para.LANE_WIDTH * 3 and orig_y <= -Para.CROSSROAD_SIZE / 2
+        return Para.LANE_WIDTH_1 * 3 + Para.OFFSET_D < orig_x < Para.LANE_WIDTH_1 * 4 + Para.OFFSET_D and orig_y <= -Para.CROSSROAD_SIZE_LON / 2
 
     def is_in_straight_after(orig_x, orig_y):
-        return 0 < orig_x < Para.LANE_WIDTH * Para.LANE_NUMBER and orig_y >= Para.CROSSROAD_SIZE / 2
+        return Para.OFFSET_U < orig_x < Para.OFFSET_U + Para.LANE_WIDTH_1 * 2 and orig_y >= Para.CROSSROAD_SIZE_LON / 2
 
     def is_in_left(orig_x, orig_y):
-        return 0 < orig_y < Para.LANE_WIDTH * Para.LANE_NUMBER and orig_x < -Para.CROSSROAD_SIZE / 2
+        return Para.OFFSET_L < orig_y < Para.OFFSET_L + Para.LANE_WIDTH_1 * 3 and orig_x < -Para.CROSSROAD_SIZE_LAT / 2
 
     def is_in_right(orig_x, orig_y):
-        return -Para.LANE_WIDTH * Para.LANE_NUMBER < orig_y < 0 and orig_x > Para.CROSSROAD_SIZE / 2
+        return Para.OFFSET_R - Para.LANE_WIDTH_1 * 3 < orig_y < Para.OFFSET_R and orig_x > Para.CROSSROAD_SIZE_LAT / 2
 
     def is_in_middle(orig_x, orig_y):
-        return True if -Para.CROSSROAD_SIZE / 2 < orig_y < Para.CROSSROAD_SIZE / 2 and -Para.CROSSROAD_SIZE / 2 < orig_x < Para.CROSSROAD_SIZE / 2 else False
+        return True if -Para.CROSSROAD_SIZE_LON / 2 < orig_y < Para.CROSSROAD_SIZE_LON / 2 and -Para.CROSSROAD_SIZE_LAT / 2 < orig_x < Para.CROSSROAD_SIZE_LAT / 2 else False
 
     if task == 'left':
         return True if is_in_straight_before1(orig_x, orig_y) or is_in_left(orig_x, orig_y) \
@@ -128,13 +186,13 @@ def judge_feasible(orig_x, orig_y, task):  # map dependant
 
 
 def shift_coordination(orig_x, orig_y, coordi_shift_x, coordi_shift_y):
-    '''
+    """
     :param orig_x: original x
     :param orig_y: original y
     :param coordi_shift_x: coordi_shift_x along x axis
     :param coordi_shift_y: coordi_shift_y along y axis
     :return: shifted_x, shifted_y
-    '''
+    """
     shifted_x = orig_x - coordi_shift_x
     shifted_y = orig_y - coordi_shift_y
     return shifted_x, shifted_y
@@ -164,13 +222,14 @@ def rotate_coordination(orig_x, orig_y, orig_d, coordi_rotate_d):
         transformed_d = transformed_d
     return transformed_x, transformed_y, transformed_d
 
+
 def rotate_coordination_vec(orig_x, orig_y, orig_d, coordi_rotate_d):
     coordi_rotate_d_in_rad = coordi_rotate_d * np.pi / 180
     transformed_x = orig_x * np.cos(coordi_rotate_d_in_rad) + orig_y * np.sin(coordi_rotate_d_in_rad)
     transformed_y = -orig_x * np.sin(coordi_rotate_d_in_rad) + orig_y * np.cos(coordi_rotate_d_in_rad)
     transformed_d = orig_d - coordi_rotate_d
-    transformed_d = np.where(transformed_d>180, transformed_d - 360, transformed_d)
-    transformed_d = np.where(transformed_d<=-180, transformed_d + 360, transformed_d)
+    transformed_d = np.where(transformed_d > 180, transformed_d - 360, transformed_d)
+    transformed_d = np.where(transformed_d <= -180, transformed_d + 360, transformed_d)
     return transformed_x, transformed_y, transformed_d
 
 
@@ -217,7 +276,8 @@ def cal_info_in_transform_coordination(filtered_objects, x, y, rotate_d):  # rot
 
 
 def cal_ego_info_in_transform_coordination(ego_dynamics, x, y, rotate_d):
-    orig_x, orig_y, orig_a, corner_points = ego_dynamics['x'], ego_dynamics['y'], ego_dynamics['phi'], ego_dynamics['Corner_point']
+    orig_x, orig_y, orig_a, corner_points = ego_dynamics['x'], ego_dynamics['y'], ego_dynamics['phi'], ego_dynamics[
+        'Corner_point']
     shifted_x, shifted_y = shift_coordination(orig_x, orig_y, x, y)
     trans_x, trans_y, trans_a = rotate_coordination(shifted_x, shifted_y, orig_a, rotate_d)
     trans_corner_points = []
@@ -233,22 +293,33 @@ def cal_ego_info_in_transform_coordination(ego_dynamics, x, y, rotate_d):
 
 
 def xy2_edgeID_lane(x, y):
-    if y < -Para.CROSSROAD_SIZE/2:
+    # x, y = _coordination_sumo2simu(x, y)
+    if y < -Para.CROSSROAD_SIZE_LON / 2:
         edgeID = '1o'
-        lane = int((Para.LANE_NUMBER-1)-int(x/Para.LANE_WIDTH))
-    elif x < -Para.CROSSROAD_SIZE/2:
+        lane = int((Para.LANE_NUMBER_LON_IN_D + 1) - int((x - Para.OFFSET_D) / Para.LANE_WIDTH_1))
+    elif x < -Para.CROSSROAD_SIZE_LAT / 2:
         edgeID = '4i'
-        lane = int((Para.LANE_NUMBER-1)-int(y/Para.LANE_WIDTH))
-    elif y > Para.CROSSROAD_SIZE/2:
+        lane = int((Para.LANE_NUMBER_LAT_OUT + 1) - int((y - Para.OFFSET_L) / Para.LANE_WIDTH_1))
+    elif y > Para.CROSSROAD_SIZE_LON / 2:
         edgeID = '3i'
-        lane = int((Para.LANE_NUMBER-1)-int(x/Para.LANE_WIDTH))
-    elif x > Para.CROSSROAD_SIZE/2:
+        lane = int((Para.LANE_NUMBER_LON_OUT + 1) - int((x - Para.OFFSET_U) / Para.LANE_WIDTH_1))
+    elif x > Para.CROSSROAD_SIZE_LAT / 2:
         edgeID = '2i'
-        lane = int((Para.LANE_NUMBER-1)-int(-y/Para.LANE_WIDTH))
+        lane = int((Para.LANE_NUMBER_LAT_OUT + 1) - int(-(y - Para.OFFSET_R) / Para.LANE_WIDTH_1))
     else:
         edgeID = '0'
         lane = 0
     return edgeID, lane
+
+
+def _coordination_sumo2simu(orig_x, orig_y):
+    shifted_x, shifted_y = shift_coordination(orig_x, orig_y, 5976.395, 9450.705)
+    return shifted_x, shifted_y
+
+
+def _coordination_simu2sumo(orig_x, orig_y):
+    shifted_x, shifted_y = shift_coordination(orig_x, orig_y, -5976.395, -9450.705)
+    return shifted_x, shifted_y
 
 
 def _convert_car_coord_to_sumo_coord(x_in_car_coord, y_in_car_coord, a_in_car_coord, car_length):  # a in deg
@@ -273,5 +344,23 @@ def deal_with_phi(phi):
     return phi
 
 
+def test_action_store():
+    action_store = ActionStore()
+    action_store.put(np.array([1., 0.], dtype=np.float32))
+
+    print(len(action_store))
+    print(action_store)
+    print(action_store[0])
+    print(type(action_store[1]))
+
+    action_store.reset()
+    print(action_store)
+    print(action_store[0])
+    print(action_store[1])
+    action_store.put(np.array([1., 0.], dtype=np.float32))
+    action_store.put(np.array([1., 0.], dtype=np.float32))
+    print(action_store)
+
+
 if __name__ == '__main__':
-    pass
+    test_action_store()
