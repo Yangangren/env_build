@@ -123,7 +123,6 @@ class CrossroadEnd2endMixPI(gym.Env):
         self.training_task = choice(['left', 'straight', 'right'])
         self.task_encoding = TASK_ENCODING[self.training_task]
         self.light_encoding = LIGHT_ENCODING[self.light_phase]
-        # todo
         # for straight path ------ random choice
         Para.START_X = choice([Para.OFFSET_D + Para.LANE_WIDTH_1 * 1.5, Para.OFFSET_D + Para.LANE_WIDTH_1 * 2.5])
         self.ref_path = ReferencePath(self.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.light_phase])

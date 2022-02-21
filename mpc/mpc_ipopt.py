@@ -453,6 +453,7 @@ class HierarchicalMpc(object):
             MPC_path_index = np.argmin(MPC_traj_return_value)                           # todo: minimize
             MPC_action = action_total[MPC_path_index]
 
+        self.env.set_traj(self.path_list[MPC_path_index])
         self.obs, rew, done, _ = self.env.step(MPC_action)
         self.render(MPC_traj_return_value, MPC_path_index, method='MPC')
         state = state_total[MPC_path_index]
@@ -872,7 +873,6 @@ class HierarchicalMpc(object):
 
 
         # plot future data
-        # todo 参考路径不对应 估计是初始化多次
         # obs_abso = self.convert_vehs_to_abso(self.obs)
         tracking_info = self.obs[
                         self.env.ego_info_dim:self.env.ego_info_dim + Para.TRACK_ENCODING_DIM * (self.num_future_data + 1)]
@@ -979,7 +979,7 @@ def main():
     hier_decision = HierarchicalMpc(logdir)
     for i in range(15):
         done = 0
-        for _ in range(3):
+        for _ in range(100):
             done = hier_decision.step()
             if done:
                 break

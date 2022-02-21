@@ -12,7 +12,7 @@ import json
 import tensorflow as tf
 import numpy as np
 
-from endtoend import CrossroadEnd2endAllRela
+from endtoend import CrossroadEnd2endMixPI
 from utils.policy import Policy4Toyota
 from utils.preprocessor import Preprocessor
 
@@ -25,7 +25,7 @@ class LoadPolicy(object):
         for key, val in params.items():
             parser.add_argument("-" + key, default=val)
         self.args = parser.parse_args()
-        env = CrossroadEnd2endAllRela(future_point_num=self.args.num_rollout_list_for_policy_update[0])
+        env = CrossroadEnd2endMixPI(future_point_num=self.args.num_rollout_list_for_policy_update[0])
         self.policy = Policy4Toyota(self.args)
         self.policy.load_weights(model_dir, iter)
         self.preprocessor = Preprocessor(self.args.obs_scale, self.args.reward_scale, self.args.reward_shift,
@@ -35,7 +35,7 @@ class LoadPolicy(object):
         self.run_batch(init_obs[np.newaxis, :], mask[np.newaxis, :])
         self.obj_value_batch(init_obs[np.newaxis, :], mask[np.newaxis, :])
 
-    @tf.function
+    # @tf.function
     def run_batch(self, obses, masks):
         obses_transformed = self.preprocessor.tf_convert_ego_coordinate(obses)
         processed_obses = self.preprocessor.process_obs(obses_transformed)
