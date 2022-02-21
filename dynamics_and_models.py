@@ -82,9 +82,9 @@ class VehicleDynamics(object):
 
 
 class EnvironmentModel(object):  # all tensors
-    def __init__(self, future_point_num=25, mode='training'):
+    def __init__(self, mode='training'):
         self.mode = mode
-        self.future_point_num = future_point_num
+        # self.future_point_num = 25
         self.vehicle_dynamics = VehicleDynamics()
         self.base_frequency = 10.
         self.obses = None
@@ -94,18 +94,16 @@ class EnvironmentModel(object):  # all tensors
         self.bike_num = Para.MAX_BIKE_NUM
         self.person_num = Para.MAX_PERSON_NUM
         self.per_other_info_dim = Para.PER_OTHER_INFO_DIM
-        self.per_path_info_dim = Para.PER_PATH_INFO_DIM
 
         self.ego_info_dim = Para.EGO_ENCODING_DIM
         self.track_info_dim = Para.TRACK_ENCODING_DIM
-        self.future_points_dim = self.future_point_num * self.per_path_info_dim
         self.light_info_dim = Para.LIGHT_ENCODING_DIM
         self.task_info_dim = Para.TASK_ENCODING_DIM
         self.ref_info_dim = Para.REF_ENCODING_DIM
         self.his_act_info_dim = Para.HIS_ACT_ENCODING_DIM
 
         self.other_number = sum([self.veh_num, self.bike_num, self.person_num])
-        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_points_dim, self.light_info_dim,
+        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.light_info_dim,
                                     self.task_info_dim, self.ref_info_dim, self.his_act_info_dim])
         # self.steer_store = []
         # self.ref = ReferencePath(task='left', green_or_red='green')
@@ -117,7 +115,6 @@ class EnvironmentModel(object):  # all tensors
         self.obses = obses
         self.actions = None
         self.reward_info = None
-        # todo check
         self.future_n_points = future_n_points
         self.path_len = self.future_n_points.shape[-1]
 
@@ -145,7 +142,7 @@ class EnvironmentModel(object):  # all tensors
 
     def compute_rewards(self, obses, actions, untransformed_action, step=0):
         obses = self._convert_to_abso(obses)
-        obses_ego, obses_track, obses_future_point, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
+        obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
         obses_bike, obses_person, obses_veh = self._split_other(obses_other)
 
         with tf.name_scope('compute_reward') as scope:
@@ -260,8 +257,8 @@ class EnvironmentModel(object):  # all tensors
                     tf.sqrt(tf.square(ego_point[0] - -Para.CROSSROAD_SIZE_LAT / 2) + tf.square(ego_point[1] - Para.OFFSET_L + 1.)), tf.zeros_like(veh_infos[:, 0]))
 
             rewards = 0.01 * devi_v + 0.8 * devi_lon + 0.8 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
-                      5 * punish_steer0 + punish_a_x0   # for MPC
-                    # 5 * punish_steer0 + 0.4 * punish_steer1 + 5e-2 * punish_steer2 + punish_a_x0 + punish_a_x1 + 0.05 * punish_a_x2
+                      5 * punish_steer0 + punish_a_x0   # for MPC todo
+                    # 5 * punish_steer0 + 0.4 * punish_steer1 + 0.0 * punish_steer2 + punish_a_x0 + punish_a_x1 + 0.0 * punish_a_x2
 
             rewards4value = 0.01 * devi_v + 0.8 * devi_lon + 0.8 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
                             5 * punish_steer0 + punish_a_x0
@@ -308,48 +305,31 @@ class EnvironmentModel(object):  # all tensors
 
     def compute_next_obses(self, obses, actions, untransformed_actions):
         obses = self._convert_to_abso(obses)
-        obses_ego, obses_track, obses_future_point, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
+        obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
         obses_other = tf.stop_gradient(obses_other)
         next_obses_ego = self._ego_predict(obses_ego, actions)
         next_obses_track = self._compute_next_track_info_vectorized(next_obses_ego)
-        # todo check
-        current_index = self._update_future_point(next_obses_ego)
-        next_obses_future_point = self._future_n_data(current_index, self.future_point_num)
         next_obses_his_ac = tf.concat([obses_his_ac[:, -2:], untransformed_actions], axis=-1)
         next_obses_other = self._other_predict(obses_other)
-        next_obses = tf.concat([next_obses_ego, next_obses_track, next_obses_future_point, obses_light, obses_task, obses_ref, next_obses_his_ac, next_obses_other],
+        next_obses = tf.concat([next_obses_ego, next_obses_track, obses_light, obses_task, obses_ref, next_obses_his_ac, next_obses_other],
                                axis=-1)
         next_obses = self._convert_to_rela(next_obses)
         return next_obses
 
-    def _compute_next_track_info(self, next_ego_infos, ref_points):
-        ego_vxs, ego_vys, ego_rs, ego_xs, ego_ys, ego_phis = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
-        ref_xs, ref_ys, ref_phis, ref_vs = [ref_points[:, i] for i in range(4)]
-        ref_phis_rad = ref_phis * np.pi / 180
-        a, b, c = (ref_xs, ref_ys), (ref_xs + tf.cos(ref_phis_rad), ref_ys + tf.sin(ref_phis_rad)), (ego_xs, ego_ys)
-        dist_a2c = tf.sqrt(tf.square(ego_xs - ref_xs) + tf.square(ego_ys - ref_ys))
-        dist_c2line = tf.abs(tf.sin(ref_phis_rad) * ego_xs - tf.cos(ref_phis_rad) * ego_ys
-                             - tf.sin(ref_phis_rad) * ref_xs + tf.cos(ref_phis_rad) * ref_ys)
-        dist_longdi = tf.sqrt(tf.abs(tf.square(dist_a2c) - tf.square(dist_c2line)))
-        signed_dist_lateral = tf.where(self._judge_is_left(a, b, c), dist_c2line, -dist_c2line)
-        signed_dist_longi = tf.where(self._judge_is_ahead(a, b, c), dist_longdi, -dist_longdi)
-        delta_phi = deal_with_phi_diff(ego_phis - ref_phis)
-        delta_vs = ego_vxs - ref_vs
-        return tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
-
-    def _update_future_point(self, next_ego_infos):
-        _, _, _, ego_xs, ego_ys, _ = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
-        indexes, _ = self._find_closest_point_batch(ego_xs, ego_ys, self.future_n_points)
-        future_data = self._future_n_data(indexes, self.future_point_num)
-        return future_data
+    def _find_closest_point_batch(self, xs, ys, paths):
+        xs_tile = tf.tile(tf.reshape(xs, (-1, 1)), [1, self.path_len])
+        ys_tile = tf.tile(tf.reshape(ys, (-1, 1)), [1, self.path_len])
+        pathx_tile = paths[:, 0, :]
+        pathy_tile = paths[:, 1, :]
+        dist_array = tf.square(xs_tile - pathx_tile) + tf.square(ys_tile - pathy_tile)
+        indexs = tf.argmin(dist_array, 1)
+        ref_points = tf.gather(paths, indices=indexs, axis=-1, batch_dims=1)
+        return indexs, ref_points
 
     def _compute_next_track_info_vectorized(self, next_ego_infos):
         ego_vxs, ego_vys, ego_rs, ego_xs, ego_ys, ego_phis = [next_ego_infos[:, i] for i in range(self.ego_info_dim)]
 
-        # find close point
         indexes, ref_points = self._find_closest_point_batch(ego_xs, ego_ys, self.future_n_points)
-        # find future point
-        future_data = self._future_n_data(indexes, self.future_point_num)
 
         ref_xs, ref_ys, ref_phis, ref_vs = [ref_points[:, i] for i in range(4)]
         ref_phis_rad = ref_phis * np.pi / 180
@@ -363,45 +343,10 @@ class EnvironmentModel(object):  # all tensors
 
         delta_phi = deal_with_phi_diff(ego_phis - ref_phis)
         delta_vs = ego_vxs - ref_vs
-        track_error = tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
-        return tf.concat([track_error, future_data], axis=1)
-
-    def _find_closest_point_batch(self, xs, ys, paths):
-        xs_tile = tf.tile(tf.reshape(xs, (-1, 1)), [1, self.path_len])
-        ys_tile = tf.tile(tf.reshape(ys, (-1, 1)), [1, self.path_len])
-        pathx_tile = paths[:, 0, :]
-        pathy_tile = paths[:, 1, :]
-        dist_array = tf.square(xs_tile - pathx_tile) + tf.square(ys_tile - pathy_tile)
-        indexs = tf.argmin(dist_array, 1)
-        ref_points = tf.gather(paths, indices=indexs, axis=-1, batch_dims=1)
-        return indexs, ref_points
-
-    def _future_n_data(self, current_indexs, n):
-        future_data_list = []
-        current_indexs = tf.cast(current_indexs, tf.int32)
-        for _ in range(n):
-            current_indexs += 1
-            current_indexs = tf.where(current_indexs >= self.path_len - 1, self.path_len - 1, current_indexs)
-            ref_points = tf.gather(self.batch_path, indices=current_indexs, axis=-1, batch_dims=1)
-            future_data_list.append(ref_points)
-        return tf.concat(future_data_list, axis=1)
-
-    def _judge_is_left(self, a, b, c):
-        x1, y1 = a
-        x2, y2 = b
-        x3, y3 = c
-        featured = (x1 - x3) * (y2 - y3) - (y1 - y3) * (x2 - x3)
-        return featured > 0.
-
-    def _judge_is_ahead(self, a, b, c):
-        x1, y1 = a
-        x2, y2 = b
-        x3, y3 = c
-        featured = (x2 - x1) * (x3 - x1) + (y2 - y1) * (y3 - y1)
-        return featured >= 0.
+        return tf.stack([signed_dist_longi, signed_dist_lateral, delta_phi, delta_vs], axis=-1)
 
     def _convert_to_rela(self, obses):
-        obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
+        obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(obses)
         obses_other_reshape = self._reshape_other(obses_other)
         ego_x, ego_y = obses_ego[:, 3], obses_ego[:, 4]
         ego = tf.concat([tf.stack([ego_x, ego_y], axis=-1), tf.zeros(shape=(ego_x.shape[0], self.per_other_info_dim - 2))],
@@ -409,10 +354,10 @@ class EnvironmentModel(object):  # all tensors
         ego = tf.expand_dims(ego, 1)
         rela = obses_other_reshape - ego
         rela_obses_other = self._reshape_other(rela, reverse=True)
-        return tf.concat([obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, rela_obses_other], axis=-1)
+        return tf.concat([obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, rela_obses_other], axis=-1)
 
     def _convert_to_abso(self, rela_obses):
-        obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(rela_obses)
+        obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, obses_other = self._split_all(rela_obses)
         obses_other_reshape = self._reshape_other(obses_other)
         ego_x, ego_y = obses_ego[:, 3], obses_ego[:, 4]
         ego = tf.concat([tf.stack([ego_x, ego_y], axis=-1), tf.zeros(shape=(ego_x.shape[0], self.per_other_info_dim - 2))],
@@ -421,7 +366,7 @@ class EnvironmentModel(object):  # all tensors
         abso = obses_other_reshape + ego
         abso_obses_other = self._reshape_other(abso, reverse=True)
 
-        return tf.concat([obses_ego, obses_track, obses_future_points, obses_light, obses_task, obses_ref, obses_his_ac, abso_obses_other], axis=-1)
+        return tf.concat([obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, abso_obses_other], axis=-1)
 
     def _ego_predict(self, ego_infos, actions):
         ego_next_infos, _ = self.vehicle_dynamics.prediction(ego_infos[:, :6], actions, self.base_frequency)
@@ -455,19 +400,17 @@ class EnvironmentModel(object):  # all tensors
     def _split_all(self, obses):
         obses_ego = obses[:, :self.ego_info_dim]
         obses_track = obses[:, self.ego_info_dim:self.ego_info_dim + self.track_info_dim]
-        obses_future_point = obses[:, self.ego_info_dim + self.track_info_dim:
-                                      self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim]
-        obses_light = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim:
-                               self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim]
-        obses_task = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim:
-                              self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim]
-        obses_ref = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim:
-                             self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim]
-        obses_his_ac = obses[:, self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim:
+        obses_light = obses[:, self.ego_info_dim + self.track_info_dim:
+                               self.ego_info_dim + self.track_info_dim + self.light_info_dim]
+        obses_task = obses[:, self.ego_info_dim + self.track_info_dim + self.light_info_dim:
+                              self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim]
+        obses_ref = obses[:, self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim:
+                             self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim]
+        obses_his_ac = obses[:, self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim:
                                 self.other_start_dim]
         obses_other = obses[:, self.other_start_dim:]
 
-        return obses_ego, obses_track, obses_future_point, obses_light, obses_task, obses_ref, obses_his_ac, obses_other
+        return obses_ego, obses_track, obses_light, obses_task, obses_ref, obses_his_ac, obses_other
 
     def _split_other(self, obses_other):
         obses_bike = obses_other[:, :self.bike_num * self.per_other_info_dim]
@@ -905,28 +848,6 @@ def deal_with_phi_diff(phi_diff):
     return phi_diff
 
 
-def get_bezier_middle_point(control_point1, control_point4, task=None):
-    weight_dict = {'left': 1/3, 'straight': 3/5, 'right': 1/3}
-    x1, y1, phi1 = control_point1
-    x4, y4, phi4 = control_point4
-    phi1 = phi1 * pi / 180
-    phi4 = phi4 * pi / 180
-
-    if task is None:
-        k = 1 / 2
-    else:
-        k = weight_dict[task]
-    x2 = x1*((cos(phi1)**2) * k + sin(phi1)**2) + y1*(-sin(phi1)*cos(phi1) * (1-k)) + x4*((cos(phi1)**2) * (1-k)) + y4*(sin(phi1)*cos(phi1) * (1-k))
-    y2 = x1*(-sin(phi1)*cos(phi1) * (1-k)) + y1*(cos(phi1)**2 + (sin(phi1)**2) * k) + x4*(sin(phi1)*cos(phi1) * (1-k)) + y4*((sin(phi1)**2) * (1-k))
-
-    x3 = x1*(cos(phi4)**2) * (1-k) + y1*(sin(phi4)*cos(phi4) * (1-k)) + x4*((cos(phi4)**2)* k + sin(phi4)**2) + y4*(-sin(phi4)*cos(phi4) * (1-k))
-    y3 = x1*(sin(phi4)*cos(phi4) * (1-k)) + y1*((sin(phi4)**2) * (1-k)) + x4*(-sin(phi4)*cos(phi4)*(1-k)) + y4*(cos(phi4)**2 + (sin(phi4)**2) * k)
-
-    control_point2 = x2, y2
-    control_point3 = x3, y3
-    return control_point2, control_point3
-
-
 class ReferencePath(object):
     def __init__(self, task, green_or_red='green'):
         self.task = task
@@ -950,8 +871,7 @@ class ReferencePath(object):
 
     def get_future_n_point(self, ego_x, ego_y, n, dt=0.1):  # not include the current closest point
         idx, _ = self._find_closest_point(ego_x, ego_y)
-        # future_n_x, future_n_y, future_n_phi, future_n_v = [], [], [], []
-        future_n_point = []
+        future_n_x, future_n_y, future_n_phi, future_n_v = [], [], [], []
         for _ in range(n):
             x, y, phi, v = self.idx2point(idx)
             ds = v * dt
@@ -964,15 +884,13 @@ class ReferencePath(object):
                 x, y = next_x, next_y
                 idx += 1
             x, y, phi, v = self.idx2point(idx)
-        #     future_n_x.append(x)
-        #     future_n_y.append(y)
-        #     future_n_phi.append(phi)
-        #     future_n_v.append(v)
-        # future_n_point = np.stack([np.array(future_n_x, dtype=np.float32), np.array(future_n_y, dtype=np.float32),
-        #                            np.array(future_n_phi, dtype=np.float32), np.array(future_n_v, dtype=np.float32)],
-        #                           axis=0)
-            future_n_point.extend([x, y, phi, v])
-        future_n_point = np.array(future_n_point)
+            future_n_x.append(x)
+            future_n_y.append(y)
+            future_n_phi.append(phi)
+            future_n_v.append(v)
+        future_n_point = np.stack([np.array(future_n_x, dtype=np.float32), np.array(future_n_y, dtype=np.float32),
+                                   np.array(future_n_phi, dtype=np.float32), np.array(future_n_v, dtype=np.float32)],
+                                  axis=0)
         return future_n_point
 
     def tracking_error_vector(self, ego_x, ego_y, ego_phi, ego_v):

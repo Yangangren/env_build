@@ -52,7 +52,6 @@ class CrossroadEnd2endMixPI(gym.Env):
                  future_point_num=25,
                  **kwargs):
         self.mode = mode
-        self.future_point_num = future_point_num
         self.dynamics = VehicleDynamics()
         self.interested_other = None
         self.detected_vehicles = None
@@ -78,15 +77,13 @@ class CrossroadEnd2endMixPI(gym.Env):
         self.done_type = 'not_done_yet'
         self.reward_info = None
         self.per_other_info_dim = Para.PER_OTHER_INFO_DIM
-        self.per_path_info_dim = Para.PER_PATH_INFO_DIM
         self.ego_info_dim = Para.EGO_ENCODING_DIM
         self.track_info_dim = Para.TRACK_ENCODING_DIM
-        self.future_point_info_dim = self.future_point_num * self.per_path_info_dim
         self.light_info_dim = Para.LIGHT_ENCODING_DIM
         self.task_info_dim = Para.TASK_ENCODING_DIM
         self.ref_info_dim = Para.REF_ENCODING_DIM
         self.his_act_info_dim = Para.HIS_ACT_ENCODING_DIM
-        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_point_info_dim,
+        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim,
                                     self.light_info_dim, self.task_info_dim, self.ref_info_dim, self.his_act_info_dim])
         self.veh_num = Para.MAX_VEH_NUM
         self.bike_num = Para.MAX_BIKE_NUM
@@ -123,13 +120,13 @@ class CrossroadEnd2endMixPI(gym.Env):
         self.training_task = choice(['left', 'straight', 'right'])
         self.task_encoding = TASK_ENCODING[self.training_task]
         self.light_encoding = LIGHT_ENCODING[self.light_phase]
-        # for straight path ------ random choice
+        # for straight path ---- random choice
         Para.START_X = choice([Para.OFFSET_D + Para.LANE_WIDTH_1 * 1.5, Para.OFFSET_D + Para.LANE_WIDTH_1 * 2.5])
         self.ref_path = ReferencePath(self.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.light_phase])
         self.veh_mode_dict = VEHICLE_MODE_DICT[self.training_task]
         self.bicycle_mode_dict = BIKE_MODE_DICT[self.training_task]
         self.person_mode_dict = PERSON_MODE_DICT[self.training_task]
-        self.env_model = EnvironmentModel(future_point_num=self.future_point_num)
+        self.env_model = EnvironmentModel()
         self.action_store.reset()
         self.init_state = self._reset_init_state(LIGHT_PHASE_TO_GREEN_OR_RED[self.light_phase])
         self.traffic.init_traffic(self.init_state, self.training_task)
@@ -216,10 +213,6 @@ class CrossroadEnd2endMixPI(gym.Env):
         self.all_other = self.traffic.n_ego_vehicles['ego']  # coordination 2
         self.ego_dynamics = ego_dynamics  # coordination 2
         self.light_phase = self.traffic.v_light
-
-        # all_vehicles
-        # dict(x=x, y=y, v=v, phi=a, l=length,
-        #      w=width, route=route)
 
         all_info = dict(all_other=self.all_other,
                         ego_dynamics=self.ego_dynamics,
@@ -319,7 +312,7 @@ class CrossroadEnd2endMixPI(gym.Env):
         track_vector = self.ref_path.tracking_error_vector_vectorized(ego_vector[3], ego_vector[4], ego_vector[5], ego_vector[0]) # 3 for x; 4 foy y
         future_n_point = self.ref_path.get_future_n_point(ego_vector[3], ego_vector[4], self.future_point_num)
         self.light_encoding = LIGHT_ENCODING[self.light_phase]
-        vector = np.concatenate((ego_vector, track_vector, future_n_point, self.light_encoding, self.task_encoding,
+        vector = np.concatenate((ego_vector, track_vector, self.light_encoding, self.task_encoding,
                                  self.ref_path.ref_encoding, self.action_store[0], self.action_store[1], other_vector), axis=0)
         vector = vector.astype(np.float32)
         vector = self._convert_to_rela(vector)
@@ -327,42 +320,40 @@ class CrossroadEnd2endMixPI(gym.Env):
         return vector, other_mask_vector, future_n_point
 
     def _convert_to_rela(self, obs_abso):
-        obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(obs_abso)
+        obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(obs_abso)
         obs_other_reshape = self._reshape_other(obs_other)
         ego_x, ego_y = obs_ego[3], obs_ego[4]
         ego = np.array(([ego_x, ego_y] + [0.] * (self.per_other_info_dim - 2)), dtype=np.float32)
         ego = ego[np.newaxis, :]
         rela = obs_other_reshape - ego
         rela_obs_other = self._reshape_other(rela, reverse=True)
-        return np.concatenate([obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_his_ac, rela_obs_other], axis=0)
+        return np.concatenate([obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, rela_obs_other], axis=0)
 
     def _convert_to_abso(self, obs_rela):
-        obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(obs_rela)
+        obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(obs_rela)
         obs_other_reshape = self._reshape_other(obs_other)
         ego_x, ego_y = obs_ego[3], obs_ego[4]
         ego = np.array(([ego_x, ego_y] + [0.] * (self.per_other_info_dim - 2)), dtype=np.float32)
         ego = ego[np.newaxis, :]
         abso = obs_other_reshape + ego
         abso_obs_other = self._reshape_other(abso, reverse=True)
-        return np.concatenate([obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_his_ac, abso_obs_other])
+        return np.concatenate([obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, abso_obs_other])
 
     def _split_all(self, obs):
         obs_ego = obs[:self.ego_info_dim]
         obs_track = obs[self.ego_info_dim:
                         self.ego_info_dim + self.track_info_dim]
-        obs_future_point = obs[self.ego_info_dim + self.track_info_dim:
-                               self.ego_info_dim + self.track_info_dim + self.future_point_info_dim]
-        obs_light = obs[self.ego_info_dim + self.track_info_dim + self.future_point_info_dim:
-                        self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim]
-        obs_task = obs[self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim:
-                       self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim + self.task_info_dim]
-        obs_ref = obs[self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim + self.task_info_dim:
-                      self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim]
-        obs_his_ac = obs[self.ego_info_dim + self.track_info_dim + self.future_point_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim:
+        obs_light = obs[self.ego_info_dim + self.track_info_dim:
+                        self.ego_info_dim + self.track_info_dim + self.light_info_dim]
+        obs_task = obs[self.ego_info_dim + self.track_info_dim + self.light_info_dim:
+                       self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim]
+        obs_ref = obs[self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim:
+                      self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim]
+        obs_his_ac = obs[self.ego_info_dim + self.track_info_dim + self.light_info_dim + self.task_info_dim + self.ref_info_dim:
                          self.other_start_dim]
         obs_other = obs[self.other_start_dim:]
 
-        return obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_his_ac, obs_other
+        return obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, obs_other
 
     def _split_other(self, obs_other):
         obs_bike = obs_other[:self.bike_num * self.per_other_info_dim]
@@ -1142,7 +1133,7 @@ class CrossroadEnd2endMixPI(gym.Env):
 
             # plot own car
             abso_obs = self.obs
-            obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(abso_obs)
+            obs_ego, obs_track, obs_light, obs_task, obs_ref, obs_his_ac, obs_other = self._split_all(abso_obs)
             ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi = obs_ego
             devi_longi, devi_lateral, devi_phi, devi_v = obs_track
 

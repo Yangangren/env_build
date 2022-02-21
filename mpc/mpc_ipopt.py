@@ -15,6 +15,7 @@ import casadi
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatch
+import numpy as np
 from matplotlib.transforms import Affine2D
 from matplotlib.collections import PatchCollection
 from casadi import *
@@ -82,28 +83,24 @@ class VehicleDynamics(object):
 
 
 class Dynamics(object):
-    def __init__(self, x_init, num_future_data, task, tau):
+    def __init__(self, x_init, future_n_points, task, tau):
         self.task = task
         self.tau = tau
         self.vd = VehicleDynamics()
         self.bike_num = Para.MAX_BIKE_NUM
         self.person_num = Para.MAX_PERSON_NUM
         self.veh_num = Para.MAX_VEH_NUM
-        self.num_future_data = num_future_data
-        self.participants = x_init[Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + self.num_future_data * Para.PER_PATH_INFO_DIM + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM + Para.HIS_ACT_ENCODING_DIM:]
+        self.num_future_data = 25
+        self.future_n_points = future_n_points
+        self.participants = x_init[Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM + Para.HIS_ACT_ENCODING_DIM:]
         self.bikes = self.participants[:self.bike_num * Para.PER_OTHER_INFO_DIM]
         self.persons = self.participants[self.bike_num * Para.PER_OTHER_INFO_DIM: self.bike_num * Para.PER_OTHER_INFO_DIM + self.person_num * Para.PER_OTHER_INFO_DIM]
         self.vehs = self.participants[self.bike_num * Para.PER_OTHER_INFO_DIM + self.person_num * Para.PER_OTHER_INFO_DIM:]
         self.x_init = x_init
 
     def tracking_error_pred(self, next_ego, next_ref_index):
-        ref_points = self.x_init[Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM: Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + self.num_future_data * Para.PER_PATH_INFO_DIM]
-
-        # todo -----  find the closest ref_point
-        # next_ref_index_, next_ref_point = self.find_closest_ref_point(next_ego[3], next_ego[4], ref_points, k)
-        next_ref_point = ref_points[(next_ref_index - 1) * Para.PER_PATH_INFO_DIM: next_ref_index * Para.PER_PATH_INFO_DIM]
-
         v_x, v_y, r, x, y, phi = next_ego[0], next_ego[1], next_ego[2], next_ego[3], next_ego[4], next_ego[5]
+        next_index, next_ref_point = self.find_closest_ref_point(x, y, self.future_n_points, next_ref_index)
         ref_x, ref_y, ref_phi, ref_v = next_ref_point[0], next_ref_point[1], next_ref_point[2], next_ref_point[3]
         ref_phi_rad = ref_phi * pi / 180
 
@@ -111,25 +108,34 @@ class Dynamics(object):
         vector_ref_phi_ccw_90 = np.array([-np.sin(ref_phi_rad), np.cos(ref_phi_rad)]) # ccw for counterclockwise
         vector_ego2ref = np.array([ref_x - x, ref_y - y])
 
+        # todo
+        # left/right +-???
         delta_x = -1 * dot(vector_ego2ref, vector_ref_phi)
         delta_y = -1 * dot(vector_ego2ref, vector_ref_phi_ccw_90)
-        # delta_x = -1 * (cos(ref_phi_rad) * (x - ref_x) + sin(ref_phi_rad) * (y - ref_y))  # todo check +-
-        # delta_y = -1 * (-sin(ref_phi_rad) * (x - ref_x) + cos(ref_phi_rad) * (y - ref_y))  # todo check +-
+        # delta_x = -1 * (cos(ref_phi_rad) * (x - ref_x) + sin(ref_phi_rad) * (y - ref_y))
+        # delta_y = -1 * (-sin(ref_phi_rad) * (x - ref_x) + cos(ref_phi_rad) * (y - ref_y))
         delta_phi = deal_with_phi_casa(phi - ref_phi)
         delta_v = v_x - ref_v
 
         return [delta_x, delta_y, delta_phi, delta_v]
 
-    def find_closest_ref_point(self, ego_x, ego_y, ref_points, k):
+    def find_closest_ref_point(self, ego_x, ego_y, ref_points, next_ref_index):
         dists = []
         for i in range(self.num_future_data):
-            path_x, path_y = ref_points[i * 4], ref_points[i * 4 + 1]
+            path_x, path_y = ref_points[0][i], ref_points[1][i]
             dis = pow((ego_x - path_x), 2) + pow((ego_y - path_y), 2)
+
             dists.append(dis)
-        ref_index = casadi.mmin(dists)  # todo
-        if ref_index < k:
-            ref_index = k
-        ref_point = ref_points[ref_index]
+        # ref_index = casadi.mmin(dists)  # todo
+        # min_dis = casadi.fmin(dists[0], dists[1], dists[2], dists[3], dists[4])
+        # ref_index = dists.index(min_dis)
+
+        if next_ref_index < 25:
+            ref_index = next_ref_index # todo
+        else:
+            ref_index = 24
+
+        ref_point = [ref_points[0][ref_index], ref_points[1][ref_index], ref_points[2][ref_index], ref_points[3][ref_index]]
         return ref_index, ref_point
 
     def bikes_pred(self):
@@ -261,10 +267,10 @@ class Dynamics(object):
 
 
 class ModelPredictiveControl(object):
-    def __init__(self, horizon, task, num_future_data):
+    def __init__(self, horizon, task, future_n_points):
         self.horizon = horizon
         self.base_frequency = 10.
-        self.num_future_data = num_future_data
+        self.future_n_points = future_n_points
         self.task = task
         self.DYNAMICS_DIM = 14      # ego_info + track_error + his_action
         self.ACTION_DIM = 2
@@ -272,13 +278,13 @@ class ModelPredictiveControl(object):
         self.bike_num = Para.MAX_BIKE_NUM
         self.person_num = Para.MAX_PERSON_NUM
         self.veh_num = Para.MAX_VEH_NUM
-        self.his_action_before = Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + Para.TRACK_ENCODING_DIM * self.num_future_data + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM
+        self.his_action_before = Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM
         self._sol_dic = {'ipopt.print_level': 0,
                          'ipopt.sb': 'yes',
                          'print_time': 0}
 
     def mpc_solver(self, x_init, XO):
-        self.dynamics = Dynamics(x_init, self.num_future_data, self.task, 1 / self.base_frequency)
+        self.dynamics = Dynamics(x_init, self.future_n_points, self.task, 1 / self.base_frequency)
 
         x = SX.sym('x', self.DYNAMICS_DIM)
         u = SX.sym('u', self.ACTION_DIM)
@@ -313,7 +319,7 @@ class ModelPredictiveControl(object):
 
             Fk = F(Xk, Uk)
             Gk = G_f(Xk)
-            self.dynamics.bikes_pred()  # todo check
+            self.dynamics.bikes_pred()
             self.dynamics.persons_pred()
             self.dynamics.vehs_pred()
             Xname = 'X' + str(k)
@@ -382,8 +388,9 @@ class HierarchicalMpc(object):
         self.episode_counter = 0
         self.horizon = 25
         self.num_future_data = 25
+        self.future_n_points = None
         self.env = CrossroadEnd2endMixPI()
-        self.obs, _ = self.env.reset()  # todo check
+        # self.obs, _ = self.env.reset()
         self.task = self.env.training_task
         # self.ref_path = ReferencePath(self.task)
         self.stg = MultiPathGenerator()
@@ -409,9 +416,9 @@ class HierarchicalMpc(object):
 
     def convert_vehs_to_abso(self, obs_rela):
         ego_infos, tracking_infos, encodings, veh_rela = obs_rela[:Para.EGO_ENCODING_DIM], \
-                                              obs_rela[Para.EGO_ENCODING_DIM: Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM * (1 + self.num_future_data)], \
-                                              obs_rela[Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM * (1 + self.num_future_data): Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM * (1 + self.num_future_data) + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM + Para.HIS_ACT_ENCODING_DIM], \
-                                              obs_rela[Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM * (1 + self.num_future_data) + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM + Para.HIS_ACT_ENCODING_DIM:]
+                                              obs_rela[Para.EGO_ENCODING_DIM: Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM], \
+                                              obs_rela[Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM: Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM + Para.HIS_ACT_ENCODING_DIM], \
+                                              obs_rela[Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM + Para.HIS_ACT_ENCODING_DIM:]
         ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi = ego_infos
         ego = np.array(([ego_x, ego_y] + [0] * (Para.PER_OTHER_INFO_DIM - 2)) * int(len(veh_rela) / Para.PER_OTHER_INFO_DIM), dtype=np.float32)
         vehs_abso = veh_rela + ego
@@ -429,13 +436,13 @@ class HierarchicalMpc(object):
             weight = [1.0, 1.0, 1.0]
             for path in self.path_list:
                 self.env.set_traj(path)
-                self.obs, _, _ = self.env._get_obs()
-                mpc = ModelPredictiveControl(self.horizon, self.task, self.num_future_data)
-                his_action = self.obs[Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + Para.TRACK_ENCODING_DIM * self.num_future_data + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM: Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + Para.TRACK_ENCODING_DIM * self.num_future_data + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM + Para.HIS_ACT_ENCODING_DIM]
+                self.obs, _, self.future_n_points = self.env._get_obs()
+                mpc = ModelPredictiveControl(self.horizon, self.task, self.future_n_points)
+                his_action = self.obs[Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM: Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM + Para.LIGHT_ENCODING_DIM + Para.TASK_ENCODING_DIM + Para.REF_ENCODING_DIM + Para.HIS_ACT_ENCODING_DIM]
                 state_all = np.array((list(self.obs[:Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM]) + list(his_action) + [0, 0]) * self.horizon +
                                       list(self.obs[:Para.EGO_ENCODING_DIM + Para.TRACK_ENCODING_DIM]) + list(his_action)).reshape((-1, 1))
-                state, control, state_all, g_all, cost = mpc.mpc_solver(list(self.obs), state_all)    #todo check
-                # state, control, state_all, g_all, cost = mpc.mpc_solver(list(self.convert_vehs_to_abso(self.obs)), state_all)
+                # state, control, state_all, g_all, cost = mpc.mpc_solver(list(self.obs), state_all)
+                state, control, state_all, g_all, cost = mpc.mpc_solver(list(self.convert_vehs_to_abso(self.obs)), state_all)
                 state_total.append(state)
                 if any(g_all < -1):
                     print('optimization fail')
@@ -450,10 +457,15 @@ class HierarchicalMpc(object):
                 action_total.append(mpc_action)
 
             MPC_traj_return_value = np.array(MPC_traj_return_value, dtype=np.float32)
-            MPC_path_index = np.argmin(MPC_traj_return_value)                           # todo: minimize
+            MPC_path_index = np.argmin(MPC_traj_return_value)
+            # if self.env.ego_dynamics['y'] > 0:
+            #     MPC_path_index = 0
+            # else:
+            #     MPC_path_index = 1
             MPC_action = action_total[MPC_path_index]
 
         self.env.set_traj(self.path_list[MPC_path_index])
+        _, _, self.future_n_points = self.env._get_obs()
         self.obs, rew, done, _ = self.env.step(MPC_action)
         self.render(MPC_traj_return_value, MPC_path_index, method='MPC')
         state = state_total[MPC_path_index]
@@ -871,50 +883,20 @@ class HierarchicalMpc(object):
         ys = [pos[1] for pos in self.hist_posi]
         plt.scatter(np.array(xs), np.array(ys), color='fuchsia', alpha=0.1)
 
-
         # plot future data
-        # obs_abso = self.convert_vehs_to_abso(self.obs)
-        tracking_info = self.obs[
-                        self.env.ego_info_dim:self.env.ego_info_dim + Para.TRACK_ENCODING_DIM * (self.num_future_data + 1)]
-        future_path = tracking_info[Para.TRACK_ENCODING_DIM:]
-        for i in range(self.num_future_data):
-            delta_x, delta_y, delta_phi, _ = future_path[i * Para.TRACK_ENCODING_DIM:
-                                                      (i + 1) * Para.TRACK_ENCODING_DIM]
-            path_x, path_y, path_phi = delta_x, delta_y, ego_phi - delta_phi
-            plt.plot(path_x, path_y, 'g.')
-            # plot_phi_line(path_x, path_y, path_phi, 'g')
-
-        # delta_, _, _ = tracking_info[:3]
-        # indexs, points = self.ref_path._find_closest_point(np.array([ego_x], np.float32), np.array([ego_y], np.float32))
-        # path_x, path_y, path_phi = points[0][0], points[1][0], points[2][0]
-        # # plt.plot(path_x, path_y, 'g.')
-        # delta_x, delta_y, delta_phi = ego_x - path_x, ego_y - path_y, ego_phi - path_phi
+        plt.plot(self.future_n_points[0], self.future_n_points[1], 'g.')
+        # plot_phi_line(path_x, path_y, path_phi, 'g')
 
         # plot real time traj
         color = ['blue', 'coral', 'darkcyan', 'pink']
-        # for i, item in enumerate(self.ref_path.path_list['green']):  #todo
-        #
-        #     print(self.ref_path.path_list['green'] == path_list)
-        #     if REF_ENCODING[i] == self.ref_path.ref_encoding:
-        #         plt.plot(item[0], item[1], color=color[i], alpha=1.0)
-        #     else:
-        #         plt.plot(item[0], item[1], color=color[i], alpha=0.3)
-
         for i, path in enumerate(self.path_list):
-            # for i, (path_x, path_y, _, _) in enumerate(path.path):
-            # print('画图路径长为', len(path.path[0]))
             if i == MPC_path_index:
                 plt.plot(path.path[0], path.path[1], color=color[i], alpha=1.0)
             else:
                 plt.plot(path.path[0], path.path[1], color=color[i], alpha=0.3)
 
-
-                # indexs, points = item.find_closest_point(np.array([ego_x], np.float32), np.array([ego_y], np.float32))
-                # path_x, path_y, path_phi = points[0][0], points[1][0], points[2][0]
-                # plt.plot(path_x, path_y,  color=color[i])
-
         # plot ego dynamics
-        text_x, text_y_start = -100, 60
+        text_x, text_y_start = -100, 55
         ge = iter(range(0, 1000, 4))
         plt.text(text_x, text_y_start - next(ge), 'ego_x: {:.2f}m'.format(ego_x))
         plt.text(text_x, text_y_start - next(ge), 'ego_y: {:.2f}m'.format(ego_y))
@@ -944,7 +926,7 @@ class HierarchicalMpc(object):
                      r'steer: {:.2f}rad (${:.2f}\degree$)'.format(steer, steer * 180 / np.pi))
             plt.text(text_x, text_y_start - next(ge), 'a_x: {:.2f}m/s^2'.format(a_x))
 
-        text_x, text_y_start = 70, 60
+        text_x, text_y_start = 70, 55
         ge = iter(range(0, 1000, 4))
 
         # done info
