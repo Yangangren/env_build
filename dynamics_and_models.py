@@ -257,8 +257,9 @@ class EnvironmentModel(object):  # all tensors
                     tf.sqrt(tf.square(ego_point[0] - -Para.CROSSROAD_SIZE_LAT / 2) + tf.square(ego_point[1] - Para.OFFSET_L + 1.)), tf.zeros_like(veh_infos[:, 0]))
 
             rewards = 0.01 * devi_v + 0.8 * devi_lon + 0.8 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
-                      5 * punish_steer0 + punish_a_x0   # for MPC todo
-                    # 5 * punish_steer0 + 0.4 * punish_steer1 + 0.0 * punish_steer2 + punish_a_x0 + punish_a_x1 + 0.0 * punish_a_x2
+                      5 * punish_steer0 + 0.4 * punish_steer1 + 0.0 * punish_steer2 + punish_a_x0 + punish_a_x1 + 0.0 * punish_a_x2
+                      # 5 * punish_steer0 + punish_a_x0   # for MPC
+
 
             rewards4value = 0.01 * devi_v + 0.8 * devi_lon + 0.8 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
                             5 * punish_steer0 + punish_a_x0
