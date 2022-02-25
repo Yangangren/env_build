@@ -8,11 +8,12 @@
 # =====================================
 
 import tensorflow as tf
+import numpy as np
 from tensorflow.keras.optimizers.schedules import PolynomialDecay
 
-from utils.model import MLPNet, AttentionNet
+from utils.model import MLPNet, PINet
 
-NAME2MODELCLS = dict([('MLP', MLPNet), ('Attention', AttentionNet)])
+NAME2MODELCLS = dict([('MLP', MLPNet), ('PI', PINet)])
 
 
 class Policy4Toyota(tf.Module):
@@ -27,11 +28,11 @@ class Policy4Toyota(tf.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        obs_dim, act_dim = self.args.state_dim, self.args.act_dim
+        obs_dim, act_dim = self.args.obs_dim, self.args.act_dim
         n_hiddens, n_units, hidden_activation = self.args.num_hidden_layers, self.args.num_hidden_units, self.args.hidden_activation
-        value_model_cls, policy_model_cls, attn_model_cls = NAME2MODELCLS[self.args.value_model_cls], \
-                                                            NAME2MODELCLS[self.args.policy_model_cls], \
-                                                            NAME2MODELCLS[self.args.attn_model_cls]
+        value_model_cls, policy_model_cls, PI_model_cls = NAME2MODELCLS[self.args.value_model_cls], \
+                                                          NAME2MODELCLS[self.args.policy_model_cls], \
+                                                          NAME2MODELCLS[self.args.PI_model_cls]
         self.policy = policy_model_cls(obs_dim, n_hiddens, n_units, hidden_activation, act_dim * 2, name='policy',
                                        output_activation=self.args.policy_out_activation)
         policy_lr_schedule = PolynomialDecay(*self.args.policy_lr_schedule)
@@ -39,19 +40,26 @@ class Policy4Toyota(tf.Module):
 
         self.obj_v = value_model_cls(obs_dim, n_hiddens, n_units, hidden_activation, 1, name='obj_v',
                                      output_activation='softplus')
+        # self.con_v = value_model_cls(obs_dim, n_hiddens, n_units, hidden_activation, 1, name='con_v')
+
         obj_value_lr_schedule = PolynomialDecay(*self.args.value_lr_schedule)
         self.obj_value_optimizer = self.tf.keras.optimizers.Adam(obj_value_lr_schedule, name='objv_adam_opt')
 
-        # add AttentionNet
-        attn_in_total_dim, attn_in_per_dim, attn_out_dim = self.args.attn_in_total_dim, \
-                                                           self.args.attn_in_per_dim, \
-                                                           self.args.attn_out_dim
-        self.attn_net = attn_model_cls(attn_in_total_dim, attn_in_per_dim, attn_out_dim, name='attn_net')
-        attn_lr_schedule = PolynomialDecay(*self.args.attn_lr_schedule)
-        self.attn_optimizer = self.tf.keras.optimizers.Adam(attn_lr_schedule, name='adam_opt_attn')
+        # con_value_lr_schedule = PolynomialDecay(*self.args.value_lr_schedule)
+        # self.con_value_optimizer = self.tf.keras.optimizers.Adam(con_value_lr_schedule, name='conv_adam_opt')
 
-        self.models = (self.obj_v, self.policy, self.attn_net)
-        self.optimizers = (self.obj_value_optimizer, self.policy_optimizer, self.attn_optimizer)
+        # add PI_net
+        other_num, per_other_dim, pi_out_dim = self.args.max_other_num, self.args.per_other_dim, self.args.PI_out_dim
+        n_hiddens, n_units, hidden_activation = self.args.PI_num_hidden_layers, self.args.PI_num_hidden_units, \
+                                                self.args.PI_hidden_activation
+
+        self.PI_net = PI_model_cls(other_num, per_other_dim, n_hiddens, n_units, hidden_activation, pi_out_dim, name='PINet',
+                                       output_activation=self.args.PI_out_activation)
+        PI_lr_schedule = PolynomialDecay(*self.args.PI_lr_schedule)
+        self.PI_optimizer = self.tf.keras.optimizers.Adam(PI_lr_schedule, name='adam_opt_PI')
+
+        self.models = (self.obj_v, self.policy, self.PI_net)
+        self.optimizers = (self.obj_value_optimizer, self.policy_optimizer, self.PI_optimizer)
 
     def save_weights(self, save_dir, iteration):
         model_pairs = [(model.name, model) for model in self.models]
@@ -71,6 +79,17 @@ class Policy4Toyota(tf.Module):
     def set_weights(self, weights):
         for i, weight in enumerate(weights):
             self.models[i].set_weights(weight)
+
+    @tf.function
+    def apply_gradients(self, iteration, grads):
+        obj_v_len = len(self.obj_v.trainable_weights)
+        pg_len = len(self.policy.trainable_weights)
+        obj_v_grad, policy_grad = grads[:obj_v_len], grads[obj_v_len:obj_v_len+pg_len]
+        PI_grad = grads[obj_v_len + pg_len:]
+        self.obj_value_optimizer.apply_gradients(zip(obj_v_grad, self.obj_v.trainable_weights))
+        self.policy_optimizer.apply_gradients(zip(policy_grad, self.policy.trainable_weights))
+        if (iteration+1) % 10 == 0:
+            self.PI_optimizer.apply_gradients(zip(PI_grad, self.PI_net.trainable_weights))
 
     @tf.function
     def compute_mode(self, obs):
@@ -110,10 +129,77 @@ class Policy4Toyota(tf.Module):
             return tf.squeeze(self.obj_v(obs), axis=1)
 
     @tf.function
-    def compute_attn(self, obs_others, mask):
-        with self.tf.name_scope('compute_attn') as scope:
-            return self.attn_net([obs_others, mask]) # return (logits, weights) tuple
+    def compute_pi_encode(self, obs, mask=None):
+        with self.tf.name_scope('compute_pi') as scope:
+            obs_encode = tf.reduce_sum(self.PI_net(obs), axis=1)
+            return obs_encode
+
+
+def test_policy():
+    import gym
+    from train_script import built_AMPC_parser
+    args = built_AMPC_parser()
+    print(args.obs_dim, args.act_dim)
+    env = gym.make(args.env_id)
+    policy = Policy4Toyota(args)
+    obs = np.random.random((128, 6))
+    act = np.random.random((128, 2))
+    Qs = policy.compute_pi_encode(obs)
+    print(Qs)
+
+def test_policy2():
+    from train_script import built_mixedpg_parser
+    import gym
+    args = built_mixedpg_parser()
+    env = gym.make('Pendulum-v0')
+    policy_with_value = PolicyWithQs(env.observation_space, env.action_space, args)
+
+def test_policy_with_Qs():
+    from train_script import built_mixedpg_parser
+    import gym
+    import numpy as np
+    import tensorflow as tf
+    args = built_mixedpg_parser()
+    args.obs_dim = 3
+    env = gym.make('Pendulum-v0')
+    policy_with_value = PolicyWithQs(env.observation_space, env.action_space, args)
+    # print(policy_with_value.policy.trainable_weights)
+    # print(policy_with_value.Qs[0].trainable_weights)
+    obses = np.array([[1., 2., 3.], [3., 4., 5.]], dtype=np.float32)
+
+    with tf.GradientTape() as tape:
+        acts, _ = policy_with_value.compute_action(obses)
+        Qs = policy_with_value.compute_Qs(obses, acts)[0]
+        print(Qs)
+        loss = tf.reduce_mean(Qs)
+
+    gradient = tape.gradient(loss, policy_with_value.policy.trainable_weights)
+    print(gradient)
+
+def test_mlp():
+    import tensorflow as tf
+    import numpy as np
+    policy = tf.keras.Sequential([tf.keras.layers.Dense(128, input_shape=(3,), activation='elu'),
+                                  tf.keras.layers.Dense(128, input_shape=(3,), activation='elu'),
+                                  tf.keras.layers.Dense(1, activation='elu')])
+    value = tf.keras.Sequential([tf.keras.layers.Dense(128, input_shape=(4,), activation='elu'),
+                                  tf.keras.layers.Dense(128, input_shape=(3,), activation='elu'),
+                                  tf.keras.layers.Dense(1, activation='elu')])
+    print(policy.trainable_variables)
+    print(value.trainable_variables)
+    with tf.GradientTape() as tape:
+        obses = np.array([[1., 2., 3.], [3., 4., 5.]], dtype=np.float32)
+        obses = tf.convert_to_tensor(obses)
+        acts = policy(obses)
+        a = tf.reduce_mean(acts)
+        print(acts)
+        Qs = value(tf.concat([obses, acts], axis=-1))
+        print(Qs)
+        loss = tf.reduce_mean(Qs)
+
+    gradient = tape.gradient(loss, policy.trainable_weights)
+    print(gradient)
 
 
 if __name__ == '__main__':
-    pass
+    test_policy()

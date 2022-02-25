@@ -33,8 +33,8 @@ class HierarchicalDecision(object):
     def __init__(self, train_exp_dir, ite, logdir=None):
         self.policy = LoadPolicy('../utils/models/{}'.format(train_exp_dir), ite)
         self.args = self.policy.args
-        self.env = CrossroadEnd2endMixPI(mode='testing', future_point_num=self.args.num_rollout_list_for_policy_update[0])
-        self.model = EnvironmentModel(mode='testing')
+        self.env = CrossroadEnd2endMixPI()
+        self.model = EnvironmentModel()
         self.recorder = Recorder()
         self.episode_counter = -1
         self.step_counter = -1
@@ -52,14 +52,19 @@ class HierarchicalDecision(object):
         self.old_index = 0
         self.path_list = self.stg.generate_path(self.env.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.env.light_phase])
         # ------------------build graph for tf.function in advance-----------------------
-        obs, all_info = self.env.reset()
-        mask, future_n_point = all_info['mask'], all_info['future_n_point']
-        obs = tf.convert_to_tensor(obs[np.newaxis, :], dtype=tf.float32)
-        mask = tf.convert_to_tensor(mask[np.newaxis, :], dtype=tf.float32)
-        future_n_point = tf.convert_to_tensor(future_n_point[np.newaxis, :], dtype=tf.float32)
-        # self.is_safe(obs, mask, future_n_point)
-        self.policy.run_batch(obs, mask)
-        self.policy.obj_value_batch(obs, mask)
+        # todo
+        if self.env.training_task == 'straight':
+            path_number = 2
+        else:
+            path_number = 3
+        for i in range(path_number):
+            obs, _ = self.env.reset()
+            obs = obs[np.newaxis, :]
+            # self.is_safe(obs)
+        obs, _ = self.env.reset()
+        obs = obs[np.newaxis, :]
+        self.policy.run_batch(obs)
+        self.policy.obj_value_batch(obs)
         # ------------------build graph for tf.function in advance-----------------------
         self.reset()
 
@@ -82,28 +87,27 @@ class HierarchicalDecision(object):
         return self.obs
 
     @tf.function
-    def is_safe(self, obses, masks, future_n_point):
-        self.model.reset(obses)
+    def is_safe(self, obs):
+        # todo
+        # self.model.add_traj(obs_ego, obs_other, [self.env.veh_num], path_index)
         punish = 0.
         for step in range(5):
-            action = self.policy.run_batch(obses, masks)
-            obses, _, _, _, veh2veh4real, veh2road4real, veh2bike4real, veh2person4real \
-                = self.model.rollout_out(action, future_n_point[:, :, step])
-            punish += veh2veh4real[0] + veh2road4real[0] + veh2bike4real[0] + veh2person4real[0]
+            action = self.policy.run_batch(obs)
+            obses, _, _, _, _, veh2veh4real, veh2road4real, veh2bike4real, veh2person4real, veh2speed4real\
+                = self.model.rollout_out(action)
+            punish += veh2veh4real[0] + veh2road4real[0] + veh2bike4real[0] + veh2person4real[0] + veh2speed4real[0]
         return False if punish > 0 else True
 
-    def safe_shield(self, real_obs, real_mask, real_future_n_point):
-        # action_safe_set = [[[0., -1.]]]
+    def safe_shield(self, real_obs):
+        action_safe_set = [[[0., -1.]]]
         real_obs = tf.convert_to_tensor(real_obs[np.newaxis, :], dtype=tf.float32)
-        real_mask = tf.convert_to_tensor(real_mask[np.newaxis, :], dtype=tf.float32)
-        # real_future_n_point = tf.convert_to_tensor(real_future_n_point[np.newaxis, :], dtype=tf.float32)
-        # if not self.is_safe(real_obs, real_mask, real_future_n_point):
+        # todo
+        # if not self.is_safe(real_obs):
         #     print('SAFETY SHIELD STARTED!')
         #     return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), True
         # else:
-        #     return self.policy.run_batch(real_obs, real_mask).numpy()[0], False
-        action, weight = self.policy.run_batch(real_obs, real_mask)
-        return action.numpy()[0], weight.numpy()[0], False
+        #     return self.policy.run_batch(real_obs).numpy()[0], False
+        return self.policy.run_batch(real_obs).numpy()[0], False
 
     def step(self):
         self.step_counter += 1
@@ -118,9 +122,9 @@ class HierarchicalDecision(object):
                 mask_list.append(mask_vector)
                 future_n_point_list.append(future_n_point)
             all_obs = tf.stack(obs_list, axis=0).numpy()
-            all_mask = tf.stack(mask_list, axis=0).numpy()
 
-            path_values = self.policy.obj_value_batch(all_obs, all_mask).numpy()
+            path_values = self.policy.obj_value_batch(all_obs).numpy()
+            # path_values = [1.0, 1.0, 3.] * path_values
             old_value = path_values[self.old_index]
             # value is to approximate (- sum of reward)
             new_index, new_value = int(np.argmin(path_values)), min(path_values)
@@ -146,14 +150,14 @@ class HierarchicalDecision(object):
 
             # obtain safe action
             with self.ss_timer:
-                safe_action, weights, is_ss = self.safe_shield(obs_real, mask_real, future_n_point_real)
+                safe_action, is_ss = self.safe_shield(obs_real)
             # print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
-        self.render(path_values, path_index, weights)
+        self.render(self.path_list, path_values, path_index)
         self.recorder.record(obs_real, safe_action, self.step_timer.mean, path_index, path_values, self.ss_timer.mean, is_ss)
         self.obs, r, done, info = self.env.step(safe_action)
         return done
 
-    def render(self, path_values, path_index, weights):
+    def render(self, traj_list, path_values, path_index):
         square_length = Para.CROSSROAD_SIZE_LAT
         extension = 40
         dotted_line_style = '--'
@@ -478,15 +482,6 @@ class HierarchicalDecision(object):
                              y + line_length * sin(phi * pi / 180.)
             plt.plot([x, x_forw], [y, y_forw], color=color, linewidth=0.5)
 
-        def draw_sensor_range(x_ego, y_ego, a_ego, l_bias, w_bias, angle_bias, angle_range, dist_range, color):
-            x_sensor = x_ego + l_bias * cos(a_ego) - w_bias * sin(a_ego)
-            y_sensor = y_ego + l_bias * sin(a_ego) + w_bias * cos(a_ego)
-            theta1 = a_ego + angle_bias - angle_range / 2
-            theta2 = a_ego + angle_bias + angle_range / 2
-            sensor = mpatch.Wedge([x_sensor, y_sensor], dist_range, theta1=theta1 * 180 / pi,
-                                   theta2=theta2 * 180 / pi, fc=color, alpha=0.2)
-            ax.add_patch(sensor)
-
         # plot cars
         for veh in self.env.all_other:
             veh_x = veh['x']
@@ -498,20 +493,10 @@ class HierarchicalDecision(object):
                 plot_phi_line(veh_x, veh_y, veh_phi, 'black')
                 draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
-        # plot vehicles from sensors
-        for veh in self.env.detected_vehicles:
-            veh_x = veh['x']
-            veh_y = veh['y']
-            veh_phi = veh['phi']
-            veh_l = veh['l']
-            veh_w = veh['w']
-            plot_phi_line(veh_x, veh_y, veh_phi, 'lime')
-            draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'lime')
-
         # plot interested others
-        if weights is not None:
-            assert weights.shape == (self.args.other_number,), print(weights.shape)
-            index_top_k_in_weights = weights.argsort()[-4:][::-1]
+        # if weights is not None:
+        #     assert weights.shape == (self.args.other_number,), print(weights.shape)
+        #     index_top_k_in_weights = weights.argsort()[-4:][::-1]
         for i in range(len(self.env.interested_other)):
             item = self.env.interested_other[i]
             item_mask = item['exist']
@@ -523,8 +508,8 @@ class HierarchicalDecision(object):
             # if is_in_plot_area(item_x, item_y):
             #     plot_phi_line(item_x, item_y, item_phi, 'black')
             #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='m')
-            if (weights is not None) and (item_mask == 1.0):
-                draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='lime', facecolor='lime', alpha=weights[i])
+            # if (weights is not None) and (item_mask == 1.0):
+            draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='lime', facecolor='lime')
                 # plt.text(item_x, item_y, "{:.2f}".format(weights[i]), color='red', fontsize=15)
 
         # plot_interested vehs
@@ -554,14 +539,6 @@ class HierarchicalDecision(object):
         draw_rotate_rec(ego_x, ego_y, ego_phi, self.env.ego_l, self.env.ego_w, 'fuchsia', facecolor='pink')
         self.hist_posi.append((ego_x, ego_y))
 
-        # plot sensors
-        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
-                          angle_range=2 * pi, dist_range=70, color='thistle')
-        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
-                          angle_range=70 * pi / 180, dist_range=80, color="slategray")
-        draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
-                          angle_range=90 * pi / 180, dist_range=60, color="slategray")
-
         # plot history
         xs = [pos[0] for pos in self.hist_posi]
         ys = [pos[1] for pos in self.hist_posi]
@@ -579,7 +556,7 @@ class HierarchicalDecision(object):
         path_x, path_y, path_phi, path_v = point[0], point[1], point[2], point[3]
 
         # text
-        text_x, text_y_start = -120, 60
+        text_x, text_y_start = -90, 60
         ge = iter(range(0, 1000, 4))
         plt.text(text_x, text_y_start - next(ge), 'ego_x: {:.2f}m'.format(ego_x))
         plt.text(text_x, text_y_start - next(ge), 'ego_y: {:.2f}m'.format(ego_y))
@@ -605,7 +582,7 @@ class HierarchicalDecision(object):
                      r'steer: {:.2f}rad (${:.2f}\degree$)'.format(steer, steer * 180 / np.pi))
             plt.text(text_x, text_y_start - next(ge), 'a_x: {:.2f}m/s^2'.format(a_x))
 
-        text_x, text_y_start = 86, 60
+        text_x, text_y_start = 65, 60
         ge = iter(range(0, 1000, 4))
 
         # done info
@@ -647,7 +624,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('experiment-2021-11-13-19-55-15', 300000, logdir)
+    hier_decision = HierarchicalDecision('experiment-2022-02-21-21-39-22', 200000, logdir)
 
     for i in range(300):
         for _ in range(200):

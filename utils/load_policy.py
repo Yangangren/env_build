@@ -25,34 +25,35 @@ class LoadPolicy(object):
         for key, val in params.items():
             parser.add_argument("-" + key, default=val)
         self.args = parser.parse_args()
-        env = CrossroadEnd2endMixPI(future_point_num=self.args.num_rollout_list_for_policy_update[0])
+        env = CrossroadEnd2endMixPI()
         self.policy = Policy4Toyota(self.args)
         self.policy.load_weights(model_dir, iter)
-        self.preprocessor = Preprocessor(self.args.obs_scale, self.args.reward_scale, self.args.reward_shift,
-                                         args=self.args, gamma=self.args.gamma)
-        init_obs, all_info = env.reset()
-        mask = all_info['mask']
-        self.run_batch(init_obs[np.newaxis, :], mask[np.newaxis, :])
-        self.obj_value_batch(init_obs[np.newaxis, :], mask[np.newaxis, :])
-
-    # @tf.function
-    def run_batch(self, obses, masks):
-        obses_transformed = self.preprocessor.tf_convert_ego_coordinate(obses)
-        processed_obses = self.preprocessor.process_obs(obses_transformed)
-        states, weights = self._get_states(processed_obses, masks)
-        actions = self.policy.compute_mode(states)
-        return actions, weights
+        self.preprocessor = Preprocessor((self.args.obs_dim,), self.args.obs_preprocess_type, self.args.reward_preprocess_type,
+                                         self.args.reward_scale, self.args.reward_shift, args=self.args,
+                                         gamma=self.args.gamma)
+        # self.preprocessor.load_params(load_dir)
+        init_obs, _ = env.reset()
+        init_obs = init_obs[np.newaxis, :]
+        self.run_batch(init_obs)
+        self.obj_value_batch(init_obs)
 
     @tf.function
-    def obj_value_batch(self, obses, masks):
-        obses_transformed = self.preprocessor.tf_convert_ego_coordinate(obses)
-        processed_obses = self.preprocessor.process_obs(obses_transformed)
-        states, _ = self._get_states(processed_obses, masks)
-        values = self.policy.compute_obj_v(states)
+    def run_batch(self, mb_obs):
+        processed_mb_obs = self.preprocessor.tf_process_obses(mb_obs)
+        mb_state = self.get_states(processed_mb_obs)
+        actions, _ = self.policy.compute_action(mb_state)
+        return actions
+
+    @tf.function
+    def obj_value_batch(self, mb_obs):
+        processed_mb_obs = self.preprocessor.tf_process_obses(mb_obs)
+        mb_state = self.get_states(processed_mb_obs)
+        values = self.policy.compute_obj_v(tf.stop_gradient(mb_state))
         return values
 
-    def _get_states(self, mb_obs, mb_mask):
-        mb_obs_others, mb_attn_weights = self.policy.compute_attn(mb_obs[:, self.args.other_start_dim:], mb_mask)
-        mb_state = tf.concat((mb_obs[:, :self.args.other_start_dim], mb_obs_others), axis=1)
-        return mb_state, mb_attn_weights
-
+    def get_states(self, mb_obs, mb_mask=None):
+        mb_obs_other = tf.reshape(mb_obs[:, self.args.state_other_start_dim:],
+                                       (-1, self.args.max_other_num, self.args.per_other_dim))
+        mb_obs_other_encode = self.policy.compute_pi_encode(mb_obs_other, mb_mask)
+        mb_state = tf.concat((mb_obs[:, :self.args.state_other_start_dim], mb_obs_other_encode), axis=1)
+        return mb_state
