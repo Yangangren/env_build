@@ -118,6 +118,9 @@ class CrossroadEnd2endMixPI(gym.Env):
     def reset(self, **kwargs):  # kwargs include three keys
         self.light_phase = self.traffic.init_light()
         self.training_task = choice(['left', 'straight', 'right'])
+        # self.training_task = 'left'
+        # self.training_task = 'straight'
+        # self.training_task = 'right'
         self.task_encoding = TASK_ENCODING[self.training_task]
         self.light_encoding = LIGHT_ENCODING[self.light_phase]
         # for straight path ---- random choice
@@ -512,10 +515,10 @@ class CrossroadEnd2endMixPI(gym.Env):
 
             # fetch bicycle in range
             if task == 'straight':
-                du_b = list(filter(lambda v: ego_y - 2 < v['y'] < Para.CROSSROAD_SIZE_LON / 2 and v['x'] < ego_x + 2, du_b))
+                du_b = list(filter(lambda v: ego_y - 2 < v['y'] < Para.CROSSROAD_SIZE_LON / 2 and v['x'] < ego_x + 3, du_b))
             elif task == 'right':
-                du_b = list(filter(lambda v: max(-Para.CROSSROAD_SIZE_LAT / 2, ego_y - 2) < v['y'] < min(Para.OFFSET_R, ego_y + 3) and v['x'] < ego_x + 5, du_b))
-            ud_b = list(filter(lambda v: max(ego_y - 3, -Para.CROSSROAD_SIZE_LON / 2) < v['y'] < min(Para.CROSSROAD_SIZE_LON / 2, ego_y + 7) and ego_x > v['x'] > ego_x - 15, ud_b))  # interest of left
+                du_b = list(filter(lambda v: max(-Para.CROSSROAD_SIZE_LAT / 2, ego_y - 2) < v['y'] < Para.OFFSET_R and v['x'] < ego_x + 5, du_b))
+            ud_b = list(filter(lambda v: max(ego_y - 3, -Para.CROSSROAD_SIZE_LON / 2) < v['y'] < min(Para.CROSSROAD_SIZE_LON / 2, ego_y + 10) and ego_x > v['x'] > ego_x - 15, ud_b))  # interest of left
             lr_b = list(filter(lambda v: 0 < v['x'] < Para.CROSSROAD_SIZE_LAT / 2 + 10, lr_b))  # interest of right
 
             # sort
@@ -562,7 +565,7 @@ class CrossroadEnd2endMixPI(gym.Env):
             c0 = list(filter(lambda v: Para.OFFSET_U < v['x'] and v['y'] > ego_y - Para.L, c0))  # interest of straight
             c1 = list(filter(lambda v: v['y'] < Para.OFFSET_R + 2 and v['x'] > ego_x - Para.L, c1))  # interest of right
             c2 = list(filter(lambda v: Para.OFFSET_D < v['x'] and v['y'] > ego_y - Para.L, c2))  # interest of right
-            c3 = list(filter(lambda v: Para.OFFSET_L < v['y'] and v['x'] < ego_x + Para.L, c3))  # interest of left
+            c3 = list(filter(lambda v: Para.OFFSET_L - 5 < v['y'] and v['x'] < ego_x + Para.L, c3))  # interest of left
             # sort
             c1 = sorted(c1, key=lambda v: (abs(v['y'] - ego_y), v['x']))
             c2 = sorted(c2, key=lambda v: (abs(v['x'] - ego_x), v['y']))

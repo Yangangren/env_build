@@ -618,16 +618,17 @@ class HierarchicalDecision(object):
                 plt.text(text_x, text_y_start - next(ge), 'rew_{}: {:.4f}'.format(key, val))
 
         # indicator for trajectory selection
-        # text_x, text_y_start = 25, -30
-        # ge = iter(range(0, 1000, 6))
-        # if path_values is not None:
-        #     for i, value in enumerate(path_values):
-        #         if i == path_index:
-        #             plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=14,
-        #                      color=color[i], fontstyle='italic')
-        #         else:
-        #             plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=12,
-        #                      color=color[i], fontstyle='italic')
+        text_x, text_y_start = 25, -30
+        ge = iter(range(0, 1000, 6))
+        if path_values is not None:
+            for i, value in enumerate(path_values):
+                if i == path_index:
+                    plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=14,
+                             color=color[i], fontstyle='italic')
+                else:
+                    plt.text(text_x, text_y_start - next(ge), 'Path cost={:.4f}'.format(value), fontsize=12,
+                             color=color[i], fontstyle='italic')
+
         ax.add_collection(PatchCollection(patches, match_original=True, zorder=4))
         plt.show()
         plt.pause(0.001)
@@ -647,7 +648,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('experiment-2022-02-21-21-39-22', 200000, logdir)
+    hier_decision = HierarchicalDecision('experiment-2022-02-25-21-00-24', 295000, logdir)
 
     for i in range(300):
         for _ in range(200):

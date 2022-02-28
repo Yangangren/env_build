@@ -232,7 +232,7 @@ class Traffic(object):
 
     def init_light(self):
         if random.random() > 0.8:
-            self.training_light_phase = 4  # red
+            self.training_light_phase = 3  # red
         else:
             self.training_light_phase = 0  # green
         traci.trafficlight.setPhase('0', self.training_light_phase)

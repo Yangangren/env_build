@@ -168,7 +168,7 @@ def judge_feasible(orig_x, orig_y, task):  # map dependant
         return Para.OFFSET_L < orig_y < Para.OFFSET_L + Para.LANE_WIDTH_1 * 3 and orig_x < -Para.CROSSROAD_SIZE_LAT / 2
 
     def is_in_right(orig_x, orig_y):
-        return Para.OFFSET_R - Para.LANE_WIDTH_1 * 3 < orig_y < Para.OFFSET_R and orig_x > Para.CROSSROAD_SIZE_LAT / 2
+        return Para.OFFSET_R - Para.LANE_WIDTH_1 * 3 - 1 < orig_y < Para.OFFSET_R and orig_x > Para.CROSSROAD_SIZE_LAT / 2
 
     def is_in_middle(orig_x, orig_y):
         return True if -Para.CROSSROAD_SIZE_LON / 2 < orig_y < Para.CROSSROAD_SIZE_LON / 2 and -Para.CROSSROAD_SIZE_LAT / 2 < orig_x < Para.CROSSROAD_SIZE_LAT / 2 else False
