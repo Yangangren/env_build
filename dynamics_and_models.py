@@ -247,7 +247,6 @@ class EnvironmentModel(object):  # all tensors
                     veh2person4real += tf.where(veh2person_dist - 2.5 < 0, tf.square(veh2person_dist - 2.5),
                                                 tf.zeros_like(veh_infos[:, 0]))
 
-            veh2road4real = tf.zeros_like(veh_infos[:, 0])
             veh2road4training = tf.zeros_like(veh_infos[:, 0])
             for ego_point in [ego_front_points, ego_rear_points]:
                 veh2road4training += tf.where(logical_and(ego_point[0] > Para.CROSSROAD_SIZE_LAT / 2, ego_point[1] > Para.OFFSET_R - 1.),
@@ -256,6 +255,8 @@ class EnvironmentModel(object):  # all tensors
                     tf.sqrt(tf.square(ego_point[0] - Para.OFFSET_U + 1.) + tf.square(ego_point[1] - Para.CROSSROAD_SIZE_LON / 2)), tf.zeros_like(veh_infos[:, 0]))
                 veh2road4training += tf.where(logical_and(ego_point[0] < -Para.CROSSROAD_SIZE_LAT / 2, ego_point[1] < Para.OFFSET_L - 1.),
                     tf.sqrt(tf.square(ego_point[0] - -Para.CROSSROAD_SIZE_LAT / 2) + tf.square(ego_point[1] - Para.OFFSET_L + 1.)), tf.zeros_like(veh_infos[:, 0]))
+
+            veh2road4real = veh2road4training
 
             rewards = 0.01 * devi_v + 0.8 * devi_lon + 0.8 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
                       5 * punish_steer0 + 0.4 * punish_steer1 + 0.0 * punish_steer2 + punish_a_x0 + punish_a_x1 + 0.0 * punish_a_x2
@@ -1081,7 +1082,7 @@ class ReferencePath(object):
             lane_width_flag = [Para.LANE_WIDTH_1] * Para.LANE_NUMBER_LAT_OUT
             start_xs = [Para.OFFSET_D + Para.LANE_WIDTH_1 * 3.5]
             start_ys = [-Para.CROSSROAD_SIZE_LON / 2]
-            end_xs = [Para.CROSSROAD_SIZE_LAT / 2] * Para.LANE_NUMBER_LAT_OUT
+            end_xs = [Para.CROSSROAD_SIZE_LAT / 2 + 2] * Para.LANE_NUMBER_LAT_OUT
             end_ys = [Para.OFFSET_R - sum(lane_width_flag[:i]) - 0.5 * lane_width_flag[i] for i in
                       range(Para.LANE_NUMBER_LAT_OUT)]
             for start_x in start_xs:
@@ -1102,7 +1103,7 @@ class ReferencePath(object):
                                                                    dtype=np.float32)[:-1]
                     start_straight_line_y = np.linspace(-Para.CROSSROAD_SIZE_LON / 2 - sl, -Para.CROSSROAD_SIZE_LON / 2,
                                                         sl * meter_pointnum_ratio, dtype=np.float32)[:-1]
-                    end_straight_line_x = np.linspace(Para.CROSSROAD_SIZE_LAT / 2, Para.CROSSROAD_SIZE_LAT / 2 + sl * cos(Para.ANGLE_R/180*pi),
+                    end_straight_line_x = np.linspace(Para.CROSSROAD_SIZE_LAT / 2 + 2, Para.CROSSROAD_SIZE_LAT / 2 + 2 + sl * cos(Para.ANGLE_R/180*pi),
                                                       sl * meter_pointnum_ratio, dtype=np.float32)[1:]
                     end_straight_line_y = np.linspace(end_y, end_y + sl * sin(Para.ANGLE_R/180*pi),
                                                       sl * meter_pointnum_ratio, dtype=np.float32)[1:]

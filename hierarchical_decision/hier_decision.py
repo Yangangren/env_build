@@ -127,7 +127,7 @@ class HierarchicalDecision(object):
             all_obs = tf.stack(obs_list, axis=0).numpy()
 
             path_values = self.policy.obj_value_batch(all_obs).numpy()
-            # path_values = [1.0, 1.0, 3.] * path_values
+            # path_values = [1.0, 1.0, 1.0] * path_values
             old_value = path_values[self.old_index]
             # value is to approximate (- sum of reward)
             new_index, new_value = int(np.argmin(path_values)), min(path_values)
@@ -653,7 +653,9 @@ def main():
     for i in range(300):
         for _ in range(200):
             done = hier_decision.step()
-            if done: break
+            if done:
+                print(hier_decision.env.done_type)
+                break
         hier_decision.reset()
 
 

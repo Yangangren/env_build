@@ -517,8 +517,8 @@ class CrossroadEnd2endMixPI(gym.Env):
             if task == 'straight':
                 du_b = list(filter(lambda v: ego_y - 2 < v['y'] < Para.CROSSROAD_SIZE_LON / 2 and v['x'] < ego_x + 3, du_b))
             elif task == 'right':
-                du_b = list(filter(lambda v: max(-Para.CROSSROAD_SIZE_LAT / 2, ego_y - 2) < v['y'] < Para.OFFSET_R and v['x'] < ego_x + 5, du_b))
-            ud_b = list(filter(lambda v: max(ego_y - 3, -Para.CROSSROAD_SIZE_LON / 2) < v['y'] < min(Para.CROSSROAD_SIZE_LON / 2, ego_y + 10) and ego_x > v['x'] > ego_x - 15, ud_b))  # interest of left
+                du_b = list(filter(lambda v: max(Para.OFFSET_R - 18, ego_y - 10) < v['y'] < min(Para.OFFSET_R, ego_y + 10) and ego_x - Para.L < v['x'] < ego_x + 10, du_b))
+            ud_b = list(filter(lambda v: max(ego_y - 5, Para.OFFSET_L - 2) < v['y'] < min(Para.OFFSET_L + 15, ego_y + 15) and ego_x + Para.L > v['x'] > ego_x - 10, ud_b))  # interest of left
             lr_b = list(filter(lambda v: 0 < v['x'] < Para.CROSSROAD_SIZE_LAT / 2 + 10, lr_b))  # interest of right
 
             # sort
@@ -563,9 +563,14 @@ class CrossroadEnd2endMixPI(gym.Env):
 
             # fetch person in range
             c0 = list(filter(lambda v: Para.OFFSET_U < v['x'] and v['y'] > ego_y - Para.L, c0))  # interest of straight
-            c1 = list(filter(lambda v: v['y'] < Para.OFFSET_R + 2 and v['x'] > ego_x - Para.L, c1))  # interest of right
+            c1_du = list(filter(lambda v: (v['phi'] > 0) and ego_y - 15 < v['y'] < min(Para.OFFSET_R, ego_y + 7) and ego_x + 10 > v['x'] > ego_x - Para.L, c1))  # interest of right
+            c1_ud = list(filter(lambda v: (v['phi'] < 0) and ego_y - 10 < v['y'] < min(Para.OFFSET_R + 5, ego_y + 12) and ego_x + 10 > v['x'] > ego_x - Para.L, c1))  # interest of right
+            c1 = c1_du + c1_ud
             c2 = list(filter(lambda v: Para.OFFSET_D < v['x'] and v['y'] > ego_y - Para.L, c2))  # interest of right
-            c3 = list(filter(lambda v: Para.OFFSET_L - 5 < v['y'] and v['x'] < ego_x + Para.L, c3))  # interest of left
+            c3_du = list(filter(lambda v: (v['phi'] > 0) and max(Para.OFFSET_L - 5, ego_y - 7) < v['y'] < ego_y + 10 and ego_x - 10 < v['x'] < ego_x + Para.L, c3))  # interest of left
+            c3_ud = list(filter(lambda v:  (v['phi'] < 0) and max(Para.OFFSET_L, ego_y - 3) < v['y'] < ego_y + 15 and ego_x - 10 < v['x'] < ego_x + Para.L, c3))  # interest of left
+            c3 = c3_du + c3_ud
+
             # sort
             c1 = sorted(c1, key=lambda v: (abs(v['y'] - ego_y), v['x']))
             c2 = sorted(c2, key=lambda v: (abs(v['x'] - ego_x), v['y']))
@@ -605,20 +610,24 @@ class CrossroadEnd2endMixPI(gym.Env):
                     tmp_p = tmp_p[:self.person_num]
 
             # fetch veh in range
-            dl = list(filter(lambda v: v['x'] > max(ego_x - 15, -Para.CROSSROAD_SIZE_LAT / 2 - 10) and v['y'] > ego_y - 2, dl))  # interest of left straight
-            du = list(filter(lambda v: ego_y - 2 < v['y'] < Para.CROSSROAD_SIZE_LON / 2 + 10 and v['x'] < ego_x + 5, du))  # interest of left straight
+            if task == 'left':
+                dl = list(filter(lambda v: v['x'] > max(ego_x - 15, -Para.CROSSROAD_SIZE_LAT / 2 - 10) and v['y'] > ego_y - 2, dl))  # interest of left straight
+                du = list(filter(lambda v: max(-Para.CROSSROAD_SIZE_LON / 2, ego_y - 2) < v['y'] < min(0, ego_y + 10) and v['x'] < ego_x + 5, du))  # interest of left straight right
+            elif task == 'straight':
+                dl = list(filter(lambda v: v['x'] > ego_x - 5 and v['y'] > ego_y - 2, dl))  # interest of left straight
+                du = list(filter(lambda v: ego_y - 2 < v['y'] < min(Para.CROSSROAD_SIZE_LON / 2 + 10, ego_y + 20) and v['x'] < ego_x + 5, du))  # interest of left straight right
+                ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < Para.CROSSROAD_SIZE_LON / 2 + 10, ur))  # interest of straight right
+            elif task == 'right':
+                du = list(filter(lambda v: max(-Para.CROSSROAD_SIZE_LON / 2, ego_y - 2) < v['y'] < min(0, ego_y + 10) and v['x'] < ego_x, du))  # interest of left straight right
+                ur = list(filter(lambda v:  ego_x - 10 < v['x'] < min(ego_x + 15, Para.CROSSROAD_SIZE_LAT / 2 + 10) and v['y'] < Para.CROSSROAD_SIZE_LON / 2, ur))  # interest of straight right
 
-            dr = list(filter(lambda v: v['x'] < min(ego_x + 15, Para.CROSSROAD_SIZE_LAT / 2 + 10) and v['y'] > ego_y, dr))  # interest of right
+            dr = list(filter(lambda v: v['x'] < min(ego_x + 15, Para.CROSSROAD_SIZE_LAT / 2 + 10) and v['y'] > max(-Para.CROSSROAD_SIZE_LON / 2, ego_y - 5), dr))  # interest of right
 
             rd = rd  # not interest in case of traffic light
             rl = rl  # not interest in case of traffic light
             ru = list(filter(lambda v: v['x'] < Para.CROSSROAD_SIZE_LAT / 2 + 10 and v['y'] < Para.CROSSROAD_SIZE_LON / 2 + 10, ru))  # interest of straight
 
-            if task == 'straight':
-                ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < Para.CROSSROAD_SIZE_LON / 2 + 10, ur))  # interest of straight
-            elif task == 'right':
-                ur = list(filter(lambda v:  ego_x - 10 < v['x'] < min(ego_x + 15, Para.CROSSROAD_SIZE_LAT / 2 + 10) and v['y'] < Para.CROSSROAD_SIZE_LON / 2, ur))  # interest of right
-            ud = list(filter(lambda v: max(ego_y - 2, -Para.CROSSROAD_SIZE_LON / 2) < v['y'] < Para.CROSSROAD_SIZE_LON / 2 and ego_x > v['x'], ud))  # interest of left
+            ud = list(filter(lambda v: max(ego_y - 5, -13) < v['y'] < min(Para.CROSSROAD_SIZE_LON / 2, ego_y + 20) and ego_x + 5 > v['x'], ud))  # interest of left
             ul = list(filter(lambda v: max(-Para.CROSSROAD_SIZE_LAT / 2 - 10, ego_x - 15) < v['x'] < ego_x + 5 and v['y'] < Para.CROSSROAD_SIZE_LON / 2 + 5, ul))  # interest of left
 
             lu = lu  # not interest in case of traffic light
