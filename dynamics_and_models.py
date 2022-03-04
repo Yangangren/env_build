@@ -188,7 +188,7 @@ class EnvironmentModel(object):  # all tensors
                               tf.cast(obses_ego[:, 4] - ego_lws * tf.sin(obses_ego[:, 5] * np.pi / 180.),
                                       dtype=tf.float32)
 
-            delta_ego_vs = obses_track[:, 2]    # delta_ego_vs = ego_vs - ref_vs
+            delta_ego_vs = obses_track[:, 3]    # delta_ego_vs = ego_vs - ref_vs
             veh2speed4training = tf.where(delta_ego_vs > 0.0, tf.square(delta_ego_vs), tf.zeros_like(veh_infos[:, 0]))
             veh2speed4real = tf.where(delta_ego_vs > 0.0, tf.square(delta_ego_vs), tf.zeros_like(veh_infos[:, 0]))
 
