@@ -55,17 +55,11 @@ class HierarchicalDecision(object):
         self.old_index = 0
         self.path_list = self.stg.generate_path(self.env.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.env.light_phase])
         # ------------------build graph for tf.function in advance-----------------------
-        # todo
-        if self.env.training_task == 'straight':
-            path_number = 2
-        else:
-            path_number = 3
-        for i in range(path_number):
-            obs, _ = self.env.reset()
-            obs = obs[np.newaxis, :]
-            # self.is_safe(obs)
-        obs, _ = self.env.reset()
-        obs = obs[np.newaxis, :]
+        obs, all_info = self.env.reset()
+        future_n_point = all_info['future_n_point']
+        obs = tf.convert_to_tensor(obs[np.newaxis, :], dtype=tf.float32)
+        future_n_point = tf.convert_to_tensor(future_n_point[np.newaxis, :], dtype=tf.float32)
+        self.is_safe(obs, future_n_point)
         self.policy.run_batch(obs)
         self.policy.obj_value_batch(obs)
         # ------------------build graph for tf.function in advance-----------------------
@@ -90,9 +84,8 @@ class HierarchicalDecision(object):
         return self.obs
 
     @tf.function
-    def is_safe(self, obs):
-        # todo
-        # self.model.add_traj(obs_ego, obs_other, [self.env.veh_num], path_index)
+    def is_safe(self, obs, future_n_point):
+        self.model.reset(obs, future_n_point)
         punish = 0.
         for step in range(5):
             action = self.policy.run_batch(obs)
@@ -101,16 +94,15 @@ class HierarchicalDecision(object):
             punish += veh2veh4real[0] + veh2road4real[0] + veh2bike4real[0] + veh2person4real[0] + veh2speed4real[0]
         return False if punish > 0 else True
 
-    def safe_shield(self, real_obs):
+    def safe_shield(self, real_obs, real_future_n_point):
         action_safe_set = [[[0., -1.]]]
         real_obs = tf.convert_to_tensor(real_obs[np.newaxis, :], dtype=tf.float32)
-        # todo
-        # if not self.is_safe(real_obs):
-        #     print('SAFETY SHIELD STARTED!')
-        #     return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), True
-        # else:
-        #     return self.policy.run_batch(real_obs).numpy()[0], False
-        return self.policy.run_batch(real_obs).numpy()[0], False
+        real_future_n_point = tf.convert_to_tensor(real_future_n_point[np.newaxis, :], dtype=tf.float32)
+        if not self.is_safe(real_obs, real_future_n_point):
+            print('SAFETY SHIELD STARTED!')
+            return np.array(action_safe_set[0], dtype=np.float32).squeeze(0), True
+        else:
+            return self.policy.run_batch(real_obs).numpy()[0], False
 
     def step(self):
         self.step_counter += 1
@@ -153,7 +145,7 @@ class HierarchicalDecision(object):
 
             # obtain safe action
             with self.ss_timer:
-                safe_action, is_ss = self.safe_shield(obs_real)
+                safe_action, is_ss = self.safe_shield(obs_real, future_n_point_real)
             # print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
         self.render(self.path_list, path_values, path_index)
         self.recorder.record(obs_real, safe_action, self.step_timer.mean, path_index, path_values, self.ss_timer.mean, is_ss)
@@ -543,7 +535,6 @@ class HierarchicalDecision(object):
             item_l = item['l']
             item_w = item['w']
             item_type = item['type']
-            # todo
             if is_in_plot_area(item_x, item_y):
                 plot_phi_line(item_type, item_x, item_y, item_phi, 'black')
                 draw_rotate_rec(item_type, item_x, item_y, item_phi, item_l, item_w, color='g', linestyle=':', patch=True)
@@ -569,7 +560,6 @@ class HierarchicalDecision(object):
         # plt.plot(path_x, path_y, 'g.')
         # plt.plot(self.future_n_point[0], self.future_n_point[1], 'g.')
 
-        # todo
         # plot real time traj
         color = ['blue', 'coral', 'darkcyan', 'pink']
         for i, item in enumerate(self.path_list):
@@ -648,7 +638,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('experiment-2022-02-25-21-00-24', 295000, logdir)
+    hier_decision = HierarchicalDecision('experiment-2022-03-04-15-01-39', 300000, logdir)
 
     for i in range(300):
         for _ in range(200):

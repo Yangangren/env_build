@@ -238,7 +238,7 @@ class CrossroadEnd2endMixPI(gym.Env):
             return 'deviate_too_much', 1
         elif self._break_stability():
             return 'break_stability', 1
-        elif self._break_red_light():   # todo
+        elif self._break_red_light():
             return 'break_red_light', 1
         elif self._is_achieve_goal():
             return 'good_done', 1

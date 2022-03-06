@@ -865,7 +865,6 @@ class ReferencePath(object):
         self.set_path(green_or_red)
 
     def set_path(self, green_or_red='green', path_index=None):
-        # todo compare
         if path_index is None:
             path_index = np.random.choice(len(self.path_list[self.green_or_red]))
         self.path_index = path_index
