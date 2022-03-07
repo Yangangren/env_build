@@ -242,7 +242,7 @@ class EnvironmentModel(object):  # all tensors
                 for ego_point in [ego_front_points, ego_rear_points]:
                     veh2person_dist = tf.sqrt(
                         tf.square(ego_point[0] - person_point[0]) + tf.square(ego_point[1] - person_point[1]))
-                    veh2person4training += tf.where(veh2person_dist - 4.5 < 0, tf.square(veh2person_dist - 4.5),
+                    veh2person4training += tf.where(veh2person_dist - 3.5 < 0, tf.square(veh2person_dist - 3.5),
                                                     tf.zeros_like(veh_infos[:, 0]))
                     veh2person4real += tf.where(veh2person_dist - 2.5 < 0, tf.square(veh2person_dist - 2.5),
                                                 tf.zeros_like(veh_infos[:, 0]))
@@ -259,12 +259,12 @@ class EnvironmentModel(object):  # all tensors
             veh2road4real = veh2road4training
 
             rewards = 0.05 * devi_v + 0.8 * devi_lon + 1.0 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
-                      5 * punish_steer0 + 0.5 * punish_steer1 + 0.5 * punish_a_x0 + 0.1 * punish_a_x1
+                      1 * punish_steer0 + 0.5 * punish_steer1 + 0.05 * punish_a_x0 + 0.1 * punish_a_x1
                       # 5 * punish_steer0 + punish_a_x0   # for MPC
 
 
             rewards4value = 0.05 * devi_v + 0.8 * devi_lon + 1.0 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
-                            5 * punish_steer0 + 0.5 * punish_a_x0
+                            1 * punish_steer0 + 0.05 * punish_a_x0
 
             punish_term_for_training = veh2veh4training + veh2road4training + veh2bike4training + veh2person4training + veh2speed4training
             real_punish_term = veh2veh4real + veh2road4real + veh2bike4real + veh2person4real + veh2speed4real

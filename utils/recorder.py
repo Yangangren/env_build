@@ -195,7 +195,7 @@ class Recorder(object):
                 ax.set_xlabel("Time [s]", fontsize=15)
                 plt.yticks(fontsize=15)
                 plt.xticks(fontsize=15)
-                plt.savefig(save_dir + '/{}.pdf'.format(key))
+                plt.savefig(save_dir + '/{}.png'.format(key))
                 if not isshow:
                     plt.close(f)
                 i += 1
@@ -243,7 +243,7 @@ class Recorder(object):
         ax1.get_legend().remove()
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        f1.savefig(save_dir + '/steer.pdf')
+        f1.savefig(save_dir + '/steer.png')
         plt.close() if not isshow else plt.show()
 
         f2 = plt.figure(figsize=(6,5))
@@ -258,7 +258,7 @@ class Recorder(object):
         # plt.ylim(-40, 80)
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        plt.savefig(save_dir + '/acceleration.pdf')
+        plt.savefig(save_dir + '/acceleration.png')
         plt.close() if not isshow else plt.show()
 
         f3 = plt.figure(figsize=(6,5))
@@ -273,7 +273,7 @@ class Recorder(object):
         ax3.legend(handles=handles[:], labels=labels[:], frameon=False, fontsize=15)
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        plt.savefig(save_dir + '/time.pdf')
+        plt.savefig(save_dir + '/time.png')
         plt.close() if not isshow else plt.show()
 
         f4 = plt.figure(4)
@@ -286,7 +286,7 @@ class Recorder(object):
         ax4.legend(frameon=False, fontsize=15)
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        plt.savefig(save_dir + '/ref_path.pdf')
+        plt.savefig(save_dir + '/ref_path.png')
         plt.close() if not isshow else plt.show()
 
     @staticmethod

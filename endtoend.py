@@ -616,7 +616,7 @@ class CrossroadEnd2endMixPI(gym.Env):
             elif task == 'straight':
                 dl = list(filter(lambda v: v['x'] > ego_x - 5 and v['y'] > ego_y - 2, dl))  # interest of left straight
                 du = list(filter(lambda v: ego_y - 2 < v['y'] < min(Para.CROSSROAD_SIZE_LON / 2 + 10, ego_y + 20) and v['x'] < ego_x + 5, du))  # interest of left straight right
-                ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < Para.CROSSROAD_SIZE_LON / 2 + 10, ur))  # interest of straight right
+                ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < min(Para.CROSSROAD_SIZE_LON / 2, ego_y + 20), ur))  # interest of straight right
             elif task == 'right':
                 du = list(filter(lambda v: max(-Para.CROSSROAD_SIZE_LON / 2, ego_y - 2) < v['y'] < min(0, ego_y + 10) and v['x'] < ego_x, du))  # interest of left straight right
                 ur = list(filter(lambda v:  ego_x - 10 < v['x'] < min(ego_x + 15, Para.CROSSROAD_SIZE_LAT / 2 + 10) and v['y'] < Para.CROSSROAD_SIZE_LON / 2, ur))  # interest of straight right

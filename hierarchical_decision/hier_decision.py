@@ -623,7 +623,7 @@ class HierarchicalDecision(object):
         plt.show()
         plt.pause(0.001)
         if self.logdir is not None:
-            plt.savefig(self.logdir + '/episode{}'.format(self.episode_counter) + '/step{}.pdf'.format(self.step_counter))
+            plt.savefig(self.logdir + '/episode{}'.format(self.episode_counter) + '/step{}.png'.format(self.step_counter))
 
 
 def plot_and_save_ith_episode_data(logdir, i):
@@ -638,7 +638,7 @@ def main():
     time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
-    hier_decision = HierarchicalDecision('experiment-2022-03-04-15-01-39', 300000, logdir)
+    hier_decision = HierarchicalDecision('experiment-2022-03-06-10-47-50', 300000, logdir)
 
     for i in range(300):
         for _ in range(200):
@@ -900,8 +900,8 @@ def select_and_rename_snapshots_of_an_episode(logdir, epinum, num):
     print(selected)
     if file_num > 0:
         for i, j in enumerate(selected):
-            shutil.copyfile(logdir + '/episode{}/step{}.pdf'.format(epinum, j),
-                            logdir + '/episode{}/figs/{}.pdf'.format(epinum, i))
+            shutil.copyfile(logdir + '/episode{}/step{}.png'.format(epinum, j),
+                            logdir + '/episode{}/figs/{}.png'.format(epinum, i))
 
 
 if __name__ == '__main__':
