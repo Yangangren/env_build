@@ -152,40 +152,39 @@ MODE2ROUTE = {'dr': ('1o', '2i'), 'du': ('1o', '3i'), 'dl': ('1o', '4i'),
 
 
 def judge_feasible(orig_x, orig_y, task):  # map dependant
-    def is_in_straight_before1(orig_x, orig_y):
+    # orig_x, orig_y = _coordination_sumo2simu(orig_x, orig_y) # for test
+
+    def is_in_start_before1(orig_x, orig_y):
         return Para.OFFSET_D < orig_x < Para.LANE_WIDTH_1 + Para.OFFSET_D and orig_y <= -Para.CROSSROAD_SIZE_LON / 2
-
-    def is_in_straight_before2(orig_x, orig_y):
+    def is_in_start_before2(orig_x, orig_y):
         return Para.LANE_WIDTH_1 + Para.OFFSET_D < orig_x < Para.LANE_WIDTH_1 * 3 + Para.OFFSET_D and orig_y <= -Para.CROSSROAD_SIZE_LON / 2
-
-    def is_in_straight_before3(orig_x, orig_y):
+    def is_in_start_before3(orig_x, orig_y):
         return Para.LANE_WIDTH_1 * 3 + Para.OFFSET_D < orig_x < Para.LANE_WIDTH_1 * 4 + Para.OFFSET_D and orig_y <= -Para.CROSSROAD_SIZE_LON / 2
 
-    def is_in_straight_after(orig_x, orig_y):
-        return Para.OFFSET_U < orig_x < Para.OFFSET_U + Para.LANE_WIDTH_1 * 2 and orig_y >= Para.CROSSROAD_SIZE_LON / 2
+    def is_in_left(orig_x, orig_y, task):
+        return xy2_area(orig_x, orig_y, task) == 'left'
+    def is_in_straight(orig_x, orig_y, task):
+        return xy2_area(orig_x, orig_y, task) == 'straight'
+    def is_in_right(orig_x, orig_y, task):
+        return xy2_area(orig_x, orig_y, task) == 'right'
 
-    def is_in_left(orig_x, orig_y):
-        return Para.OFFSET_L < orig_y < Para.OFFSET_L + Para.LANE_WIDTH_1 * 3 and orig_x < -Para.CROSSROAD_SIZE_LAT / 2
-
-    def is_in_right(orig_x, orig_y):
-        return Para.OFFSET_R - Para.LANE_WIDTH_1 * 3 - 1 < orig_y < Para.OFFSET_R and orig_x > Para.CROSSROAD_SIZE_LAT / 2 + 2
-
-    def is_in_middle(orig_x, orig_y):
-        return True if -Para.CROSSROAD_SIZE_LON / 2 < orig_y < Para.CROSSROAD_SIZE_LON / 2 and -Para.CROSSROAD_SIZE_LAT / 2 < orig_x < Para.CROSSROAD_SIZE_LAT / 2 else False
-
-    def is_in_middle_right(orig_x, orig_y):
-        return True if -Para.CROSSROAD_SIZE_LON / 2 < orig_y < Para.CROSSROAD_SIZE_LON / 2 and -Para.CROSSROAD_SIZE_LAT / 2 < orig_x < Para.CROSSROAD_SIZE_LAT / 2 + 2 else False
+    def is_in_middle_left(orig_x, orig_y, task):
+        return xy2_area(orig_x, orig_y, task) == 'middle_left'
+    def is_in_middle_straight(orig_x, orig_y, task):
+        return xy2_area(orig_x, orig_y, task) == 'middle_straight'
+    def is_in_middle_right(orig_x, orig_y, task):
+        return xy2_area(orig_x, orig_y, task) == 'middle_right'
 
     if task == 'left':
-        return True if is_in_straight_before1(orig_x, orig_y) or is_in_left(orig_x, orig_y) \
-                       or is_in_middle(orig_x, orig_y) else False
+        return True if is_in_start_before1(orig_x, orig_y) or is_in_left(orig_x, orig_y, task) \
+                       or is_in_middle_left(orig_x, orig_y, task) else False
     elif task == 'straight':
-        return True if is_in_straight_before2(orig_x, orig_y) or is_in_straight_after(
-            orig_x, orig_y) or is_in_middle(orig_x, orig_y) else False
+        return True if is_in_start_before2(orig_x, orig_y) or is_in_straight(orig_x, orig_y, task) \
+                       or is_in_middle_straight(orig_x, orig_y, task) else False
     else:
         assert task == 'right'
-        return True if is_in_straight_before3(orig_x, orig_y) or is_in_right(orig_x, orig_y) \
-                       or is_in_middle_right(orig_x, orig_y) else False
+        return True if is_in_start_before3(orig_x, orig_y) or is_in_right(orig_x, orig_y, task) \
+                       or is_in_middle_right(orig_x, orig_y, task) else False
 
 
 def shift_coordination(orig_x, orig_y, coordi_shift_x, coordi_shift_y):
@@ -295,6 +294,72 @@ def cal_ego_info_in_transform_coordination(ego_dynamics, x, y, rotate_d):
     return ego_dynamics
 
 
+def isInterArea(testPoint,AreaPoint):   #testPoint为待测点[x,y]
+    LBPoint = AreaPoint[0]  #AreaPoint为按顺时针顺序的4个点[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+    LTPoint = AreaPoint[1]
+    RTPoint = AreaPoint[2]
+    RBPoint = AreaPoint[3]
+    a = (LTPoint[0]-LBPoint[0])*(testPoint[1]-LBPoint[1])-(LTPoint[1]-LBPoint[1])*(testPoint[0]-LBPoint[0])
+    b = (RTPoint[0]-LTPoint[0])*(testPoint[1]-LTPoint[1])-(RTPoint[1]-LTPoint[1])*(testPoint[0]-LTPoint[0])
+    c = (RBPoint[0]-RTPoint[0])*(testPoint[1]-RTPoint[1])-(RBPoint[1]-RTPoint[1])*(testPoint[0]-RTPoint[0])
+    d = (LBPoint[0]-RBPoint[0])*(testPoint[1]-RBPoint[1])-(LBPoint[1]-RBPoint[1])*(testPoint[0]-RBPoint[0])
+    if (a >= 0 and b >= 0 and c >= 0 and d >= 0) or (a <= 0 and b <= 0 and c <= 0 and d <= 0):
+        return True
+    else:
+        return False
+
+
+def xy2_area(x, y, task):
+    # x, y = _coordination_sumo2simu(x, y) # for test
+    junction_left_x = -Para.CROSSROAD_SIZE_LAT / 2 - (Para.CROSSROAD_SIZE_LON/2 - Para.OFFSET_L) * math.sin(Para.ANGLE_L*math.pi/180)
+    junction_right_x = Para.CROSSROAD_SIZE_LAT / 2 + (Para.CROSSROAD_SIZE_LON/2 + Para.OFFSET_R) * math.sin(Para.ANGLE_R*math.pi/180)
+
+    if y < -Para.CROSSROAD_SIZE_LON / 2 and Para.OFFSET_D < x < Para.OFFSET_D + Para.LANE_NUMBER_LON_IN_D * Para.LANE_WIDTH_1:
+        area = 'start'
+    elif y > Para.CROSSROAD_SIZE_LON / 2 and Para.OFFSET_U < x < Para.OFFSET_U + Para.LANE_NUMBER_LON_OUT * Para.LANE_WIDTH_1:
+        area = 'straight'
+    elif x < -Para.CROSSROAD_SIZE_LAT/2 and -Para.CROSSROAD_SIZE_LON / 2 < y < Para.CROSSROAD_SIZE_LON / 2:
+        # left
+        x1 = -Para.CROSSROAD_SIZE_LAT / 2
+        y1 = Para.OFFSET_L
+        x2 = x1 - 50 * math.cos(Para.ANGLE_L*math.pi/180)
+        y2 = y1 - 50 * math.sin(Para.ANGLE_L*math.pi/180)
+        x4 = x1 - (Para.LANE_NUMBER_LAT_OUT * Para.LANE_WIDTH_1) * math.sin(Para.ANGLE_L*math.pi/180)
+        y4 = y1 + (Para.LANE_NUMBER_LAT_OUT * Para.LANE_WIDTH_1) * math.cos(Para.ANGLE_L*math.pi/180)
+        x3 = x4 - 50 * math.cos(Para.ANGLE_L*math.pi/180)
+        y3 = y4 - 50 * math.sin(Para.ANGLE_L*math.pi/180)
+        if isInterArea([x, y], [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]):
+            area = 'left'
+        else:
+            area = 'junction'
+    elif x > Para.CROSSROAD_SIZE_LAT/2 and -Para.CROSSROAD_SIZE_LON / 2 < y < Para.CROSSROAD_SIZE_LON / 2:
+        # right
+        x1 = Para.CROSSROAD_SIZE_LAT / 2
+        y1 = Para.OFFSET_R
+        x2 = x1 + 50 * math.cos(Para.ANGLE_R*math.pi/180)
+        y2 = y1 + 50 * math.sin(Para.ANGLE_R*math.pi/180)
+        x4 = x1 + (Para.LANE_NUMBER_LAT_OUT * Para.LANE_WIDTH_1) * math.sin(Para.ANGLE_R*math.pi/180)
+        y4 = y1 - (Para.LANE_NUMBER_LAT_OUT * Para.LANE_WIDTH_1) * math.cos(Para.ANGLE_R*math.pi/180)
+        x3 = x4 + 50 * math.cos(Para.ANGLE_R*math.pi/180)
+        y3 = y4 + 50 * math.sin(Para.ANGLE_R*math.pi/180)
+        if isInterArea([x, y], [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]):
+            area = 'right'
+        else:
+            area = 'junction'
+    else:
+        area = 'junction'
+    if area == 'junction':
+        if task == 'left' and junction_left_x < x < Para.OFFSET_D + Para.LANE_NUMBER_LON_IN_D * Para.LANE_WIDTH_1 and -Para.CROSSROAD_SIZE_LON/2 < y < Para.OFFSET_L + Para.LANE_NUMBER_LAT_OUT * Para.LANE_WIDTH_1 + Para.BIKE_LANE_WIDTH_2 + Para.PERSON_LANE_WIDTH_2 :
+            area = 'middle_left'
+        elif task == 'straight' and junction_right_x > x > Para.OFFSET_U - 2 * Para.LANE_WIDTH_1:
+            area = 'middle_straight'
+        elif task == 'right' and junction_right_x > x > Para.OFFSET_D and -Para.CROSSROAD_SIZE_LON/2 < y < Para.OFFSET_R + 2 * Para.LANE_WIDTH_1:
+            area = 'middle_right'
+        else:
+            area = 'else'
+    return area
+
+
 def xy2_edgeID_lane(x, y):
     # x, y = _coordination_sumo2simu(x, y)
     if y < -Para.CROSSROAD_SIZE_LON / 2:
@@ -366,4 +431,9 @@ def test_action_store():
 
 
 if __name__ == '__main__':
-    test_action_store()
+    # test_action_store()
+    # task = 'left'
+    # task = 'straight'
+    task = 'right'
+    # print(xy2_area(5963.20,9434.37))
+    print(judge_feasible(6037.12,9451.04, task))

@@ -7,7 +7,7 @@
 # @FileName: dynamics_and_models.py
 # =====================================
 
-from math import pi, cos, sin
+from math import pi, cos, sin, tan
 
 import bezier
 import matplotlib
@@ -249,22 +249,44 @@ class EnvironmentModel(object):  # all tensors
 
             veh2road4training = tf.zeros_like(veh_infos[:, 0])
             for ego_point in [ego_front_points, ego_rear_points]:
-                veh2road4training += tf.where(logical_and(ego_point[0] > Para.CROSSROAD_SIZE_LAT / 2, ego_point[1] > Para.OFFSET_R - 1.),
-                    tf.sqrt(tf.square(ego_point[0] - Para.CROSSROAD_SIZE_LAT / 2) + tf.square(ego_point[1] - Para.OFFSET_R + 1.)), tf.zeros_like(veh_infos[:, 0]))
-                veh2road4training += tf.where(logical_and(ego_point[0] < Para.OFFSET_U - 1., ego_point[1] > Para.CROSSROAD_SIZE_LON / 2),
-                    tf.sqrt(tf.square(ego_point[0] - Para.OFFSET_U + 1.) + tf.square(ego_point[1] - Para.CROSSROAD_SIZE_LON / 2)), tf.zeros_like(veh_infos[:, 0]))
-                veh2road4training += tf.where(logical_and(ego_point[0] < -Para.CROSSROAD_SIZE_LAT / 2, ego_point[1] < Para.OFFSET_L - 1.),
-                    tf.sqrt(tf.square(ego_point[0] - -Para.CROSSROAD_SIZE_LAT / 2) + tf.square(ego_point[1] - Para.OFFSET_L + 1.)), tf.zeros_like(veh_infos[:, 0]))
+                left_flag = tf.reduce_all(tf.math.equal(obses_task, [[1., 0., 0.]]), axis=1, keepdims=False)
+                straight_flag = tf.reduce_all(tf.math.equal(obses_task, [[0., 1., 0.]]), axis=1, keepdims=False)
+                right_flag = tf.reduce_all(tf.math.equal(obses_task, [[0., 0., 1.]]), axis=1, keepdims=False)
+
+                # end line for left
+                # dis up- down+
+                k_l = tan(Para.ANGLE_L / 180 * pi)
+                b_l_d = Para.OFFSET_L - k_l * (-Para.CROSSROAD_SIZE_LAT / 2)
+                dis_l_d = (ego_point[0] * k_l - ego_point[1] + b_l_d) / (tf.pow((tf.square(k_l)+1), 0.5))
+                dis_l_u = Para.LANE_NUMBER_LAT_OUT * Para.LANE_WIDTH_1 + dis_l_d
+
+                veh2road4training += tf.where(logical_and(left_flag, logical_and(ego_point[0] < -Para.CROSSROAD_SIZE_LAT / 2 + Para.CROSSROAD_SIZE_LAT / 3, dis_l_u < 1.0)), tf.square(dis_l_u - 1.0), tf.zeros_like(veh_infos[:, 0]))
+                veh2road4training += tf.where(logical_and(left_flag, logical_and(ego_point[0] < -Para.CROSSROAD_SIZE_LAT / 2, dis_l_d > -1.0)), tf.square(dis_l_d - (-1.0)), tf.zeros_like(veh_infos[:, 0]))
+
+                # end line for straight
+                veh2road4training += tf.where(logical_and(straight_flag, logical_and(ego_point[1] > Para.CROSSROAD_SIZE_LON / 2 - 1.5 * Para.L, ego_point[0] < Para.OFFSET_U + 1.0)),
+                    tf.square(ego_point[0] - (Para.OFFSET_U + 1.0)), tf.zeros_like(veh_infos[:, 0]))
+                veh2road4training += tf.where(logical_and(straight_flag, logical_and(ego_point[1] > Para.CROSSROAD_SIZE_LON / 2, ego_point[0] > Para.OFFSET_U + Para.LANE_NUMBER_LON_OUT * Para.LANE_WIDTH_1 - 1.0)),
+                    tf.square(ego_point[0] - (Para.OFFSET_U + Para.LANE_NUMBER_LON_OUT * Para.LANE_WIDTH_1 - 1.0)), tf.zeros_like(veh_infos[:, 0]))
+
+                # end line for right
+                # dis up- down+
+                k_r = tan(Para.ANGLE_R / 180 * pi)
+                b_r_u = Para.OFFSET_R - k_r * Para.CROSSROAD_SIZE_LAT / 2
+                dis_r_u = (ego_point[0] * k_r - ego_point[1] + b_r_u) / (tf.pow((tf.square(k_r)+1), 0.5))
+                dis_r_d = dis_r_u - Para.LANE_NUMBER_LAT_OUT * Para.LANE_WIDTH_1
+
+                veh2road4training += tf.where(logical_and(right_flag, logical_and(ego_point[0] > Para.CROSSROAD_SIZE_LAT / 2 - Para.CROSSROAD_SIZE_LAT / 3, dis_r_u < 1.0)), tf.square(dis_r_u - 1.0), tf.zeros_like(veh_infos[:, 0]))
+                veh2road4training += tf.where(logical_and(right_flag, logical_and(ego_point[0] > Para.CROSSROAD_SIZE_LAT / 2, dis_r_d > -1.0)), tf.square(dis_r_d - (-1.0)), tf.zeros_like(veh_infos[:, 0]))
 
             veh2road4real = veh2road4training
 
-            rewards = 0.05 * devi_v + 0.8 * devi_lon + 1.0 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
-                      1 * punish_steer0 + 0.5 * punish_steer1 + 0.05 * punish_a_x0 + 0.1 * punish_a_x1
-                      # 5 * punish_steer0 + punish_a_x0   # for MPC
+            rewards = 0.1 * devi_v + 0.2 * devi_lon + 1.0 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
+                      0.5 * punish_steer0 + 0.5 * punish_steer1 + 0.05 * punish_a_x0 + 0.02 * punish_a_x1
+                      # 0.5 * punish_steer0 + 0.05 * punish_a_x0   # for MPC
 
-
-            rewards4value = 0.05 * devi_v + 0.8 * devi_lon + 1.0 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
-                            1 * punish_steer0 + 0.05 * punish_a_x0
+            rewards4value = 0.1 * devi_v + 0.2 * devi_lon + 1.0 * devi_lat + 30 * devi_phi + 0.02 * punish_yaw_rate + \
+                            0.5 * punish_steer0 + 0.05 * punish_a_x0
 
             punish_term_for_training = veh2veh4training + veh2road4training + veh2bike4training + veh2person4training + veh2speed4training
             real_punish_term = veh2veh4real + veh2road4real + veh2bike4real + veh2person4real + veh2speed4real
@@ -280,16 +302,16 @@ class EnvironmentModel(object):  # all tensors
                                devi_longitudinal=devi_lon,
                                devi_lateral=devi_lat,
                                devi_phi=devi_phi,
-                               scaled_punish_steer0=5 * punish_steer0,
-                               scaled_punish_steer1=0.4 * punish_steer1,
-                               scaled_punish_steer2=5e-2 * punish_steer2,
-                               scaled_punish_a_x0=punish_a_x0,
-                               scaled_punish_a_x1=punish_a_x1,
-                               scaled_punish_a_x2=0.05 * punish_a_x2,
+                               scaled_punish_steer0=0.5 * punish_steer0,
+                               scaled_punish_steer1=0.5 * punish_steer1,
+                               scaled_punish_steer2=0.0 * punish_steer2,
+                               scaled_punish_a_x0=0.05 * punish_a_x0,
+                               scaled_punish_a_x1=0.02 * punish_a_x1,
+                               scaled_punish_a_x2=0.0 * punish_a_x2,
                                scaled_punish_yaw_rate=0.02 * punish_yaw_rate,
-                               scaled_devi_v=0.01 * devi_v,
-                               scaled_devi_lon=0.8 * devi_lon,
-                               scaled_devi_lat=0.8 * devi_lat,
+                               scaled_devi_v=0.1 * devi_v,
+                               scaled_devi_lon=0.2 * devi_lon,
+                               scaled_devi_lat=1.0 * devi_lat,
                                scaled_devi_phi=30 * devi_phi,
                                veh2veh4training=veh2veh4training,
                                veh2road4training=veh2road4training,
