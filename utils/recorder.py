@@ -13,6 +13,7 @@ import matplotlib.pyplot as ticker
 from matplotlib.pyplot import MultipleLocator
 import math
 import pandas as pd
+from endtoend_env_utils import Para
 sns.set(style="darkgrid")
 
 WINDOWSIZE = 1
@@ -21,7 +22,7 @@ WINDOWSIZE = 1
 class Recorder(object):
     def __init__(self):
         self.val2record = ['v_x', 'v_y', 'r', 'x', 'y', 'phi',
-                           'steer', 'a_x', 'delta_y', 'delta_v', 'delta_phi',
+                           'steer', 'a_x', 'delta_x', 'delta_y', 'delta_phi', 'delta_v',
                            'cal_time', 'ref_index', 'beta', 'path_values', 'ss_time', 'is_ss']
         self.val2plot = ['v_x', 'r',
                          'steer', 'a_x',
@@ -37,10 +38,10 @@ class Recorder(object):
                               is_ss='Safety shield',)
 
         self.comp2record = ['v_x', 'v_y', 'r', 'x', 'y', 'phi', 'adp_steer', 'adp_a_x', 'mpc_steer', 'mpc_a_x',
-                            'delta_y', 'delta_v', 'delta_phi', 'adp_time', 'mpc_time', 'adp_ref', 'mpc_ref', 'beta']
+                            'delta_y', 'delta_phi', 'delta_v', 'adp_time', 'mpc_time', 'adp_ref', 'mpc_ref', 'beta']
 
-        self.ego_info_dim = 6
-        self.per_tracking_info_dim = 3
+        self.ego_info_dim = Para.EGO_ENCODING_DIM
+        self.per_tracking_info_dim = Para.TRACK_ENCODING_DIM
         self.num_future_data = 0
         self.data_across_all_episodes = []
         self.val_list_for_an_episode = []
@@ -62,13 +63,13 @@ class Recorder(object):
                                      obs[self.ego_info_dim + self.per_tracking_info_dim * (
                                                self.num_future_data + 1):]
         v_x, v_y, r, x, y, phi = ego_info
-        delta_y, delta_phi, delta_v = tracking_info[:3]
+        delta_x, delta_y, delta_phi, delta_v = tracking_info[:4]
         steer, a_x = act[0]*0.4, act[1]*2.25 - 0.75
 
         # transformation
         beta = 0 if v_x == 0 else np.arctan(v_y/v_x) * 180 / math.pi
         steer = steer * 180 / math.pi
-        self.val_list_for_an_episode.append(np.array([v_x, v_y, r, x, y, phi, steer, a_x, delta_y,
+        self.val_list_for_an_episode.append(np.array([v_x, v_y, r, x, y, phi, steer, a_x, delta_x, delta_y,
                                         delta_phi, delta_v, cal_time, ref_index, beta, path_values, ss_time, is_ss]))
 
     # For comparison of MPC and ADP
@@ -79,7 +80,7 @@ class Recorder(object):
                                      obs[self.ego_info_dim + self.per_tracking_info_dim * (
                                                self.num_future_data + 1):]
         v_x, v_y, r, x, y, phi = ego_info
-        delta_y, delta_phi, delta_v = tracking_info[:3]
+        delta_x, delta_y, delta_phi, delta_v = tracking_info[:4]
         adp_steer, adp_a_x = adp_act[0]*0.4, adp_act[1]*2.25 - 0.75
         mpc_steer, mpc_a_x = mpc_act[0], mpc_act[1]
 
@@ -91,7 +92,7 @@ class Recorder(object):
         beta = 0 if v_x == 0 else np.arctan(v_y/v_x) * 180 / math.pi
         adp_steer = adp_steer * 180 / math.pi
         mpc_steer = mpc_steer * 180 / math.pi
-        self.comp_list_for_an_episode.append(np.array([v_x, v_y, r, x, y, phi, adp_steer, adp_a_x, mpc_steer, mpc_a_x,
+        self.comp_list_for_an_episode.append(np.array([v_x, v_y, r, x, y, phi, adp_steer, adp_a_x, mpc_steer, mpc_a_x, delta_x,
                                             delta_y, delta_phi, delta_v, adp_time, mpc_time, adp_ref, mpc_ref, beta]))
 
     def save(self, logdir):

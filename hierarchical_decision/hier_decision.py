@@ -30,6 +30,7 @@ from multi_path_generator import MultiPathGenerator
 from utils.load_policy import LoadPolicy
 from utils.misc import TimerStat
 from utils.recorder import Recorder
+from write_read import Data_IDC
 
 
 class HierarchicalDecision(object):
@@ -38,6 +39,7 @@ class HierarchicalDecision(object):
         self.args = self.policy.args
         self.env = CrossroadEnd2endMixPI()
         self.model = EnvironmentModel()
+        self.data_file = Data_IDC()
         self.recorder = Recorder()
         self.episode_counter = -1
         self.step_counter = -1
@@ -148,9 +150,32 @@ class HierarchicalDecision(object):
                 safe_action, is_ss = self.safe_shield(obs_real, future_n_point_real)
             # print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
         self.render(self.path_list, path_values, path_index)
+        # 在csv中记录所有数据：时间、自车ID&状态（动力学状态？）、当前动作、（未来路径点？）、跟踪、信号灯、任务、路径、历史动作、交通参与者ID&状态等
+        # 在csv中记录所有数据：时间、自车ID&状态、当前动作、跟踪、信号灯、任务、路径、交通参与者ID&状态
+        time_now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        self.date_write(time_now, obs_real, path_index, path_values, safe_action)
         self.recorder.record(obs_real, safe_action, self.step_timer.mean, path_index, path_values, self.ss_timer.mean, is_ss)
         self.obs, r, done, info = self.env.step(safe_action)
         return done
+
+    def date_write(self, time_now, obs_real, path_index, path_values, safe_action):
+        obs_ego, obs_track, obs_light, obs_task, obs_ref, _, obs_other = self.env._split_all(obs_real)
+
+        def is_in_plot_area(x, y):
+            if -Para.CROSSROAD_SIZE_LAT / 2 - 80 < x < Para.CROSSROAD_SIZE_LAT / 2 + 80 and \
+                    -Para.CROSSROAD_SIZE_LON / 2 - 50 < y < Para.CROSSROAD_SIZE_LON / 2 + 50:
+                return True
+            else:
+                return False
+
+        other_in_area = [item for item in self.env.all_other if is_in_plot_area(item['x'], item['y'])]
+        others = []
+        for i in range(len(other_in_area)):
+            other = other_in_area[i]
+            sur_x, sur_y, sur_v, sur_phi, sur_l, sur_w, sur_route, sur_type = other['x'], other['y'], other['v'], other['phi'], other['l'], other['w'], other['route'], other['type']
+            other_list = [sur_x, sur_y, sur_v, sur_phi, sur_l, sur_w, sur_route, sur_type]
+            others = others + other_list
+        self.data_file.write(time_now, obs_ego, safe_action, obs_track, self.env.light_phase, self.env.training_task, path_index, path_values, others)
 
     def render(self, traj_list, path_values, path_index):
         extension = 40
@@ -641,7 +666,11 @@ def main():
     hier_decision = HierarchicalDecision('experiment-2022-03-06-10-47-50', 300000, logdir)
 
     for i in range(300):
+        # 新建当前episode的csv记录文件
+        data_path = './data_results/{time}'.format(time=time_now)
+        hier_decision.data_file.new_file(data_path, 'episode' + str(i))
         for _ in range(200):
+            # 在step中写入csv数据
             done = hier_decision.step()
             if done:
                 print(hier_decision.env.done_type)
