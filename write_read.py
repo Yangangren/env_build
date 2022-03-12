@@ -63,6 +63,15 @@ class Data_IDC:
         sur = data_step[17:]
         return time, ego, action, track, phase, task, path_index, path_values, sur
 
+    def split_ego(self, surdata):
+        ego_vx = surdata[1]
+        ego_vy = surdata[2]
+        ego_r =  surdata[3]
+        ego_x = surdata[4]
+        ego_y = surdata[5]
+        ego_phi = surdata[6]
+        return ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi
+
     def split_sur(self, sur_data, i):
         # i表示该行sur信息中第i个交通参与者
         # 循环执行--连续输出该行的交通参与者信息
@@ -94,6 +103,8 @@ def test_csv():
         data_step = sim_data.read(file_path)
         time, ego, action, track, phase, task, path_index, path_values, sur = sim_data.split_data(data_step)
         print(time, ego, action, track, phase, task, path_index, path_values)
+    ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi = sim_data.split_ego(data_step)
+    print(ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi)
     m = 2
     for i in range(m):
         # 输出第n行数据中第1-m个交通参与者的信息
