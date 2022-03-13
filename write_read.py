@@ -63,13 +63,13 @@ class Data_IDC:
         sur = data_step[17:]
         return time, ego, action, track, phase, task, path_index, path_values, sur
 
-    def split_ego(self, surdata):
-        ego_vx = surdata[1]
-        ego_vy = surdata[2]
-        ego_r =  surdata[3]
-        ego_x = surdata[4]
-        ego_y = surdata[5]
-        ego_phi = surdata[6]
+    def split_ego(self, data_step):
+        ego_vx = float(data_step[1])
+        ego_vy = float(data_step[2])
+        ego_r = float(data_step[3])
+        ego_x = float(data_step[4])
+        ego_y = float(data_step[5])
+        ego_phi = float(data_step[6])
         return ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi
 
     def split_sur(self, sur_data, i):
@@ -78,12 +78,12 @@ class Data_IDC:
         per_sur_dim = 8
         # number_sur = len(sur_data)/per_sur_dim
         # for i in range(number_sur):
-        sur_x = sur_data[i * per_sur_dim]
-        sur_y = sur_data[i * per_sur_dim + 1]
-        sur_v = sur_data[i * per_sur_dim + 2]
-        sur_phi = sur_data[i * per_sur_dim + 3]
-        sur_l = sur_data[i * per_sur_dim + 4]
-        sur_w = sur_data[i * per_sur_dim + 5]
+        sur_x = float(sur_data[i * per_sur_dim])
+        sur_y = float(sur_data[i * per_sur_dim + 1])
+        sur_v = float(sur_data[i * per_sur_dim + 2])
+        sur_phi = float(sur_data[i * per_sur_dim + 3])
+        sur_l = float(sur_data[i * per_sur_dim + 4])
+        sur_w = float(sur_data[i * per_sur_dim + 5])
         sur_route = sur_data[i * per_sur_dim + 6]
         sur_type = sur_data[i * per_sur_dim + 7]
         # 放在draw_vehicle ？
@@ -95,7 +95,6 @@ def test_csv():
     # name = 'simulation_data'
     # sim_data.new_file(path, name)
     # sim_data.write(0, None)
-
     file_path = 'D:/codecode/AAAmine/Toyota_ryg/env_build/hierarchical_decision/data_results/2022-03-11-09-49-03/episode0.csv'
     n = 2
     for _ in range(n):
