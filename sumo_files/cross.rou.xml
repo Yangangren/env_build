@@ -1,18 +1,18 @@
 <routes>
     <vType id="car_1" length="4.8" width="2.0" accel="2.6" decel="4.5" apparentDecel="4.5" emergencyDecel="4.5"
-           sigma="0.5" tau="1" minGap="4.5" maxSpeed="8" speedDev="0" color="red" vClass="passenger"
+           sigma="0.5" tau="1" minGap="4.5" maxSpeed="6.5" speedDev="0" color="red" vClass="passenger"
            guiShape="passenger" impatience="0" laneChangeModel="LC2013" carFollowModel="Krauss" latAlignment="center"
            minGapLat="0.1" jmCrossingGap="4" maxSpeedLat="1"/>
     <vType id="car_2" length="4.8" width="2.0" accel="2.6" decel="4.5" apparentDecel="4.5" emergencyDecel="4.5"
-           sigma="0.5" tau="1" minGap="4.5" maxSpeed="8" speedDev="0" color="255,255,0" vClass="passenger"
+           sigma="0.5" tau="1" minGap="4.5" maxSpeed="6.5" speedDev="0" color="255,255,0" vClass="passenger"
            guiShape="passenger" impatience="0" laneChangeModel="LC2013" carFollowModel="Krauss" latAlignment="center"
            minGapLat="0.1" jmCrossingGap="4" maxSpeedLat="1"/>
     <vType id="car_3" length="4.8" width="2.0" accel="2.6" decel="4.5" apparentDecel="4.5" emergencyDecel="4.5"
-           sigma="0.5" tau="1" minGap="4.5" maxSpeed="7" speedDev="0" color="255,255,255,186" vClass="passenger"
+           sigma="0.5" tau="1" minGap="4.5" maxSpeed="5.5" speedDev="0" color="255,255,255,186" vClass="passenger"
            guiShape="passenger" impatience="0" laneChangeModel="LC2013" carFollowModel="Krauss" latAlignment="center"
            minGapLat="0.1" jmCrossingGap="4" maxSpeedLat="1"/>
     <vType id="car_4" length="4.8" width="2.0" accel="2.6" decel="4.5" apparentDecel="4.5" emergencyDecel="4.5"
-           sigma="0.5" tau="1" minGap="10.5" maxSpeed="8" speedDev="0" color="255,255,0" vClass="passenger"
+           sigma="0.5" tau="1" minGap="10.5" maxSpeed="6.5" speedDev="0" color="255,255,0" vClass="passenger"
            guiShape="passenger" impatience="0" laneChangeModel="LC2013" carFollowModel="Krauss" latAlignment="center"
            minGapLat="0.1" jmCrossingGap="4" maxSpeedLat="1"/>
     <vType id="bicycle_1" length="2" width="0.48" minGap="1" maxSpeed="3.5" vClass="bicycle" jmCrossingGap="2" carFollowModel="Krauss" latAlignment="right" />

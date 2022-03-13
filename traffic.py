@@ -116,7 +116,7 @@ class Traffic(object):
 
     def init_step(self):
         while traci.simulation.getTime() < 150:
-            if traci.simulation.getTime() < 145:
+            if traci.simulation.getTime() < 149:
                 traci.trafficlight.setPhase('0', 3)
             else:
                 traci.trafficlight.setPhase('0', 0)
