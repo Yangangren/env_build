@@ -14,7 +14,7 @@ from matplotlib.pyplot import MultipleLocator
 import math
 import pandas as pd
 from endtoend_env_utils import Para
-sns.set(style="darkgrid")
+# sns.set(style="darkgrid")
 
 WINDOWSIZE = 1
 
@@ -27,15 +27,26 @@ class Recorder(object):
         self.val2plot = ['v_x', 'r',
                          'steer', 'a_x',
                          'cal_time', 'ref_index', 'beta', 'path_values', 'is_ss']
-        self.key2label = dict(v_x='Velocity [m/s]',
-                              r='Yaw rate [rad/s]',
-                              steer='Steer angle [$\circ$]',
-                              a_x='Acceleration [$\mathrm {m/s^2}$]',
-                              cal_time='Computing time [ms]',
-                              ref_index='Selected path',
-                              beta='Side slip angle[$\circ$]',
-                              path_values='Path value',
-                              is_ss='Safety shield',)
+        plt.rcParams['font.family'] = ['SimHei']
+        plt.rcParams['axes.unicode_minus'] = False  # 显示负号
+        # self.key2label = dict(v_x='Velocity [m/s]',
+        #                       r='Yaw rate [rad/s]',
+        #                       steer='Steer angle [$\circ$]',
+        #                       a_x='Acceleration [$\mathrm {m/s^2}$]',
+        #                       cal_time='Computing time [ms]',
+        #                       ref_index='Selected path',
+        #                       beta='Side slip angle[$\circ$]',
+        #                       path_values='Path value',
+        #                       is_ss='Safety shield',)
+        self.key2label = dict(v_x='速度 [m/s]',
+                              r='横摆角速度 [rad/s]',
+                              steer='前轮转角 [$\circ$]',
+                              a_x='加速度 [$\mathrm {m/s^2}$]',
+                              cal_time='计算时间 [ms]',
+                              ref_index='静态路径选择',
+                              beta='侧偏角[$\circ$]',
+                              path_values='静态路径值',
+                              is_ss='安全护盾',)
 
         self.comp2record = ['v_x', 'v_y', 'r', 'x', 'y', 'phi', 'adp_steer', 'adp_a_x', 'mpc_steer', 'mpc_a_x',
                             'delta_y', 'delta_phi', 'delta_v', 'adp_time', 'mpc_time', 'adp_ref', 'mpc_ref', 'beta']
@@ -113,78 +124,85 @@ class Recorder(object):
         i = 0
         for key in data_dict.keys():
             if key in self.val2plot:
-                f = plt.figure(key, figsize=(6, 5))
+                f = plt.figure(key, figsize=(12, 3))
                 if key == 'ref_index':
-                    ax = f.add_axes([0.11, 0.12, 0.88, 0.86])
-                    sns.lineplot(real_time, data_dict[key] + 1, linewidth=2, palette="bright", color='indigo')
+                    ax = f.add_axes([0.15, 0.22, 0.8, 0.7])
+                    sns.lineplot(real_time, data_dict[key] + 1, linewidth=2, palette="bright", color='b')
                     plt.ylim([0.5, 3.5])
-                    x_major_locator = MultipleLocator(10)
-                    # ax.xaxis.set_major_locator(x_major_locator)
                     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+                    # ax.yaxis.set_major_locator(MultipleLocator(0.02))
                 elif key == 'v_x':
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key]))
                     df['data_smo'] = df['data'].rolling(WINDOWSIZE, min_periods=1).mean()
-                    ax = f.add_axes([0.11, 0.12, 0.88, 0.86])
-                    sns.lineplot('time', 'data_smo', linewidth=2,
-                                 data=df, palette="bright", color='indigo')
+                    ax = f.add_axes([0.15, 0.22, 0.8, 0.7])
+                    sns.lineplot('time', 'data_smo', linewidth=2, data=df, palette="bright", color='b')
                     plt.ylim([-0.5, 10.])
+                    # ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+                    # ax.yaxis.set_major_locator(MultipleLocator(0.02))
                 elif key == 'cal_time':
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key] * 1000))
                     df['data_smo'] = df['data'].rolling(WINDOWSIZE, min_periods=1).mean()
-                    ax = f.add_axes([0.11, 0.12, 0.88, 0.86])
-                    sns.lineplot('time', 'data_smo', linewidth=2,
-                                 data=df, palette="bright", color='indigo')
+                    ax = f.add_axes([0.15, 0.22, 0.8, 0.7])
+                    sns.lineplot('time', 'data_smo', linewidth=2, data=df, palette="bright", color='b')
                     plt.ylim([0, 80])
+                    # ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+                    # ax.yaxis.set_major_locator(MultipleLocator(0.02))
                 elif key == 'a_x':
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key]))
                     df['data_smo'] = df['data'].rolling(WINDOWSIZE, min_periods=1).mean()
-                    ax = f.add_axes([0.14, 0.12, 0.86, 0.86])
-                    sns.lineplot('time', 'data_smo', linewidth=2,
-                                 data=df, palette="bright", color='indigo')
+                    ax = f.add_axes([0.15, 0.22, 0.8, 0.7])
+                    sns.lineplot('time', 'data_smo', linewidth=2, data=df, palette="bright", color='b')
                     plt.ylim([-4.5, 2.0])
+                    # ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+                    # ax.yaxis.set_major_locator(MultipleLocator(0.02))
                 elif key == 'steer':
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key]))
                     df['data_smo'] = df['data'].rolling(WINDOWSIZE, min_periods=1).mean()
-                    ax = f.add_axes([0.15, 0.12, 0.85, 0.86])
-                    sns.lineplot('time', 'data_smo', linewidth=2,
-                                 data=df, palette="bright", color='indigo')
+                    ax = f.add_axes([0.15, 0.22, 0.8, 0.7])
+                    sns.lineplot('time', 'data_smo', linewidth=2, data=df, palette="bright", color='b')
                     plt.ylim([-25, 25])
+                    # ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+                    # ax.yaxis.set_major_locator(MultipleLocator(0.02))
                 elif key == 'beta':
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key]))
                     df['data_smo'] = df['data'].rolling(WINDOWSIZE, min_periods=1).mean()
-                    ax = f.add_axes([0.15, 0.12, 0.85, 0.86])
-                    sns.lineplot('time', 'data_smo', linewidth=2,
-                                 data=df, palette="bright", color='indigo')
+                    ax = f.add_axes([0.15, 0.22, 0.8, 0.7])
+                    sns.lineplot('time', 'data_smo', linewidth=2, data=df, palette="bright", color='b')
                     plt.ylim([-15, 15])
+                    # ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+                    # ax.yaxis.set_major_locator(MultipleLocator(0.02))
                 elif key == 'r':
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key]))
                     df['data_smo'] = df['data'].rolling(WINDOWSIZE, min_periods=1).mean()
-                    ax = f.add_axes([0.15, 0.12, 0.85, 0.86])
-                    sns.lineplot('time', 'data_smo', linewidth=2,
-                                 data=df, palette="bright", color='indigo')
+                    ax = f.add_axes([0.15, 0.22, 0.8, 0.7])
+                    sns.lineplot('time', 'data_smo', linewidth=2, data=df, palette="bright", color='b')
                     plt.ylim([-0.8, 0.8])
+                    # ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+                    # ax.yaxis.set_major_locator(MultipleLocator(0.02))
                 elif key == 'path_values':
                     path_values = data_dict[key]
                     df_list = []
                     for i in range(path_values.shape[1]):
-                        df = pd.DataFrame(dict(time=real_time, data=path_values[:, i], path_index='Path' + str(i)))
+                        df = pd.DataFrame(dict(time=real_time, data=path_values[:, i], path_index='路径' + str(i+1)))
                         df_list.append(df)
                     total_dataframe = pd.concat(df_list, ignore_index=True)
-                    ax = f.add_axes([0.15, 0.12, 0.85, 0.86])
-                    sns.lineplot('time', 'data', linewidth=2, hue='path_index',
-                                 data=total_dataframe, palette="bright", color='indigo')
+                    ax = f.add_axes([0.15, 0.22, 0.8, 0.7])
+                    sns.lineplot('time', 'data', linewidth=2, hue='path_index', data=total_dataframe, palette="bright", color='b')
                     handles, labels = ax.get_legend_handles_labels()
-                    ax.legend(handles=handles, labels=labels, loc='lower left', frameon=False)
+                    # ax.legend(handles=handles, labels=labels, loc='lower left', frameon=False)
+                    ax.legend(handles=handles, labels=labels, loc='upper right', frameon=True, framealpha=0.8)
                     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+                    # ax.yaxis.set_major_locator(MultipleLocator(0.02))
                 elif key == 'is_ss':
                     df = pd.DataFrame(dict(time=real_time, data=data_dict[key]))
-                    ax = f.add_axes([0.15, 0.12, 0.85, 0.86])
+                    ax = f.add_axes([0.15, 0.22, 0.8, 0.7])
                     sns.lineplot('time', 'data', linewidth=2,
-                                 data=df, palette="bright", color='indigo')
+                                 data=df, palette="bright", color='b')
                     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+                    # ax.yaxis.set_major_locator(MultipleLocator(0.02))
                 else:
-                    ax = f.add_axes([0.11, 0.12, 0.88, 0.86])
-                    sns.lineplot(real_time, data_dict[key], linewidth=2, palette="bright", color='indigo')
+                    ax = f.add_axes([0.15, 0.22, 0.8, 0.7])
+                    sns.lineplot(real_time, data_dict[key], linewidth=2, palette="bright", color='b')
 
                 # for a specific simu with red light
                 # ylim = ax.get_ylim()
@@ -192,10 +210,12 @@ class Recorder(object):
                 # ax.add_patch(patches.Rectangle((5, ylim[0]), 3, ylim[1]-ylim[0], facecolor='orange', alpha=0.1))
                 # ax.add_patch(patches.Rectangle((8, ylim[0]), 23.6-8+1, ylim[1]-ylim[0], facecolor='green', alpha=0.1))
 
-                ax.set_ylabel(self.key2label[key], fontsize=15)
-                ax.set_xlabel("Time [s]", fontsize=15)
-                plt.yticks(fontsize=15)
-                plt.xticks(fontsize=15)
+                ax.set_ylabel(self.key2label[key], fontsize=18)
+                ax.set_xlabel("时间 [s]", fontsize=18)
+                ax.xaxis.set_major_locator(MultipleLocator(1))
+                plt.yticks(fontsize=18)
+                plt.xticks(fontsize=18)
+                plt.grid(alpha=0.2)
                 plt.savefig(save_dir + '/{}.png'.format(key))
                 if not isshow:
                     plt.close(f)
