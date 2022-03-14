@@ -1,5 +1,6 @@
 import os
 import csv
+from endtoend_env_utils import xy2_area
 
 class Data_IDC:
     """
@@ -19,7 +20,7 @@ class Data_IDC:
         self.file = open(self.file_path, 'a')
         N = 150  # N>视野内交通参与者数目
         headers = ['time'] + ['Ego_v_x', 'ego_v_y', 'ego_r', 'ego_x', 'ego_y', 'ego_phi'] + ['steer', 'acc'] +\
-                  ['Track_x', 'track_y', 'track_phi', 'track_v'] + ['phase', 'task', 'path_indexs', 'path_value'] + \
+                  ['Track_x', 'track_y', 'track_phi', 'track_v'] + ['exp_v', 'junction'] + ['phase', 'task', 'path_indexs', 'path_value'] + \
                   ['Sur_x', 'sur_y', 'sur_v', 'sur_phi', 'sur_l', 'sur_w', 'sur_route', 'sur_type'] * N
         with open(self.file_path, 'w', encoding='utf8', newline='') as f:
             writer = csv.writer(f)
@@ -27,8 +28,14 @@ class Data_IDC:
 
     def write(self, time, ego, action, track, light, task, path_index, path_values, others):
         data_0 = [time]
-        data_1 = [light, task, path_index, path_values]
-        data = [data_0, ego, action, track, data_1, others]
+        exp_v = ego[0] - track[3]
+        if xy2_area(ego[3], ego[4], task='None') in ['left', 'straight', 'right']:
+            junction = 0
+        else:
+            junction = 1
+        data_1 = [exp_v, junction]
+        data_2 = [light, task, path_index, path_values]
+        data = [data_0, ego, action, track, data_1, data_2, others]
         step_data = []
         for i in data:
             step_data.extend(i)
@@ -56,12 +63,14 @@ class Data_IDC:
         ego = data_step[1: 7]
         action = data_step[7: 9]
         track = data_step[9: 13]
-        phase = data_step[13]
-        task = data_step[14]
-        path_index = data_step[15]
-        path_values = data_step[16]
-        sur = data_step[17:]
-        return time, ego, action, track, phase, task, path_index, path_values, sur
+        exp_v = data_step[13]
+        junction = data_step[14]
+        phase = data_step[15]
+        task = data_step[16]
+        path_index = data_step[17]
+        path_values = data_step[18]
+        sur = data_step[19:]
+        return time, ego, action, track, exp_v, junction, phase, task, path_index, path_values, sur
 
     def split_ego(self, data_step):
         ego_vx = float(data_step[1])
@@ -95,13 +104,14 @@ def test_csv():
     # name = 'simulation_data'
     # sim_data.new_file(path, name)
     # sim_data.write(0, None)
-    file_path = 'D:/codecode/AAAmine/Toyota_ryg/env_build/hierarchical_decision/data_results/2022-03-11-09-49-03/episode0.csv'
+    file_path = 'D:/codecode/AAAmine/Toyota_ryg/env_build/hierarchical_decision/data_results/2022-03-14-08-35-57/episode1.csv'
     n = 2
     for _ in range(n):
         # 输出前n行（跳过表头）n>=1
         data_step = sim_data.read(file_path)
-        time, ego, action, track, phase, task, path_index, path_values, sur = sim_data.split_data(data_step)
+        time, ego, action, track, exp_v, junction, phase, task, path_index, path_values, sur = sim_data.split_data(data_step)
         print(time, ego, action, track, phase, task, path_index, path_values)
+        print(exp_v, junction)
     ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi = sim_data.split_ego(data_step)
     print(ego_vx, ego_vy, ego_r, ego_x, ego_y, ego_phi)
     m = 2
