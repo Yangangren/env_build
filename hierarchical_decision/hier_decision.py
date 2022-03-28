@@ -487,7 +487,9 @@ def plot_static_path():
             plt.plot([four_points[0][0], four_points[1][0]], [four_points[0][1], four_points[1][1]], linestyle='--', color=color[i])
             plt.plot([four_points[1][0], four_points[2][0]], [four_points[1][1], four_points[2][1]], linestyle='--', color=color[i])
             plt.plot([four_points[2][0], four_points[3][0]], [four_points[2][1], four_points[3][1]], linestyle='--', color=color[i])
-    plt.savefig('./multipath_planning.png')
+    plt.xlim(-CROSSROAD_SIZE/2 - extension, CROSSROAD_SIZE/2 + extension)
+    plt.ylim(-CROSSROAD_SIZE/2 - extension, CROSSROAD_SIZE/2 + extension)
+    plt.savefig('./multipath_planning.pdf')
     plt.show()
 
 
