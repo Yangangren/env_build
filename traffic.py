@@ -144,7 +144,7 @@ class Traffic(object):
         #     if random.random() > 0.5:
         #         self.training_light_phase = 2
         traci.trafficlight.setPhase('0', self.training_light_phase)
-        # traci.trafficlight.setPhaseDuration('0', 10000)
+        traci.trafficlight.setPhaseDuration('0', 2)
         traci.simulationStep()
         self._get_traffic_light()
         return self.v_light

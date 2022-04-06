@@ -145,7 +145,6 @@ class HierarchicalDecision(object):
             # obtain safe action
             with self.ss_timer:
                 safe_action, weights, is_ss = self.safe_shield(obs_real, mask_real, path_index_real)
-            print('ALL TIME:', self.step_timer.mean, 'ss', self.ss_timer.mean)
         self.render(path_values, path_index, weights)
         self.recorder.record(obs_real, safe_action, self.step_timer.mean, path_index, path_values, self.ss_timer.mean, is_ss)
         self.obs, r, done, info = self.env.step(safe_action)
@@ -153,7 +152,7 @@ class HierarchicalDecision(object):
 
     def render(self, path_values, path_index, weights):
         square_length = Para.CROSSROAD_SIZE
-        extension = 48
+        extension = 30
         lane_width = Para.LANE_WIDTH
         light_line_width = 3
         dotted_line_style = '--'
@@ -294,14 +293,14 @@ class HierarchicalDecision(object):
                 draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
         # plot vehicles from sensors
-        for veh in self.env.detected_vehicles:
-            veh_x = veh['x']
-            veh_y = veh['y']
-            veh_phi = veh['phi']
-            veh_l = veh['l']
-            veh_w = veh['w']
-            plot_phi_line(veh_x, veh_y, veh_phi, 'lime')
-            draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'lime')
+        # for veh in self.env.detected_vehicles:
+        #     veh_x = veh['x']
+        #     veh_y = veh['y']
+        #     veh_phi = veh['phi']
+        #     veh_l = veh['l']
+        #     veh_w = veh['w']
+        #     plot_phi_line(veh_x, veh_y, veh_phi, 'lime')
+        #     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'lime')
 
         # plot interested others
         if weights is not None:
@@ -346,16 +345,16 @@ class HierarchicalDecision(object):
         devi_longi, devi_lateral, devi_phi, devi_v = obs_track
 
         plot_phi_line(ego_x, ego_y, ego_phi, 'fuchsia')
-        draw_rotate_rec(ego_x, ego_y, ego_phi, self.env.ego_l, self.env.ego_w, 'fuchsia', facecolor='pink')
+        draw_rotate_rec(ego_x, ego_y, ego_phi, self.env.ego_l, self.env.ego_w, 'fuchsia', facecolor='white')
         self.hist_posi.append((ego_x, ego_y))
 
         # plot sensors
         draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
-                          angle_range=2 * pi, dist_range=70, color='thistle')
+                          angle_range=2 * pi, dist_range=35, color='thistle')
         draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
-                          angle_range=70 * pi / 180, dist_range=80, color="slategray")
+                          angle_range=70 * pi / 180, dist_range=40, color="slategray")
         draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
-                          angle_range=90 * pi / 180, dist_range=60, color="slategray")
+                          angle_range=90 * pi / 180, dist_range=30, color="slategray")
 
         # plot history
         xs = [pos[0] for pos in self.hist_posi]
@@ -424,7 +423,6 @@ class HierarchicalDecision(object):
         #                      color=color[i], fontstyle='italic')
         plt.xlim(-(square_length / 2 + extension), square_length / 2 + extension)
         plt.ylim(-(square_length / 2 + extension), square_length / 2 + extension)
-        plt.show()
         plt.pause(0.001)
         if self.logdir is not None:
             plt.savefig(self.logdir + '/episode{}'.format(self.episode_counter) + '/step{}.pdf'.format(self.step_counter))
@@ -447,7 +445,9 @@ def main():
     for i in range(300):
         for _ in range(200):
             done = hier_decision.step()
-            if done: break
+            if done:
+                print(hier_decision.env.done_type)
+                break
         hier_decision.reset()
 
 
@@ -548,9 +548,7 @@ def select_and_rename_snapshots_of_an_episode(logdir, epinum, num):
     file_num = len(file_list) - 1
     interval = file_num // (num-1)
     start = file_num % (num-1)
-    print(start, file_num, interval)
     selected = [start//2] + [start//2+interval*i for i in range(1, num-1)]
-    print(selected)
     if file_num > 0:
         for i, j in enumerate(selected):
             shutil.copyfile(logdir + '/episode{}/step{}.pdf'.format(epinum, j),

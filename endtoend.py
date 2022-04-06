@@ -552,6 +552,9 @@ class CrossroadEnd2endAllRela(gym.Env):
         else:
             random_index = int(np.random.random() * 40) + 27       # [700, 1620]
 
+        if self.mode == 'testing':
+            random_index = 30
+
         x, y, phi, exp_v = self.ref_path.idx2point(random_index)
         v = exp_v * np.random.random()
         routeID = TASK2ROUTEID[self.training_task]
