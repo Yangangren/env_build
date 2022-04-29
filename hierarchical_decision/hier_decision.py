@@ -155,7 +155,7 @@ class HierarchicalDecision(object):
 
     def render(self, path_values, path_index, weights):
         square_length = Para.CROSSROAD_SIZE
-        extension = 48
+        extension = 30
         lane_width = Para.LANE_WIDTH
         light_line_width = 3
         dotted_line_style = '--'
@@ -296,14 +296,14 @@ class HierarchicalDecision(object):
                 draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
         # plot vehicles from sensors
-        for veh in self.env.detected_vehicles:
-            veh_x = veh['x']
-            veh_y = veh['y']
-            veh_phi = veh['phi']
-            veh_l = veh['l']
-            veh_w = veh['w']
-            plot_phi_line(veh_x, veh_y, veh_phi, 'lime')
-            draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'lime')
+        # for veh in self.env.detected_vehicles:
+        #     veh_x = veh['x']
+        #     veh_y = veh['y']
+        #     veh_phi = veh['phi']
+        #     veh_l = veh['l']
+        #     veh_w = veh['w']
+        #     plot_phi_line(veh_x, veh_y, veh_phi, 'lime')
+        #     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'lime')
 
         # plot interested others
         if weights is not None:
@@ -320,8 +320,8 @@ class HierarchicalDecision(object):
             # if is_in_plot_area(item_x, item_y):
             #     plot_phi_line(item_x, item_y, item_phi, 'black')
             #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='m')
-            if (weights is not None) and (item_mask == 1.0):
-                draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='lime', facecolor='lime', alpha=weights[i])
+            # if (weights is not None) and (item_mask == 1.0):
+            #     draw_rotate_rec(item_x, item_y, item_phi, item_l, item_w, c='lime', facecolor='lime', alpha=weights[i])
             #     plt.text(item_x + 0.05, item_y + 0.15, "{:.2f}".format(weights[i]), color='purple', fontsize=12)
 
         # plot_interested vehs
@@ -348,16 +348,16 @@ class HierarchicalDecision(object):
         devi_longi, devi_lateral, devi_phi, devi_v = obs_track
 
         plot_phi_line(ego_x, ego_y, ego_phi, 'fuchsia')
-        draw_rotate_rec(ego_x, ego_y, ego_phi, self.env.ego_l, self.env.ego_w, 'fuchsia', facecolor='pink')
+        draw_rotate_rec(ego_x, ego_y, ego_phi, self.env.ego_l, self.env.ego_w, 'fuchsia', facecolor='white')
         self.hist_posi.append((ego_x, ego_y))
 
         # plot sensors
         draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
-                          angle_range=2 * pi, dist_range=70, color='thistle')
+                          angle_range=2 * pi, dist_range=35, color='thistle')
         draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
-                          angle_range=70 * pi / 180, dist_range=80, color="slategray")
+                          angle_range=70 * pi / 180, dist_range=40, color="slategray")
         draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.env.ego_l / 2, w_bias=0, angle_bias=0,
-                          angle_range=90 * pi / 180, dist_range=60, color="slategray")
+                          angle_range=90 * pi / 180, dist_range=30, color="slategray")
 
         # plot history
         xs = [pos[0] for pos in self.hist_posi]
@@ -426,7 +426,6 @@ class HierarchicalDecision(object):
         #                      color=color[i], fontstyle='italic')
         plt.xlim(-(square_length / 2 + extension), square_length / 2 + extension)
         plt.ylim(-(square_length / 2 + extension), square_length / 2 + extension)
-        plt.show()
         plt.pause(0.001)
         if self.logdir is not None:
             plt.savefig(self.logdir + '/episode{}'.format(self.episode_counter) + '/step{}.pdf'.format(self.step_counter))

@@ -95,7 +95,7 @@ MODE2ROUTE = {'dr': ('1o', '2i'), 'du': ('1o', '3i'), 'dl': ('1o', '4i'),
 
 def judge_feasible(orig_x, orig_y, task):  # map dependant
     def is_in_straight_before1(orig_x, orig_y):
-        return 0 < orig_x < Para.LANE_WIDTH and orig_y <= -Para.CROSSROAD_SIZE / 2
+        return 0 < orig_x < Para.LANE_WIDTH * 2 and orig_y <= -Para.CROSSROAD_SIZE / 2
 
     def is_in_straight_before2(orig_x, orig_y):
         return Para.LANE_WIDTH < orig_x < Para.LANE_WIDTH * 2 and orig_y <= -Para.CROSSROAD_SIZE / 2
