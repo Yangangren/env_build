@@ -978,4 +978,4 @@ def plot_data(epi_num, logdir):
 
 if __name__ == '__main__':
     # main()
-    plot_data(epi_num=4, logdir=r'D:\codecode\AAAmine\Toyota_ryg\env_build\mpc\results\2021-07-09-15-47-26')  # 4
+    plot_data(epi_num=7, logdir='./results/2021-03-17-22-33-09')  # 6 for IDC paper

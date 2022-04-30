@@ -99,8 +99,6 @@ class Recorder(object):
     def load(self, logdir):
         self.data_across_all_episodes = np.load(logdir + '/data_across_all_episodes.npy', allow_pickle=True)
         self.comp_data_for_all_episodes = np.load(logdir + '/comp_data_for_all_episodes.npy', allow_pickle=True)
-        # print(self.data_across_all_episodes)
-        print(self.comp_data_for_all_episodes)
 
     def plot_and_save_ith_episode_curves(self, i, save_dir, isshow=False):
         episode2plot = self.data_across_all_episodes[i]
@@ -111,37 +109,37 @@ class Recorder(object):
         color = ['cyan', 'indigo', 'magenta', 'coral', 'b', 'brown', 'c']
         i = 0
 
-        f = plt.figure(0, figsize=(8, 1.6))
-        ax1 = f.add_axes([0.10, 0.35, 0.8, 0.6])
+        f = plt.figure(0, figsize=(8, 2.6))
+        ax1 = f.add_axes([0.10, 0.25, 0.8, 0.67])
         df = pd.DataFrame(dict(time=real_time, steer=data_dict['steer'], a_x=data_dict['a_x'],))
         df['steer'] = df['steer'].rolling(WINDOWSIZE, min_periods=1).mean()
         df['a_x'] = df['a_x'].rolling(6, min_periods=1).mean()
 
         l1 = plt.plot(real_time, df['a_x'], linewidth='1.5', color='r')
         l2 = plt.plot(real_time, df['steer'], linewidth='1.5', color='k', ls='--')
-        plt.legend(labels=['acceleration', 'steer'], bbox_to_anchor=(0.10, 0.98),
-                   loc='upper left', ncol=2, frameon=False)
-        plt.yticks(fontsize=12)
-        plt.xticks(fontsize=12)
-        plt.xlabel("Time [s]", fontsize=12)
-        plt.ylabel('a[$\mathrm {m/s^2}$]', fontsize=12)
+        plt.legend(labels=['acceleration', 'steer'], bbox_to_anchor=(0.68, 0.29), loc='best', ncol=2,
+                   frameon=False, fontsize=18)
+        plt.yticks(fontsize=15)
+        plt.xticks(fontsize=15)
+        plt.xlabel("Time [s]", fontsize=16)
+        plt.ylabel('a[$\mathrm {m/s^2}$]', fontsize=16, color='red')
         # ax1.yaxis.set_label_coords(-0.11, 0.4)
-        ax1.set_yticks([-3, 2.0])
+        ax1.set_yticks([-3.0, 3.0])
         # ax1.set_yticklabels(('0', '90', '180'), fontsize=12)
         # ax1.set_yticks([-3, 0, 3])
         # ax1.set_yticklabels(('-4', '0', '4'), fontsize=12)
         # ax1.set_ylim([-3, 3])
-        ax1.set_yticklabels(('-3','2.0'), fontsize=12)
+        ax1.set_yticklabels(('-3', '3'), fontsize=15)
         ax2 = ax1.twinx()
-        # ax2.set_yticks([-15, 0, 15])
-        # ax2.set_yticklabels(('-4', '0', '4'), fontsize=12)
-        plt.ylabel('$\delta$[$\circ$]',  fontsize=12)
+        ax2.set_yticks([-10, 0, 10], fontsize=15)
+        ax2.set_yticklabels(('-10', '0', '10'), fontsize=15)
+        plt.ylabel('$\delta$[$\circ$]',  fontsize=16)
         ax2.yaxis.set_label_coords(1.08, 0.35)
         ax2.set_ylim([-15, 15])
         plt.savefig(save_dir + '/{}.pdf'.format('demo-steer-acc'))
 
-        f = plt.figure(1, figsize=(8, 1.6))
-        ax1 = f.add_axes([0.10, 0.35, 0.8, 0.6])
+        f = plt.figure(1, figsize=(8, 1.8))
+        ax1 = f.add_axes([0.10, 0.29, 0.8, 0.6])
         df = pd.DataFrame(dict(time=real_time, v_x=data_dict['v_x'], phi=data_dict['phi'],))
         df['v_x'] = df['v_x'].rolling(1, min_periods=1).mean()
         df['phi'] = df['phi'].rolling(1, min_periods=1).mean()
@@ -149,17 +147,17 @@ class Recorder(object):
         df['phi'] = df['phi'] * math.pi / 180
         l1 = plt.plot(real_time, df['v_x'], linewidth='1.5', color='r')
         l2 = plt.plot(real_time, df['phi'], linewidth='1.5', color='k', ls='--')
-        plt.legend(labels=['speed', 'heading angle'], loc='upper center', ncol=2, frameon=False)
-        plt.yticks(fontsize=12)
-        plt.xticks(fontsize=12)
-        plt.xlabel("Time [s]", fontsize=12)
-        plt.ylabel(r"$v_x$ $\mathrm{[m/s]}$",  fontsize=12)
+        plt.legend(labels=['speed', 'heading angle'], loc='best', bbox_to_anchor=(0.55, 0.5), ncol=2, frameon=False, fontsize=18)
+        plt.yticks(fontsize=15)
+        plt.xticks(fontsize=15)
+        plt.xlabel("Time [s]", fontsize=16)
+        plt.ylabel(r"$v_x$ $\mathrm{[m/s]}$",  fontsize=16, color='red')
         # ax1.yaxis.set_label_coords(-0.11, 0.4)
         ax1.set_ylim([0, 8])
         ax2 = ax1.twinx()
         ax2.set_yticks([0, 1.57, 3.14])
-        ax2.set_yticklabels(('0', '90', '180'), fontsize=12)
-        plt.ylabel('r[$\circ$]', fontsize=12)
+        ax2.set_yticklabels(('0', '90', '180'), fontsize=15)
+        plt.ylabel(r'$\Phi$[$\circ$]', fontsize=16)
         ax2.yaxis.set_label_coords(1.08, 0.45)
         ax2.set_ylim(ax1.get_ylim())
         plt.savefig(save_dir + '/{}.pdf'.format('demo-speed-heading'))
@@ -167,8 +165,8 @@ class Recorder(object):
         from matplotlib.colors import ListedColormap
         cmap = ListedColormap(['blue', 'coral', 'darkcyan'])
         palette = sns.xkcd_palette(['blue', 'coral', 'cyan'])
-        f = plt.figure(2, figsize=(8, 1.6))
-        ax = f.add_axes([0.10, 0.35, 0.8, 0.6])
+        f = plt.figure(2, figsize=(8, 1.8))
+        ax = f.add_axes([0.10, 0.29, 0.8, 0.68])
         path_values = data_dict['path_values']
         df1 = pd.DataFrame(dict(time=real_time, data=path_values[:, 0], path_index='Path 1'))
         df1['data'] = df1['data'].rolling(5, min_periods=1).mean()
@@ -180,12 +178,12 @@ class Recorder(object):
         sns.lineplot('time', 'data', linewidth=1.5, hue='path_index',
                      data=total_dataframe, palette=palette, color='indigo')
         handles, labels = ax.get_legend_handles_labels()
-        ax.legend(handles=handles, labels=labels, loc='upper left', frameon=False, fontsize=10)
+        ax.legend(handles=handles, labels=labels, loc='upper left', ncol=2, frameon=False, fontsize=18)
         # ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
-        plt.yticks(fontsize=12)
-        plt.xticks(fontsize=12)
-        plt.xlabel("Time [s]", fontsize=12)
-        plt.ylabel("Value",  fontsize=12)
+        plt.yticks(fontsize=15)
+        plt.xticks(fontsize=15)
+        plt.xlabel("Time [s]", fontsize=16)
+        plt.ylabel("Value",  fontsize=16)
         # ax1.yaxis.set_label_coords(-0.11, 0.4)
         # ax1.set_ylim([0, 8])
         plt.savefig(save_dir + '/{}.pdf'.format('demo-path_values'))
@@ -327,13 +325,17 @@ class Recorder(object):
         plt.xlim([-2, 2])
         plt.show()
 
-    def plot_mpc_rl(self, i, save_dir, isshow=True, sample=False):
+    def plot_mpc_rl(self, i, save_dir, isshow=False, sample=False):
         episode2plot = self.comp_data_for_all_episodes[i] if i is not None else self.comp_list_for_an_episode
         real_time = np.array([0.1 * i for i in range(len(episode2plot))])
         all_data = [np.array([vals_in_a_timestep[index] for vals_in_a_timestep in episode2plot])
                     for index in range(len(self.comp2record))]
         data_dict = dict(zip(self.comp2record, all_data))
-
+        from scipy.signal import savgol_filter
+        # data_dict['adp_steer'] = savgol_filter(data_dict['adp_steer'], 9, 3, mode='nearest')
+        # data_dict['adp_a_x'] = savgol_filter(data_dict['adp_a_x'], 9, 3, mode='mirror')
+        # data_dict['mpc_steer'] = savgol_filter(data_dict['mpc_steer'], 9, 5, mode='nearest')
+        # data_dict['mpc_a_x'] = savgol_filter(data_dict['mpc_a_x'], 5, 3,mode='nearest')
         df_mpc = pd.DataFrame({'algorithms': 'MPC',
                                'iteration': real_time,
                                'steer': data_dict['mpc_steer'],
@@ -342,7 +344,7 @@ class Recorder(object):
                                'ref_path': data_dict['mpc_ref'] + 1
                                })
 
-        df_rl = pd.DataFrame({'algorithms': 'RL',
+        df_rl = pd.DataFrame({'algorithms': 'RL (w. DP)',
                               'iteration': real_time,
                               'steer': data_dict['adp_steer'],
                               'acc': data_dict['adp_a_x'],
@@ -351,13 +353,41 @@ class Recorder(object):
                               })
 
         # smooth
-        df_rl['steer'] = df_rl['steer'].rolling(5, min_periods=1).mean()
-        df_rl['acc'] = df_rl['acc'].rolling(14, min_periods=1).mean()
-        df_mpc['steer'] = df_mpc['steer'].rolling(5, min_periods=1).mean()
-        df_mpc['acc'] = df_mpc['acc'].rolling(15, min_periods=1).mean()
+        df_rl['steer'] = df_rl['steer'].rolling(9, min_periods=1).mean()
+        df_rl['acc'] = df_rl['acc'].rolling(43, min_periods=1).mean()
+        df_mpc['steer'] = df_mpc['steer'].rolling(14, min_periods=1).mean()
+        df_mpc['acc'] = df_mpc['acc'].rolling(46, min_periods=1).mean()
 
         total_df = df_mpc.append([df_rl], ignore_index=True)
-        plt.close()
+
+        f = plt.figure(0, figsize=(8, 2.0))
+        ax1 = f.add_axes([0.11, 0.35, 0.88, 0.6])
+        l1 = plt.plot(df_mpc['iteration'], df_mpc['steer'], linewidth='1.5', color='k', ls='--')
+        l2 = plt.plot(df_rl['iteration'], df_rl['steer'], linewidth='1.5', color='g')
+        plt.legend(labels=['MPC', 'IDC'], loc='best', bbox_to_anchor=(0.5, 0.4), ncol=2, frameon=False, fontsize=18)
+        plt.yticks(fontsize=15)
+        plt.xticks(fontsize=15)
+        plt.xlabel("Time [s]", fontsize=16)
+        plt.ylabel('$\delta$[$\circ$]',  fontsize=16)
+        # ax1.yaxis.set_label_coords(-0.11, 0.4)
+        # ax1.set_ylim([0, 8])
+        plt.savefig(save_dir + '/{}.pdf'.format('comp-steer'))
+        plt.pause(3.0)
+
+        f = plt.figure(1, figsize=(8, 2.0))
+        ax1 = f.add_axes([0.10, 0.35, 0.89, 0.6])
+        l1 = plt.plot(df_mpc['iteration'], df_mpc['acc'], linewidth='1.5', color='k', ls='--')
+        l2 = plt.plot(df_rl['iteration'], df_rl['acc'], linewidth='1.5', color='g')
+        # plt.legend(labels=['MPC', 'E-IDC'], loc='upper left', ncol=2, frameon=False)
+        plt.yticks(fontsize=15)
+        plt.xticks(fontsize=15)
+        plt.xlabel("Time [s]", fontsize=16)
+        plt.ylabel('$a$[$\\rm m/s^2$]',  fontsize=16)
+        # ax1.yaxis.set_label_coords(-0.11, 0.4)
+        # ax1.set_ylim([0, 8])
+        plt.savefig(save_dir + '/{}.pdf'.format('comp-acc'))
+        plt.pause(3.0)
+
         f1 = plt.figure(figsize=(6.2,5.2))
         ax1 = f1.add_axes([0.155, 0.12, 0.82, 0.80])
         sns.lineplot(x="iteration", y="steer", hue="algorithms", data=total_df, linewidth=2, palette="bright", )
@@ -370,11 +400,11 @@ class Recorder(object):
         # ax1.get_legend().remove()
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        f1.savefig(save_dir + '/steer.png')
+        f1.savefig(save_dir + '/steer.pdf')
         plt.close() if not isshow else plt.show()
 
         f2 = plt.figure(figsize=(6.2, 5.2))
-        ax2 = f2.add_axes([0.155, 0.12, 0.82, 0.80])
+        ax2 = f2.add_axes([0.16, 0.12, 0.82, 0.80])
         sns.lineplot(x="iteration", y="acc", hue="algorithms", data=total_df, linewidth=2, palette="bright", )
         # ax2.set_title('Acceleration [$\mathrm {m/s^2}$]', fontsize=20)
         ax2.set_ylabel('Acceleration [$\mathrm {m/s^2}$]', fontsize=20)
@@ -383,7 +413,7 @@ class Recorder(object):
         ax2.get_legend().remove()
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        plt.savefig(save_dir + '/acceleration.png')
+        plt.savefig(save_dir + '/acceleration.pdf')
         plt.close() if not isshow else plt.show()
 
         f3 = plt.figure(figsize=(6.2,5.2))
@@ -397,7 +427,7 @@ class Recorder(object):
         ax3.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        plt.savefig(save_dir + '/ref_path.png')
+        plt.savefig(save_dir + '/ref_path.pdf')
         plt.close() if not isshow else plt.show()
 
         f4 = plt.figure(figsize=(6.2, 5.2))
@@ -406,41 +436,14 @@ class Recorder(object):
         plt.yscale('log')
         # ax3.set_title('Computing time [ms]', fontsize=20)
         ax4.set_xlabel("Time [s]", fontsize=20)
-        ax4.set_ylabel('Computational time [ms]', fontsize=20)
+        ax4.set_ylabel('Computing time [ms]', fontsize=20)
         handles, labels = ax4.get_legend_handles_labels()
         ax4.legend(handles=handles[:], labels=labels[:], frameon=False, fontsize=20)
         ax4.get_legend().remove()
         plt.yticks(fontsize=15)
         plt.xticks(fontsize=15)
-        plt.savefig(save_dir + '/time.png')
+        plt.savefig(save_dir + '/time.pdf')
         plt.close() if not isshow else plt.show()
-
-    @staticmethod
-    def toyota_plot():
-        data = [dict(method='Rule-based', number=8, who='Collision'),
-                dict(method='Rule-based', number=13, who='Failure'),
-                dict(method='Rule-based', number=2, who='Compliance'),
-
-                dict(method='Model-based RL', number=3, who='Collision'),
-                dict(method='Model-based RL', number=0, who='Failure'),
-                dict(method='Model-based RL', number=3, who='Compliance'),
-
-                dict(method='Model-free RL', number=31, who='Collision'),
-                dict(method='Model-free RL', number=0, who='Failure'),
-                dict(method='Model-free RL', number=17, who='Compliance')
-                ]
-
-        f = plt.figure(3)
-        ax = f.add_axes([0.155, 0.12, 0.82, 0.86])
-        df = pd.DataFrame(data)
-        sns.barplot(x="method", y="number", hue='who', data=df)
-        ax.set_ylabel('Number', fontsize=15)
-        ax.set_xlabel("", fontsize=15)
-        plt.xticks(fontsize=15)
-        handles, labels = ax.get_legend_handles_labels()
-        ax.legend(handles=handles[:], labels=labels[:], frameon=False, fontsize=15)
-        plt.show()
-
 
 
 
