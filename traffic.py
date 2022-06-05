@@ -24,16 +24,15 @@ else:
 import sumolib
 from sumolib import checkBinary
 import traci
-from traci.exceptions import FatalTraCIError
+from traci.exceptions import FatalTraCIError, TraCIException
 from endtoend_env_utils import shift_and_rotate_coordination, _convert_car_coord_to_sumo_coord, \
-    _convert_sumo_coord_to_car_coord, xy2_edgeID_lane, SUMOCFG_DIR, TASK2ROUTEID
+    _convert_sumo_coord_to_car_coord, xy2_edgeID_lane, TASK2ROUTEID
 
 SUMO_BINARY = checkBinary('sumo')
 SIM_PERIOD = 1.0 / 10
 
 
 class Traffic(object):
-
     def __init__(self, step_length, mode, init_n_ego_dict):  # mode 'display' or 'training'
         self.random_traffic = None
         self.sim_time = 0
@@ -45,9 +44,11 @@ class Traffic(object):
         self.collision_ego_id = None
         self.v_light = None
         self.n_ego_dict = init_n_ego_dict
-        self.training_light_phase = None
+        self.light_phase = None
         self.mode = mode
+        self.net = sumolib.net.readNet(os.path.dirname(__file__) + "/sumo_files/" + 'a.net.xml')
 
+        SUMOCFG_DIR = os.path.dirname(__file__) + "/sumo_files/cross.sumocfg"
         try:
             traci.start(
                 [SUMO_BINARY, "-c", SUMOCFG_DIR,
@@ -99,7 +100,7 @@ class Traffic(object):
 
             traci.simulationStep()
 
-    def __del__(self):
+    def close(self):
         traci.close()
 
     def add_self_car(self, n_ego_dict, with_delete=True):
@@ -116,12 +117,11 @@ class Traffic(object):
                 try:
                     traci.vehicle.remove(egoID)
                 except traci.exceptions.TraCIException:
-                    print('Don\'t worry, it\'s been handled well')
+                    # print('Don\'t worry, it\'s been handled well')
+                    pass
                 traci.simulationStep()
-                traci.vehicle.addLegacy(vehID=egoID, routeID=ego_dict['routeID'],
-                                        # depart=0, pos=20, lane=lane, speed=ego_dict['v_x'],
-                                        typeID='self_car')
-            traci.vehicle.moveToXY(egoID, edgeID, lane, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keepRoute=1)
+                traci.vehicle.addLegacy(vehID=egoID, routeID=ego_dict['routeID'], typeID='self_car')
+            traci.vehicle.moveToXY(egoID, -1, -1, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keepRoute=1)
             traci.vehicle.setLength(egoID, ego_dict['l'])
             traci.vehicle.setWidth(egoID, ego_dict['w'])
             traci.vehicle.setSpeed(egoID, math.sqrt(ego_v_x ** 2 + ego_v_y ** 2))
@@ -137,21 +137,20 @@ class Traffic(object):
 
     def init_light(self):
         if random.random() > 0.7:
-            self.training_light_phase = 3
+            self.light_phase = 3
         else:
-            self.training_light_phase = 0
-        # if self.training_task == 'right':   # todo
-        #     if random.random() > 0.5:
-        #         self.training_light_phase = 2
-        traci.trafficlight.setPhase('0', self.training_light_phase)
+            self.light_phase = 0
+        traci.trafficlight.setPhase('0', self.light_phase)
         traci.trafficlight.setPhaseDuration('0', 2)
         traci.simulationStep()
         self._get_traffic_light()
         return self.v_light
 
+    def get_light_duration(self):
+        return traci.trafficlight.getNextSwitch('0')
+
     def init_traffic(self, init_n_ego_dict, training_task):
         self.training_task = training_task
-        self.ego_route = TASK2ROUTEID[self.training_task]
         self.sim_time = 0
         self.n_ego_vehicles = defaultdict(list)
         self.collision_flag = False
@@ -165,7 +164,7 @@ class Traffic(object):
 
         # move ego to the given position and remove conflict cars
         for egoID, ego_dict in self.n_ego_dict.items():
-            ego_x, ego_y, ego_v_x, ego_v_y, ego_phi, ego_l, ego_w = ego_dict['x'], ego_dict['y'], ego_dict['v_x'],\
+            ego_x, ego_y, ego_v_x, ego_v_y, ego_phi, ego_l, ego_w = ego_dict['x'], ego_dict['y'], ego_dict['v_x'], \
                                                                     ego_dict['v_y'], ego_dict['phi'], ego_dict['l'], \
                                                                     ego_dict['w']
             for veh in random_traffic:
@@ -174,7 +173,6 @@ class Traffic(object):
                 veh_l = random_traffic[veh][traci.constants.VAR_LENGTH]
                 veh_v = random_traffic[veh][traci.constants.VAR_SPEED]
                 # veh_sig = random_traffic[veh][traci.constants.VAR_SIGNALS]
-                # 10: left and brake 9: right and brake 1: right 8: brake 0: no signal 2: left
 
                 x, y, a = _convert_sumo_coord_to_car_coord(x_in_sumo, y_in_sumo, a_in_sumo, veh_l)
                 x_in_ego_coord, y_in_ego_coord, a_in_ego_coord = shift_and_rotate_coordination(x, y, a, ego_x,
@@ -215,17 +213,39 @@ class Traffic(object):
     def _get_traffic_light(self):
         self.v_light = traci.trafficlight.getPhase('0')
 
+    def get_road(self, ref_x, ref_y):
+        # Reference: https://sumo.dlr.de/docs/Tools/Sumolib.html#locate_nearby_edges_based_on_the_geo-coordinate
+        edge_list = self.net.getNeighboringEdges(ref_x, ref_y, r=10.)          # todo: check the coordinates
+        # pick the closest edge
+        if len(edge_list) > 0:
+            dist2edge, edge = sorted([(dist, edge) for edge, dist in edge_list])[0]
+            edge_name = edge.getID()
+        else:
+            dist2edge, edge, edge_name = None, None, None
+
+        # pick the closest lane
+        lane_list = self.net.getNeighboringLanes(ref_x, ref_y, r=10.)          # todo: check the coordinates
+        if len(lane_list) > 0:
+            dist2lane, lane = sorted([(dist, lane) for lane, dist in lane_list])[0]
+            lane_name = lane.getID()
+        else:
+            dist2lane, lane, lane_name = None, None, None
+
+        if edge_name is None and lane_name is None:
+            assert 0, 'No lane and edge found for ({} {})!'.format(ref_x, ref_y)
+        elif edge_name is None and lane_name is not None:
+            edge_name = lane_name.split('_')[0]
+        elif edge_name is not None and lane_name is not None:
+            assert edge_name == lane_name.split('_')[0], 'Unmatched edge and lane name for ({} {})!'.format(ref_x, ref_y)
+        else:
+            assert 0, 'No lane and edge found for ({} {})!'.format(ref_x, ref_y)
+        return edge_name, lane_name, list(traci.lane.getShape(lane_name)), traci.lane.getWidth(lane_name), traci.lane.getLength(lane_name)
+
     def sim_step(self):
         self.sim_time += SIM_PERIOD
-        if self.mode == 'training':
-            traci.trafficlight.setPhase('0', self.training_light_phase)
-        # else:
-        #     if self.sim_time < 5.:
-        #         traci.trafficlight.setPhase('0', 2)
-        #     elif self.sim_time < 5.+3.:
-        #         traci.trafficlight.setPhase('0', 1)
-        #     else:
-        #         traci.trafficlight.setPhase('0', 0)
+        # keep the signal lights unchanged during training
+        if self.mode == "training":
+            traci.trafficlight.setPhase('0', self.light_phase)
         traci.simulationStep()
         self._get_vehicles()
         self._get_traffic_light()
@@ -252,11 +272,11 @@ class Traffic(object):
             # if self.training_task == 'left':  # TODO
             #     keeproute = 2 if ego_x > 0 and ego_y > -7 else 1
             try:
-                traci.vehicle.moveToXY(egoID, egdeID, lane, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keeproute)
+                traci.vehicle.moveToXY(egoID, -1, -1, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keeproute)
             except traci.exceptions.TraCIException:
                 print(egoID, egdeID, lane, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keeproute)
-                traci.vehicle.moveToXY(egoID, egdeID, lane, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keeproute)
-            traci.vehicle.setSpeed(egoID, math.sqrt(ego_v_x**2+ego_v_y**2))
+                traci.vehicle.moveToXY(egoID, -1, -1, ego_x_in_sumo, ego_y_in_sumo, ego_a_in_sumo, keeproute)
+            traci.vehicle.setSpeed(egoID, math.sqrt(ego_v_x ** 2 + ego_v_y ** 2))
 
     def collision_check(self):  # True: collision
         flag_dict = dict()

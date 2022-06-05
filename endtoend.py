@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 # =====================================
-# @Time    : 2020/11/08
-# @Author  : Yang Guan (Tsinghua Univ.)
+# @Time    : 2022/04/12
+# @Author  : Yangang Ren (Tsinghua Univ.)
 # @FileName: endtoend.py
 # =====================================
 
@@ -12,15 +12,20 @@ from collections import OrderedDict
 from math import cos, sin, pi, sqrt
 import random
 from random import choice
-import matplotlib.patches as mpatch
+
 import gym
+import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.transforms import Affine2D
+from matplotlib.patches import Wedge
+from matplotlib.collections import PatchCollection
 import numpy as np
+import matplotlib.patches as mpatch
+from shapely.geometry import Polygon, Point, LineString, mapping
 from gym.utils import seeding
 from LasVSim.sensor_module import *
 from LasVSim.simulator import Settings
 
-# gym.envs.user_defined.toyota_env.
 from dynamics_and_models import VehicleDynamics, ReferencePath, EnvironmentModel
 from endtoend_env_utils import *
 from traffic import Traffic
@@ -44,25 +49,23 @@ def convert_observation_to_space(observation):
     return space
 
 
-class CrossroadEnd2endAllRela(gym.Env):
+class CrossroadEnd2end(gym.Env):
     def __init__(self,
                  mode='training',
                  multi_display=False,
-                 state_mode='dyna',  # 'dyna'
                  future_point_num=25,
                  **kwargs):
         self.mode = mode
-        self.future_point_num = future_point_num
         self.dynamics = VehicleDynamics()
         self.interested_other = None
-        self.detected_vehicles = None
+        self.detected_other = None
+        self.future_n_edge = None
         self.all_other = None
         self.ego_dynamics = None
-        self.state_mode = state_mode
         self.init_state = {}
-        self.action_number = 2
+        self.front_wheel_bound = [-25, 25]  # deg
         self.ego_l, self.ego_w = Para.L, Para.W
-        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(self.action_number,), dtype=np.float32)
+        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32)
 
         self.seed()
         self.light_phase = None
@@ -71,7 +74,6 @@ class CrossroadEnd2endAllRela(gym.Env):
         self.step_length = 100  # ms
 
         self.step_time = self.step_length / 1000.0
-        self.init_state = None
         self.obs = None
         self.action = None
 
@@ -79,38 +81,45 @@ class CrossroadEnd2endAllRela(gym.Env):
         self.reward_info = None
         self.ego_info_dim = Para.EGO_ENCODING_DIM
         self.track_info_dim = Para.TRACK_ENCODING_DIM
+        self.road_info_dim = Para.ROAD_ENCODING_DIM
         self.light_info_dim = Para.LIGHT_ENCODING_DIM
         self.task_info_dim = Para.TASK_ENCODING_DIM
-        self.ref_info_dim = Para.REF_ENCODING_DIM
         self.per_other_info_dim = Para.PER_OTHER_INFO_DIM
-        self.per_path_info_dim = Para.PER_PATH_INFO_DIM
-        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.future_point_num * self.per_path_info_dim,
-                                    self.light_info_dim, self.task_info_dim, self.ref_info_dim])
+        self.other_start_dim = sum([self.ego_info_dim, self.track_info_dim, self.road_info_dim, self.light_info_dim, self.task_info_dim])
         self.veh_num = Para.MAX_VEH_NUM
         self.bike_num = Para.MAX_BIKE_NUM
         self.person_num = Para.MAX_PERSON_NUM
         self.other_number = sum([self.veh_num, self.bike_num, self.person_num])
 
-        self.veh_mode_dict = None
+        self.bicycle_mode_dict = None
+        self.person_mode_dict = None
         self.training_task = None
         self.env_model = None
         self.ref_path = None
+        self.ref_point = None
         self.future_n_point = None
+        self.future_point_num = future_point_num
+        self.vector_noise = False
 
         """Load sensor module."""
-        setting_dir = os.path.dirname(__file__)
-        self.settings = Settings(file_path=setting_dir + '/LasVSim/Library/default_simulation_setting.xml')
+        if self.mode == 'testing':
+            self.settings = Settings('../../LasVSim/Library/default_simulation_setting.xml')
+        else:
+            self.settings = Settings('LasVSim/Library/default_simulation_setting.xml')
         step_length = (self.settings.step_length *
                        self.settings.sensor_frequency)
-        self.sensors = Sensors(step_length=step_length,
-                               sensor_info=self.settings.sensors)
+        self.sensors = Sensors(step_length=step_length, sensor_info=self.settings.sensors)
+
+        if self.vector_noise:
+            self.rng = np.random.default_rng(12345)
+
         if not multi_display:
             self.traffic = Traffic(self.step_length,
                                    mode=self.mode,
                                    init_n_ego_dict=self.init_state)
             self.reset()
             action = self.action_space.sample()
-            observation, _reward, done, _info = self.step(action)
+            observation, _, _, _ = self.step(action)
             self._set_observation_space(observation)
             plt.ion()
 
@@ -124,8 +133,7 @@ class CrossroadEnd2endAllRela(gym.Env):
         self.task_encoding = TASK_ENCODING[self.training_task]
         self.light_encoding = LIGHT_ENCODING[self.light_phase]
         self.ref_path = ReferencePath(self.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.light_phase])
-        self.veh_mode_dict = VEHICLE_MODE_DICT[self.training_task]
-        self.env_model = EnvironmentModel(future_point_num=self.future_point_num)
+        self.env_model = EnvironmentModel()
         self.init_state = self._reset_init_state(LIGHT_PHASE_TO_GREEN_OR_RED[self.light_phase])
         self.traffic.init_traffic(self.init_state, self.training_task)
         self.traffic.sim_step()
@@ -134,18 +142,20 @@ class CrossroadEnd2endAllRela(gym.Env):
                                                self.init_state['ego']['r'],
                                                self.init_state['ego']['x'],
                                                self.init_state['ego']['y'],
-                                               self.init_state['ego']['phi']],
+                                               self.init_state['ego']['phi'],
+                                               self.init_state['ego']['front_wheel'],
+                                               self.init_state['ego']['acc']],
                                               [0,
                                                0,
                                                self.dynamics.vehicle_params['miu'],
                                                self.dynamics.vehicle_params['miu']]
                                               )
         self._get_all_info(ego_dynamics)
-        self.obs, other_mask_vector, self.future_n_point = self._get_obs()
+        self.obs, other_mask_vector, self.future_n_point, self.future_n_edge = self.get_obs()
         self.action = None
         self.reward_info = None
         self.done_type = 'not_done_yet'
-        all_info = dict(future_n_point=self.future_n_point, mask=other_mask_vector, path_index=self.ref_path.path_index)
+        all_info = dict(future_n_point=self.future_n_point, mask=other_mask_vector, future_n_edge=self.future_n_edge)
         return self.obs, all_info
 
     def close(self):
@@ -159,10 +169,11 @@ class CrossroadEnd2endAllRela(gym.Env):
         self.traffic.set_own_car(dict(ego=ego_dynamics))
         self.traffic.sim_step()
         all_info = self._get_all_info(ego_dynamics)
-        self.obs, other_mask_vector, self.future_n_point = self._get_obs()
+        self.obs, other_mask_vector, self.future_n_point, self.future_n_edge = self.get_obs()
         self.done_type, done = self._judge_done()
         self.reward_info.update({'final_rew': reward})
-        all_info.update({'reward_info': self.reward_info, 'future_n_point': self.future_n_point, 'mask': other_mask_vector, 'path_index': self.ref_path.path_index})
+        all_info.update({'reward_info': self.reward_info, 'future_n_point': self.future_n_point,
+                         'mask': other_mask_vector, 'future_n_edge': self.future_n_edge})
         return self.obs, reward, done, all_info
 
     def _set_observation_space(self, observation):
@@ -176,12 +187,14 @@ class CrossroadEnd2endAllRela(gym.Env):
                    x=next_ego_state[3],
                    y=next_ego_state[4],
                    phi=next_ego_state[5],
+                   front_wheel=next_ego_state[6],
+                   acc=next_ego_state[7],
                    l=self.ego_l,
                    w=self.ego_w,
                    alpha_f=next_ego_params[0],
                    alpha_r=next_ego_params[1],
                    miu_f=next_ego_params[2],
-                   miu_r=next_ego_params[3], )
+                   miu_r=next_ego_params[3])
         miu_f, miu_r = out['miu_f'], out['miu_r']
         F_zf, F_zr = self.dynamics.vehicle_params['F_zf'], self.dynamics.vehicle_params['F_zr']
         C_f, C_r = self.dynamics.vehicle_params['C_f'], self.dynamics.vehicle_params['C_r']
@@ -205,15 +218,11 @@ class CrossroadEnd2endAllRela(gym.Env):
 
         return out
 
-    def _get_all_info(self, ego_dynamics):  # used to update info, must be called every timestep before _get_obs
+    def _get_all_info(self, ego_dynamics):  # used to update info, must be called every timestep before get_obs
         # to fetch info
         self.all_other = self.traffic.n_ego_vehicles['ego']  # coordination 2
         self.ego_dynamics = ego_dynamics  # coordination 2
         self.light_phase = self.traffic.v_light
-
-        # all_vehicles
-        # dict(x=x, y=y, v=v, phi=a, l=length,
-        #      w=width, route=route)
 
         all_info = dict(all_other=self.all_other,
                         ego_dynamics=self.ego_dynamics,
@@ -236,7 +245,7 @@ class CrossroadEnd2endAllRela(gym.Env):
             return 'deviate_too_much', 1
         elif self._break_stability():
             return 'break_stability', 1
-        elif self._break_red_light():   # todo
+        elif self._break_red_light():
             return 'break_red_light', 1
         elif self._is_achieve_goal():
             return 'good_done', 1
@@ -256,9 +265,6 @@ class CrossroadEnd2endAllRela(gym.Env):
                                          self.ego_dynamics['miu_f'], self.ego_dynamics['miu_r']
         alpha_f_bound, alpha_r_bound = self.ego_dynamics['alpha_f_bound'], self.ego_dynamics['alpha_r_bound']
         r_bound = self.ego_dynamics['r_bound']
-        # if -alpha_f_bound < alpha_f < alpha_f_bound \
-        #         and -alpha_r_bound < alpha_r < alpha_r_bound and \
-        #         -r_bound < self.ego_dynamics['r'] < r_bound:
         if -r_bound < self.ego_dynamics['r'] < r_bound:
             return False
         else:
@@ -280,13 +286,10 @@ class CrossroadEnd2endAllRela(gym.Env):
 
     def _action_transformation_for_end2end(self, action):  # [-1, 1]
         action = np.clip(action, -1.05, 1.05)
-        steer_norm, a_x_norm = action[0], action[1]
-        scaled_steer = 0.4 * steer_norm
-        scaled_a_x = 2.25 * a_x_norm - 0.75  # [-3, 1.5]
-        # if self.light_phase != 0 and self.ego_dynamics['y'] < -25 and self.training_task != 'right':
-        #     scaled_steer = 0.
-        #     scaled_a_x = -3.
-        scaled_action = np.array([scaled_steer, scaled_a_x], dtype=np.float32)
+        delta_wheel_norm, delta_a_x_norm = action[0], action[1]
+        delta_wheel = 0.4 * delta_wheel_norm
+        delta_a_x = 4.5 * delta_a_x_norm
+        scaled_action = np.array([delta_wheel, delta_a_x], dtype=np.float32)
         return scaled_action
 
     def _get_next_ego_state(self, trans_action):
@@ -296,75 +299,67 @@ class CrossroadEnd2endAllRela(gym.Env):
         current_x = self.ego_dynamics['x']
         current_y = self.ego_dynamics['y']
         current_phi = self.ego_dynamics['phi']
-        steer, a_x = trans_action
-        state = np.array([[current_v_x, current_v_y, current_r, current_x, current_y, current_phi]], dtype=np.float32)
-        action = np.array([[steer, a_x]], dtype=np.float32)
+        current_front_wheel = self.ego_dynamics['front_wheel']
+        current_acc = self.ego_dynamics['acc']
+
+        delta_front_wheel, delta_acc = trans_action
+        state = np.array([[current_v_x, current_v_y, current_r, current_x, current_y, current_phi, current_front_wheel, current_acc]], dtype=np.float32)
+        action = np.array([[delta_front_wheel, delta_acc]], dtype=np.float32)
         next_ego_state, next_ego_params = self.dynamics.prediction(state, action, 10)
         next_ego_state, next_ego_params = next_ego_state.numpy()[0], next_ego_params.numpy()[0]
         next_ego_state[0] = next_ego_state[0] if next_ego_state[0] >= 0 else 0.
-        next_ego_state[-1] = deal_with_phi(next_ego_state[-1])
+        next_ego_state[5] = deal_with_phi(next_ego_state[5])
+        next_ego_state[6] = np.clip(next_ego_state[6], self.front_wheel_bound[0], self.front_wheel_bound[1])  # todo
+        next_ego_state[7] = np.clip(next_ego_state[7], -3.0, 1.5)
         return next_ego_state, next_ego_params
 
-    def _get_obs(self, exit_='D'):
-        ego_x = self.ego_dynamics['x']
-        ego_y = self.ego_dynamics['y']
-        ego_phi = self.ego_dynamics['phi']
-        ego_v_x = self.ego_dynamics['v_x']
-
-        other_vector, other_mask_vector = self._construct_other_vector_short(exit_)
-        ego_vector = self._construct_ego_vector_short()
-        track_vector = self.ref_path.tracking_error_vector_vectorized(ego_x, ego_y, ego_phi, ego_v_x)
-        future_n_point = self.ref_path.get_future_n_point(ego_x, ego_y, self.future_point_num)
+    def get_obs(self, exit_='D'):
+        other_vector, other_mask_vector = self._construct_other_vector(exit_)
+        ego_vector = self._construct_ego_vector()
+        track_vector, self.ref_point, road_ref_point = self.ref_path.tracking_error_vector_vectorized(ego_vector[3], ego_vector[4], ego_vector[5], ego_vector[0]) # 3 for x; 4 foy y
+        road_vector = self._construct_road_vector(np.array([road_ref_point]).T).squeeze(axis=1)
+        future_n_point = self.ref_path.get_future_n_point(ego_vector[3], ego_vector[4], self.future_point_num * 2)
+        future_n_edge = self._construct_road_vector(future_n_point)
         self.light_encoding = LIGHT_ENCODING[self.light_phase]
-        vector = np.concatenate((ego_vector, track_vector, future_n_point, self.light_encoding, self.task_encoding,
-                                 self.ref_path.ref_encoding, other_vector), axis=0)
+        vector = np.concatenate((ego_vector, track_vector, road_vector, self.light_encoding, self.task_encoding, other_vector), axis=0)
         vector = vector.astype(np.float32)
-        # vector = self._convert_to_rela(vector)
+        vector = self._convert_to_rela(vector)
 
-        return vector, other_mask_vector, future_n_point
+        return vector, other_mask_vector, future_n_point, future_n_edge
 
     def _convert_to_rela(self, obs_abso):
-        obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other = self._split_all(obs_abso)
+        obs_ego, obs_track, obs_road, obs_light, obs_task, obs_other = self._split_all(obs_abso)
         obs_other_reshape = self._reshape_other(obs_other)
         ego_x, ego_y = obs_ego[3], obs_ego[4]
         ego = np.array(([ego_x, ego_y] + [0.] * (self.per_other_info_dim - 2)), dtype=np.float32)
         ego = ego[np.newaxis, :]
         rela = obs_other_reshape - ego
         rela_obs_other = self._reshape_other(rela, reverse=True)
-        return np.concatenate([obs_ego, obs_track, obs_light, obs_task, obs_ref, rela_obs_other], axis=0)
+        return np.concatenate([obs_ego, obs_track, obs_road, obs_light, obs_task, rela_obs_other], axis=0)
 
     def _convert_to_abso(self, obs_rela):
-        obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other = self._split_all(obs_rela)
+        obs_ego, obs_track, obs_road, obs_light, obs_task, obs_other = self._split_all(obs_rela)
         obs_other_reshape = self._reshape_other(obs_other)
         ego_x, ego_y = obs_ego[3], obs_ego[4]
         ego = np.array(([ego_x, ego_y] + [0.] * (self.per_other_info_dim - 2)), dtype=np.float32)
         ego = ego[np.newaxis, :]
         abso = obs_other_reshape + ego
         abso_obs_other = self._reshape_other(abso, reverse=True)
-        return np.concatenate([obs_ego, obs_track, obs_light, obs_task, obs_ref, abso_obs_other])
+        return np.concatenate([obs_ego, obs_track, obs_road, obs_light, obs_task, abso_obs_other])
 
     def _split_all(self, obs):
         obs_ego = obs[:self.ego_info_dim]
         obs_track = obs[self.ego_info_dim:
                         self.ego_info_dim + self.track_info_dim]
-        obs_future_point = obs[self.ego_info_dim + self.track_info_dim:
-                               self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim]
-        obs_light = obs[self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim:
-                        self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim]
-        obs_task = obs[self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim:
-                       self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim]
-        obs_ref = obs[self.ego_info_dim + self.track_info_dim + self.future_point_num * self.per_path_info_dim + self.light_info_dim + self.task_info_dim:
-                      self.other_start_dim]
+        obs_road = obs[self.ego_info_dim + self.track_info_dim:
+                       self.ego_info_dim + self.track_info_dim + self.road_info_dim]
+        obs_light = obs[self.ego_info_dim + self.track_info_dim + self.road_info_dim:
+                        self.ego_info_dim + self.track_info_dim + self.road_info_dim + self.light_info_dim]
+        obs_task = obs[self.ego_info_dim + self.track_info_dim + self.road_info_dim + self.light_info_dim:
+                       self.ego_info_dim + self.track_info_dim + self.road_info_dim + self.light_info_dim + self.task_info_dim]
         obs_other = obs[self.other_start_dim:]
 
-        return obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other
-
-    def _split_other(self, obs_other):
-        obs_bike = obs_other[:self.bike_num * self.per_other_info_dim]
-        obs_person = obs_other[self.bike_num * self.per_other_info_dim:
-                               (self.bike_num + self.person_num) * self.per_other_info_dim]
-        obs_veh = obs_other[(self.bike_num + self.person_num) * self.per_other_info_dim:]
-        return obs_bike, obs_person, obs_veh
+        return obs_ego, obs_track, obs_road, obs_light, obs_task, obs_other
 
     def _reshape_other(self, obs_other, reverse=False):
         if reverse:
@@ -372,21 +367,31 @@ class CrossroadEnd2endAllRela(gym.Env):
         else:
             return np.reshape(obs_other, (self.other_number, self.per_other_info_dim))
 
-    def _construct_ego_vector_short(self):
+    def _construct_ego_vector(self):
         ego_v_x = self.ego_dynamics['v_x']
         ego_v_y = self.ego_dynamics['v_y']
         ego_r = self.ego_dynamics['r']
         ego_x = self.ego_dynamics['x']
         ego_y = self.ego_dynamics['y']
         ego_phi = self.ego_dynamics['phi']
-        ego_feature = [ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi]
+        ego_front_wheel = self.ego_dynamics['front_wheel']
+        ego_acc = self.ego_dynamics['acc']
+        ego_feature = [ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi, ego_front_wheel, ego_acc]
         return np.array(ego_feature, dtype=np.float32)
 
-    def _construct_other_vector_short(self, exit_='D'):
+    def _construct_other_vector(self, exit_='D'):
         ego_x = self.ego_dynamics['x']
         ego_y = self.ego_dynamics['y']
+        ego_phi = self.ego_dynamics['phi'] * pi / 180
         other_vector = []
         other_mask_vector = []
+
+        ego_state = [self.ego_dynamics['x'], self.ego_dynamics['y'], self.ego_dynamics['v_x'], self.ego_dynamics['phi']]
+        all_vehicles = list(filter(lambda v: Para.CROSSROAD_SIZE/2 + 40 > v['x'] > -Para.CROSSROAD_SIZE/2 - 40 and
+                                             Para.CROSSROAD_SIZE/2 + 40 > v['y'] > -Para.CROSSROAD_SIZE/2 - 40, self.all_other))
+        all_others = list(filter(lambda v: ((v['x'] - ego_x) * np.cos(ego_phi) + (v['y'] - ego_y) * np.sin(ego_phi)) > -1.5 * Para.L, all_vehicles))
+        self.sensors.update(pos=ego_state, vehicles=all_others)
+        self.detected_other = self.sensors.getVisibleVehicles()
 
         name_settings = dict(D=dict(do='1o', di='1i', ro='2o', ri='2i', uo='3o', ui='3i', lo='4o', li='4i'),
                              R=dict(do='2o', di='2i', ro='3o', ri='3i', uo='4o', ui='4i', lo='1o', li='1i'),
@@ -395,139 +400,59 @@ class CrossroadEnd2endAllRela(gym.Env):
 
         name_setting = name_settings[exit_]
 
-        ego_state = [self.ego_dynamics['x'], self.ego_dynamics['y'], self.ego_dynamics['v_x'], self.ego_dynamics['phi']]
-        all_vehicles = list(filter(lambda v: Para.CROSSROAD_SIZE/2 + 40 > v['x'] > -Para.CROSSROAD_SIZE/2 - 40 and
-                                             Para.CROSSROAD_SIZE/2 + 40 > v['y'] > -Para.CROSSROAD_SIZE/2 - 40, self.all_other))
-        self.sensors.update(pos=ego_state, vehicles=all_vehicles)
-        self.detected_vehicles = self.sensors.getVisibleVehicles()
-        self.surrounding_objects_numbers = len(self.detected_vehicles)
+        def filter_interested_other(vs):
+            veh_list = []
 
-        def filter_interested_other(vs, task):
-            dl, du, dr, rd, rl, ru, ur, ud, ul, lu, lr, ld = [], [], [], [], [], [], [], [], [], [], [], []
-            for v in vs:
-                v.update(exist=True)
-                route_list = v['route']
-                start = route_list[0]
-                end = route_list[1]
-                if start == name_setting['do'] and end == name_setting['li']:
-                    v.update(turn_rad=1 / (Para.CROSSROAD_SIZE / 2 + 0.5 * Para.LANE_WIDTH))
-                    dl.append(v)
-                elif start == name_setting['do'] and end == name_setting['ui']:
-                    v.update(turn_rad=0.)
-                    du.append(v)
-                elif start == name_setting['do'] and end == name_setting['ri']:
-                    v.update(turn_rad=-1 / (Para.CROSSROAD_SIZE / 2 - 2.5 * Para.LANE_WIDTH))
-                    dr.append(v)
-
-                elif start == name_setting['ro'] and end == name_setting['di']:
-                    v.update(turn_rad=1 / (Para.CROSSROAD_SIZE / 2 + 0.5 * Para.LANE_WIDTH))
-                    rd.append(v)
-                elif start == name_setting['ro'] and end == name_setting['li']:
-                    v.update(turn_rad=0.)
-                    rl.append(v)
-                elif start == name_setting['ro'] and end == name_setting['ui']:
-                    v.update(turn_rad=-1 / (Para.CROSSROAD_SIZE / 2 - 2.5 * Para.LANE_WIDTH))
-                    ru.append(v)
-
-                elif start == name_setting['uo'] and end == name_setting['ri']:
-                    v.update(turn_rad=1 / (Para.CROSSROAD_SIZE / 2 + 0.5 * Para.LANE_WIDTH))
-                    ur.append(v)
-                elif start == name_setting['uo'] and end == name_setting['di']:
-                    v.update(turn_rad=0.)
-                    ud.append(v)
-                elif start == name_setting['uo'] and end == name_setting['li']:
-                    v.update(turn_rad=-1 / (Para.CROSSROAD_SIZE / 2 - 2.5 * Para.LANE_WIDTH))
-                    ul.append(v)
-
-                elif start == name_setting['lo'] and end == name_setting['ui']:
-                    v.update(turn_rad=1 / (Para.CROSSROAD_SIZE / 2 + 0.5 * Para.LANE_WIDTH))
-                    lu.append(v)
-                elif start == name_setting['lo'] and end == name_setting['ri']:
-                    v.update(turn_rad=0.)
-                    lr.append(v)
-                elif start == name_setting['lo'] and end == name_setting['di']:
-                    v.update(turn_rad=-1 / (Para.CROSSROAD_SIZE / 2 - 2.5 * Para.LANE_WIDTH))
-                    ld.append(v)
-
-            # fetch veh in range
-            dl = list(filter(lambda v: v['x'] > -Para.CROSSROAD_SIZE/2-10 and v['y'] > ego_y-2, dl))  # interest of left straight
-            du = list(filter(lambda v: ego_y-2 < v['y'] < Para.CROSSROAD_SIZE/2+10 and v['x'] < ego_x+5, du))  # interest of left straight
-
-            dr = list(filter(lambda v: v['x'] < Para.CROSSROAD_SIZE/2+10 and v['y'] > ego_y, dr))  # interest of right
-
-            rd = rd  # not interest in case of traffic light
-            rl = rl  # not interest in case of traffic light
-            ru = list(filter(lambda v: v['x'] < Para.CROSSROAD_SIZE/2+10 and v['y'] < Para.CROSSROAD_SIZE/2+10, ru))  # interest of straight
-
-            if task == 'straight':
-                ur = list(filter(lambda v: v['x'] < ego_x + 7 and ego_y < v['y'] < Para.CROSSROAD_SIZE/2+10, ur))  # interest of straight
-            elif task == 'right':
-                ur = list(filter(lambda v: v['x'] < Para.CROSSROAD_SIZE/2+10 and v['y'] < Para.CROSSROAD_SIZE/2, ur))  # interest of right
-            ud = list(filter(lambda v: max(ego_y-8, -Para.CROSSROAD_SIZE/2) < v['y'] < Para.CROSSROAD_SIZE/2 and ego_x > v['x'] - 6, ud))  # interest of left
-            ul = list(filter(lambda v: -Para.CROSSROAD_SIZE/2-15 < v['x'] and v['y'] < Para.CROSSROAD_SIZE/2 + 20, ul))  # interest of left
-
-            lu = lu  # not interest in case of traffic light
-            lr = list(filter(lambda v: -Para.CROSSROAD_SIZE/2-10 < v['x'] < Para.CROSSROAD_SIZE/2+10, lr))  # interest of right
-            ld = ld  # not interest in case of traffic light
-
-            # sort
-            dl = sorted(dl, key=lambda v: (v['y'], -v['x']))
-            du = sorted(du, key=lambda v: v['y'])
-            dr = sorted(dr, key=lambda v: (v['y'], v['x']))
-
-            ru = sorted(ru, key=lambda v: (-v['x'], v['y']), reverse=True)
-
-            if task == 'straight':
-                ur = sorted(ur, key=lambda v: v['y'])
-            elif task == 'right':
-                ur = sorted(ur, key=lambda v: (-v['y'], v['x']), reverse=True)
-
-            ud = sorted(ud, key=lambda v: v['y'])
-            ul = sorted(ul, key=lambda v: (-v['y'], -v['x']), reverse=True)
-
-            lr = sorted(lr, key=lambda v: -v['x'])
-
-            # slice or fill to some number
-            def slice_or_fill(sorted_list, fill_value, num):
-                if len(sorted_list) >= num:
-                    return sorted_list[:num]
+            def cal_turn_rad(v):
+                if not(-Para.CROSSROAD_SIZE/2 < v['x'] < Para.CROSSROAD_SIZE/2 and -Para.CROSSROAD_SIZE/2 < v['y'] < Para.CROSSROAD_SIZE/2):
+                    turn_rad = 0.
                 else:
-                    while len(sorted_list) < num:
-                        sorted_list.append(fill_value)
-                    return sorted_list
-
-            mode2fillvalue = dict(
-                dl=dict(x=Para.LANE_WIDTH/2, y=-(Para.CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '4i'), turn_rad=0., exist=False),
-                du=dict(x=Para.LANE_WIDTH*1.5, y=-(Para.CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '3i'), turn_rad=0., exist=False),
-                dr=dict(x=Para.LANE_WIDTH*(Para.LANE_NUMBER-0.5), y=-(Para.CROSSROAD_SIZE/2+30), v=0, phi=90, w=2.5, l=5, route=('1o', '2i'), turn_rad=0., exist=False),
-                ru=dict(x=(Para.CROSSROAD_SIZE/2+15), y=Para.LANE_WIDTH*(Para.LANE_NUMBER-0.5), v=0, phi=180, w=2.5, l=5, route=('2o', '3i'), turn_rad=0., exist=False),
-                ur=dict(x=-Para.LANE_WIDTH/2, y=(Para.CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '2i'), turn_rad=0., exist=False),
-                ud=dict(x=-Para.LANE_WIDTH*1.5, y=(Para.CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '1i'), turn_rad=0., exist=False),
-                ul=dict(x=-Para.LANE_WIDTH*(Para.LANE_NUMBER-0.5), y=(Para.CROSSROAD_SIZE/2+20), v=0, phi=-90, w=2.5, l=5, route=('3o', '4i'), turn_rad=0., exist=False),
-                lr=dict(x=-(Para.CROSSROAD_SIZE/2+20), y=-Para.LANE_WIDTH*1.5, v=0, phi=0, w=2.5, l=5, route=('4o', '2i'), turn_rad=0., exist=False))
-
-            tmp_v = []
-            if self.state_mode == 'fix':
-                for mode, num in VEHICLE_MODE_DICT[task].items():
-                    tmp_v_mode = slice_or_fill(eval(mode), mode2fillvalue[mode], num)
-                    tmp_v.extend(tmp_v_mode)
-            elif self.state_mode == 'dyna':
-                for mode in VEHICLE_MODE_DICT[task].keys():
-                    tmp_v.extend(eval(mode))
-                while len(tmp_v) < self.veh_num:
-                    if self.training_task == 'left':
-                        tmp_v.append(mode2fillvalue['dl'])
-                    elif self.training_task == 'straight':
-                        tmp_v.append(mode2fillvalue['du'])
+                    start = v['route'][0]
+                    end = v['route'][1]
+                    if start == name_setting['do'] and end == name_setting['li']:
+                        turn_rad=1 / (Para.CROSSROAD_SIZE / 2 + 0.5 * Para.LANE_WIDTH)
+                    elif start == name_setting['do'] and end == name_setting['ui']:
+                        turn_rad=0.
+                    elif start == name_setting['do'] and end == name_setting['ri']:
+                        turn_rad=-1 / (Para.CROSSROAD_SIZE / 2 - 2.5 * Para.LANE_WIDTH)
+                    elif start == name_setting['ro'] and end == name_setting['di']:
+                        turn_rad=1 / (Para.CROSSROAD_SIZE / 2 + 0.5 * Para.LANE_WIDTH)
+                    elif start == name_setting['ro'] and end == name_setting['li']:
+                        turn_rad=0.
+                    elif start == name_setting['ro'] and end == name_setting['ui']:
+                        turn_rad=-1 / (Para.CROSSROAD_SIZE / 2 - 2.5 * Para.LANE_WIDTH)
+                    elif start == name_setting['uo'] and end == name_setting['ri']:
+                        turn_rad=1 / (Para.CROSSROAD_SIZE / 2 + 0.5 * Para.LANE_WIDTH)
+                    elif start == name_setting['uo'] and end == name_setting['di']:
+                        turn_rad=0.
+                    elif start == name_setting['uo'] and end == name_setting['li']:
+                        turn_rad=-1 / (Para.CROSSROAD_SIZE / 2 - 2.5 * Para.LANE_WIDTH)
+                    elif start == name_setting['lo'] and end == name_setting['ui']:
+                        turn_rad=1 / (Para.CROSSROAD_SIZE / 2 + 0.5 * Para.LANE_WIDTH)
+                    elif start == name_setting['lo'] and end == name_setting['ri']:
+                        turn_rad=0.
+                    elif start == name_setting['lo'] and end == name_setting['di']:
+                        turn_rad=-1 / (Para.CROSSROAD_SIZE / 2 - 2.5 * Para.LANE_WIDTH)
                     else:
-                        tmp_v.append(mode2fillvalue['dr'])
-                if len(tmp_v) > self.veh_num:
-                    tmp_v = sorted(tmp_v, key=lambda v: (sqrt((v['y'] - ego_y) ** 2 + (v['x'] - ego_x) ** 2), -v['x']))
-                    tmp_v = tmp_v[:self.veh_num]
+                        turn_rad = 0.
+                return turn_rad
 
-            return tmp_v
+            for v in vs:
+                v.update(turn_rad=cal_turn_rad(v), exist=True)
+                veh_list.append(v)
 
-        self.interested_other = filter_interested_other(self.detected_vehicles, self.training_task)
+            vir_veh = dict(type="car_1", x=Para.LANE_WIDTH*(Para.LANE_NUMBER-0.5), y=-(Para.CROSSROAD_SIZE/2+30), v=0,
+                           phi=90, w=2.5, l=5, route=('1o', '2i'), turn_rad=0., exist=False)
+
+            while len(veh_list) < self.veh_num:
+                veh_list.append(vir_veh)
+            if len(veh_list) > self.veh_num:
+                veh_list = sorted(veh_list, key=lambda v: (sqrt((v['y'] - ego_y) ** 2 + (v['x'] - ego_x) ** 2), -v['x']))
+                veh_list = veh_list[:self.veh_num]
+
+            return veh_list
+
+        self.interested_other = filter_interested_other(self.detected_other)
 
         for other in self.interested_other:
             other_x, other_y, other_v, other_phi, other_l, other_w, other_turn_rad, other_mask = \
@@ -536,26 +461,63 @@ class CrossroadEnd2endAllRela(gym.Env):
             other_vector.extend(
                 [other_x, other_y, other_v, other_phi, other_l, other_w] + [other_turn_rad])
             other_mask_vector.append(other_mask)
+
         return np.array(other_vector, dtype=np.float32), np.array(other_mask_vector, dtype=np.float32)
 
-    def _reset_init_state(self, light_color):
-        if self.training_task == 'left':
-            if light_color == 'green':
-                random_index = int(np.random.random() * 62) + 27   # [700, 2100]
+    def _construct_road_vector(self, ref_point):
+        road_edge_list = []
+        for col in range(ref_point.shape[1]):
+            road_edge_list.append(self._find_road_edge(ref_point[:, col]))
+        return np.concatenate(road_edge_list, axis=-1)
+
+    def _find_road_edge(self, ref_point):      # depend on road map
+        ref_x, ref_y, ref_phi, ref_v = ref_point
+        ref_phi = ref_phi * pi / 180
+
+        if Point(ref_x, ref_y).within(Polygon(Para.CROSSROAD_INTER)):  # inside intersection (not include edge points)
+            inter_polygon = Polygon(Para.CROSSROAD_INTER)
+        else:                                                          # outside intersection
+            edge_name, lane_name, lane_shape, lane_width, lane_length = self.traffic.get_road(ref_x, ref_y)
+            center_line = LineString(lane_shape)
+            left_road_edge = center_line.parallel_offset(distance=lane_width / 2, side='left', join_style=2,
+                                                         mitre_limit=50.)
+            right_road_edge = center_line.parallel_offset(distance=lane_width / 2, side='right', join_style=2,
+                                                          mitre_limit=50.)
+            point_list = list(left_road_edge.coords)
+            point_list.extend(list(right_road_edge.coords))
+            inter_polygon = Polygon(point_list)
+
+        slope_vert_line = np.arctan(-1 / np.tan(ref_phi))
+        delta_d = 100
+        right_point_x, right_point_y = ref_x + delta_d * cos(slope_vert_line), ref_y + delta_d * sin(slope_vert_line)
+        left_point_x, left_point_y = ref_x - delta_d * cos(slope_vert_line), ref_y - delta_d * sin(slope_vert_line)
+        while Point(right_point_x, right_point_y).within(inter_polygon) or Point(left_point_x, left_point_y).within(inter_polygon):
+            delta_d = 2.0 * delta_d
+            right_point_x, right_point_y = ref_x + delta_d * cos(slope_vert_line), ref_y + delta_d * sin(slope_vert_line)
+            left_point_x, left_point_y = ref_x - delta_d * cos(slope_vert_line), ref_y - delta_d * sin(slope_vert_line)
+
+        vert_line = LineString([(left_point_x, left_point_y), (right_point_x, right_point_y)])
+        intersets = np.array(vert_line.intersection(inter_polygon).coords, dtype=np.float32).reshape((-1, 1))
+        return intersets
+
+    def _reset_init_state(self, light_phase):
+        if light_phase == 'green':
+            if self.training_task == 'left':
+                random_index = int(np.random.random() * (1200 + 1400)) + 500
+            elif self.training_task == 'straight':
+                random_index = int(np.random.random() * (1400 + 1400)) + 500
             else:
-                random_index = int(np.random.random() * 10) + 27
-        elif self.training_task == 'straight':
-            if light_color == 'green':
-                random_index = int(np.random.random() * 77) + 27   # [700, 2400]
-            else:
-                random_index = int(np.random.random() * 10) + 27
+                random_index = int(np.random.random() * (700 + 900)) + 500
         else:
-            random_index = int(np.random.random() * 40) + 27       # [700, 1620]
+            random_index = int(np.random.random() * 200) + 100
 
         if self.mode == 'testing':
-            random_index = 30
+            random_index = int(np.random.random() * 200) + 500
+            init_ref_path = ReferencePath(self.training_task, LIGHT_PHASE_TO_GREEN_OR_RED[self.light_phase])
+        else:
+            init_ref_path = self.ref_path
 
-        x, y, phi, exp_v = self.ref_path.idx2point(random_index)
+        x, y, phi, exp_v = init_ref_path.idx2point(random_index)
         v = exp_v * np.random.random()
         routeID = TASK2ROUTEID[self.training_task]
         return dict(ego=dict(v_x=v,
@@ -564,6 +526,8 @@ class CrossroadEnd2endAllRela(gym.Env):
                              x=x,
                              y=y,
                              phi=phi,
+                             front_wheel=0,
+                             acc=0,
                              l=self.ego_l,
                              w=self.ego_w,
                              routeID=routeID,
@@ -717,7 +681,7 @@ class CrossroadEnd2endAllRela(gym.Env):
                 theta1 = a_ego + angle_bias - angle_range / 2
                 theta2 = a_ego + angle_bias + angle_range / 2
                 sensor = mpatch.Wedge([x_sensor, y_sensor], dist_range, theta1=theta1 * 180 / pi,
-                                       theta2=theta2 * 180 / pi, fc=color, alpha=0.2)
+                                      theta2=theta2 * 180 / pi, fc=color, alpha=0.2, zorder=1)
                 ax.add_patch(sensor)
 
             # plot cars
@@ -732,31 +696,29 @@ class CrossroadEnd2endAllRela(gym.Env):
                     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, 'black')
 
             # plot own car
-            obs_ego, obs_track, obs_future_point, obs_light, obs_task, obs_ref, obs_other = self._split_all(self.obs)
-            ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi = obs_ego
+            obs_ego, obs_track, obs_road, obs_light, obs_task, obs_other = self._split_all(self.obs)
+            ego_v_x, ego_v_y, ego_r, ego_x, ego_y, ego_phi, ego_wheel, ego_ax = obs_ego
             devi_longi, devi_lateral, devi_phi, devi_v = obs_track
 
             plot_phi_line(ego_x, ego_y, ego_phi, 'fuchsia')
             draw_rotate_rec(ego_x, ego_y, ego_phi, self.ego_l, self.ego_w, 'fuchsia')
 
-            ax.plot(self.ref_path.path[0], self.ref_path.path[1], color='g')
-            _, point = self.ref_path._find_closest_point(ego_x, ego_y)
-            path_x, path_y, path_phi, path_v = point[0], point[1], point[2], point[3]
-            plt.plot(path_x, path_y, 'g.')
+            plt.plot(self.future_n_point[0], self.future_n_point[1], 'g.')
+            plt.plot(self.future_n_edge[0], self.future_n_edge[1], '*', color='darkred')
+            plt.plot(self.future_n_edge[2], self.future_n_edge[3], 'x', color='slateblue')
+            path_x, path_y, path_phi, path_v = self.ref_point[0], self.ref_point[1], self.ref_point[2], self.ref_point[3]
+            ax.plot(path_x, path_y, '.', color='fuchsia', markersize=14)
 
-            # plot reference point
-            plt.plot(self.ref_path.path[0], self.ref_path.path[1], color='gray')
-            for i in range(int(len(obs_future_point) / self.per_path_info_dim)):
-                current_point = obs_future_point[i * self.per_path_info_dim : (i + 1) * self.per_path_info_dim]
-                plt.plot(current_point[0], current_point[1], 'm.')
+            for item in range(0, len(obs_road), 2):
+                ax.plot(obs_road[item], obs_road[item+1], 'o', color='red')
 
             # plot sensors
             draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
-                              angle_range=2 * pi, dist_range=35, color='thistle')
+                              angle_range=2 * pi, dist_range=70, color='thistle')
             draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
-                              angle_range=70 * pi / 180, dist_range=40, color="slategray")
+                              angle_range=70 * pi / 180, dist_range=80, color="slategray")
             draw_sensor_range(ego_x, ego_y, ego_phi * pi / 180, l_bias=self.ego_l / 2, w_bias=0, angle_bias=0,
-                              angle_range=90 * pi / 180, dist_range=30, color="slategray")
+                              angle_range=90 * pi / 180, dist_range=60, color="slategray")
 
             # plot vehicles from sensors
             # for veh in self.detected_vehicles:
@@ -780,14 +742,11 @@ class CrossroadEnd2endAllRela(gym.Env):
                 veh_phi = veh['phi']
                 veh_l = veh['l']
                 veh_w = veh['w']
-                task2color = {'left': 'b', 'straight': 'c', 'right': 'm'}
 
                 if is_in_plot_area(veh_x, veh_y):
                     plot_phi_line(veh_x, veh_y, veh_phi, 'black')
                     color = 'm'
                     draw_rotate_rec(veh_x, veh_y, veh_phi, veh_l, veh_w, color, linestyle=':')
-                if i in index_top_k_in_weights:
-                    plt.text(veh_x, veh_y, "{:.2f}".format(weights[i]), color='red', fontsize=15)
 
             # text
             text_x, text_y_start = -110, 60
@@ -802,18 +761,25 @@ class CrossroadEnd2endAllRela(gym.Env):
             plt.text(text_x, text_y_start - next(ge), r'ego_phi: ${:.2f}\degree$'.format(ego_phi))
             plt.text(text_x, text_y_start - next(ge), r'path_phi: ${:.2f}\degree$'.format(path_phi))
             plt.text(text_x, text_y_start - next(ge), r'devi_phi: ${:.2f}\degree$'.format(devi_phi))
+            plt.text(text_x, text_y_start - next(ge), ' ')
 
             plt.text(text_x, text_y_start - next(ge), 'v_x: {:.2f}m/s'.format(ego_v_x))
             plt.text(text_x, text_y_start - next(ge), 'exp_v: {:.2f}m/s'.format(path_v))
             plt.text(text_x, text_y_start - next(ge), 'v_y: {:.2f}m/s'.format(ego_v_y))
             plt.text(text_x, text_y_start - next(ge), 'yaw_rate: {:.2f}rad/s'.format(ego_r))
+            plt.text(text_x, text_y_start - next(ge), ' ')
+
+            plt.text(text_x, text_y_start - next(ge), r'front_wheel: ${:.2f}\degree$'.format(self.ego_dynamics['front_wheel']))
+            plt.text(text_x, text_y_start - next(ge), r'steer_wheel: ${:.2f}\degree$'.format(15 * self.ego_dynamics['front_wheel']))
 
             if self.action is not None:
                 steer, a_x = self.action[0], self.action[1]
-                plt.text(text_x, text_y_start - next(ge), r'steer: {:.2f}rad (${:.2f}\degree$)'.format(steer, steer * 180 / np.pi))
-                plt.text(text_x, text_y_start - next(ge), 'a_x: {:.2f}m/s^2'.format(a_x))
+                plt.text(text_x, text_y_start - next(ge),
+                         r'delta_wheel: {:.3f}rad (${:.3f}\degree$)'.format(steer, steer * 180 / np.pi))
+                plt.text(text_x, text_y_start - next(ge), ' ')
+                plt.text(text_x, text_y_start - next(ge), 'a_x: {:.2f}m/s^2'.format(self.ego_dynamics['acc']))
+                plt.text(text_x, text_y_start - next(ge), 'delta_a_x: {:.2f}m/s^2'.format(a_x))
 
-            plt.text(text_x, text_y_start - next(ge), 'path_index: {}'.format(self.ref_path.path_index))
             text_x, text_y_start = 80, 60
             ge = iter(range(0, 1000, 4))
 
@@ -823,7 +789,7 @@ class CrossroadEnd2endAllRela(gym.Env):
             # reward info
             if self.reward_info is not None:
                 for key, val in self.reward_info.items():
-                    plt.text(text_x, text_y_start - next(ge), '{}: {:.4f}'.format(key, val))
+                    plt.text(text_x, text_y_start - next(ge), 'rew_{}: {:.4f}'.format(key, val))
 
             # indicator for trajectory selection
             # text_x, text_y_start = -25, -65
@@ -836,7 +802,6 @@ class CrossroadEnd2endAllRela(gym.Env):
             #             plt.text(text_x, text_y_start-next(ge), 'track_error={:.4f}, collision_risk={:.4f}'.format(value[0], value[1]), fontsize=12, color=color[i], fontstyle='italic')
             plt.xlim(-(square_length / 2 + extension), square_length / 2 + extension)
             plt.ylim(-(square_length / 2 + extension), square_length / 2 + extension)
-            plt.show()
             plt.pause(0.001)
 
     def set_traj(self, trajectory):
@@ -845,8 +810,8 @@ class CrossroadEnd2endAllRela(gym.Env):
 
 
 def test_end2end():
-    import random
-    env = CrossroadEnd2endAllRela()
+    import tensorflow as tf
+    env = CrossroadEnd2end()
     env_model = EnvironmentModel()
     obs, all_info = env.reset()
     i = 0
@@ -863,10 +828,10 @@ def test_end2end():
             obses = np.tile(obses, (2, 1))
             # obses_ego[:, (-env.task_info_dim-env.light_info_dim)] = random.randint(0, 2), random.randint(0, 2)
             # obses_ego[:, (-env.task_info_dim)] = list(TASK_DICT.values())[random.randint(0, 2)], list(TASK_DICT.values())[random.randint(0, 2)]
-            env_model.reset(obses, [1, 9])
-            for i in range(5):
-                obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
-                veh2road4real, veh2line4real = env_model.rollout_out(np.tile(actions, (2, 1)))
+            # env_model.reset(obses, [1, 9])
+            # for i in range(5):
+            #     obses, rewards, punish_term_for_training, real_punish_term, veh2veh4real, \
+            #     veh2road4real, veh2line4real = env_model.rollout_out(np.tile(actions, (2, 1)))
                 # print(obses[:, env.ego_info_dim + env.track_info_dim: env.ego_info_dim+env.track_info_dim+env.light_info_dim])
             # print(env.training_task, obs[env.ego_info_dim + env.track_info_dim: env.ego_info_dim+env.track_info_dim+env.light_info_dim], env.light_phase)
             # print('task:', obs[env.ego_info_dim + env.track_info_dim + env.per_path_info_dim * env.num_future_data + env.light_info_dim])

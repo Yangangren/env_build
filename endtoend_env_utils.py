@@ -11,6 +11,7 @@ import math
 import os
 import numpy as np
 from collections import OrderedDict
+from shapely import geometry
 
 
 class Para:
@@ -19,13 +20,14 @@ class Para:
     LANE_WIDTH = 3.75
     LANE_NUMBER = 3
     CROSSROAD_SIZE = 50
+    CROSSROAD_INTER = [(-11.25, 25.00), (11.25, 25.00), (25.00, 11.25), (25.00, -11.25), (11.25, -25.00), (- 11.25, -25.00),
+                       (- 25.00, -11.25), (- 25.00, 11.25)]
     # DIM
-    EGO_ENCODING_DIM = 6
+    EGO_ENCODING_DIM = 8
     TRACK_ENCODING_DIM = 4
-    PER_PATH_INFO_DIM = 4
+    ROAD_ENCODING_DIM = 4
     LIGHT_ENCODING_DIM = 2
     TASK_ENCODING_DIM = 3
-    REF_ENCODING_DIM = 3
     PER_OTHER_INFO_DIM = 7
 
     # MAX NUM
@@ -38,35 +40,7 @@ class Para:
 LIGHT_PHASE_TO_GREEN_OR_RED = {0: 'green', 1: 'green', 2: 'green', 3:'green'}  # 0: green, 1: red
 TASK_ENCODING = dict(left=[1.0, 0.0, 0.0], straight=[0.0, 1.0, 0.0], right=[0.0, 0.0, 1.0])
 LIGHT_ENCODING = {0: [1.0, 0.0], 1: [1.0, 0.0], 2: [0.0, 1.0], 3: [0.0, 1.0]}
-REF_ENCODING = {0: [1.0, 0.0, 0.0], 1: [0.0, 1.0, 0.0], 2: [0.0, 0.0, 1.0]}
-REF_NUM = {'left': 3, 'right': 3, 'straight': 3}
-SUMOCFG_DIR = os.path.dirname(__file__) + "/sumo_files/cross.sumocfg"
-VEHICLE_MODE_DICT = dict(left=OrderedDict(dl=2, du=2, ud=2, ul=2),
-                         straight=OrderedDict(dl=2, du=2, ru=2, ur=2),
-                         right=OrderedDict(dr=2, du=2, ur=2, lr=2))
 
-
-def dict2flat(inp):
-    out = []
-    for key, val in inp.items():
-        out.extend([key] * val)
-    return out
-
-
-def dict2num(inp):
-    out = 0
-    for _, val in inp.items():
-        out += val
-    return out
-
-
-VEH_NUM = dict(left=dict2num(VEHICLE_MODE_DICT['left']),
-               straight=dict2num(VEHICLE_MODE_DICT['straight']),
-               right=dict2num(VEHICLE_MODE_DICT['right']))
-
-VEHICLE_MODE_LIST = dict(left=dict2flat(VEHICLE_MODE_DICT['left']),
-                         straight=dict2flat(VEHICLE_MODE_DICT['straight']),
-                         right=dict2flat(VEHICLE_MODE_DICT['right']))
 # Things related to lane number: static path generation (which further influences obs initialization),
 # observation formulation (especially other vehicles selection and number), rewards formulation
 # other vehicle prediction
@@ -128,13 +102,13 @@ def judge_feasible(orig_x, orig_y, task):  # map dependant
 
 
 def shift_coordination(orig_x, orig_y, coordi_shift_x, coordi_shift_y):
-    '''
+    """
     :param orig_x: original x
     :param orig_y: original y
     :param coordi_shift_x: coordi_shift_x along x axis
     :param coordi_shift_y: coordi_shift_y along y axis
     :return: shifted_x, shifted_y
-    '''
+    """
     shifted_x = orig_x - coordi_shift_x
     shifted_y = orig_y - coordi_shift_y
     return shifted_x, shifted_y
