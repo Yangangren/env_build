@@ -23,7 +23,7 @@ from endtoend import CrossroadEnd2end
 from endtoend_env_utils import rotate_coordination, CROSSROAD_SIZE, LANE_WIDTH, LANE_NUMBER, MODE2TASK
 from hierarchical_decision.multi_path_generator import MultiPathGenerator
 from utils.load_policy import LoadPolicy
-from utils.misc import TimerStat
+from utils.misc import TimerStat, image2video
 from utils.recorder import Recorder
 
 
@@ -407,6 +407,9 @@ def main():
     logdir = './results/{time}'.format(time=time_now)
     os.makedirs(logdir)
     hier_decision = HierarchicalDecision('left', 'experiment-2021-03-15-16-39-00', 180000, logdir)
+    # 'left', 'experiment-2021-03-15-16-39-00', 180000
+    # 'straight', 'experiment-2021-03-15-19-16-13', 175000
+    # 'right', 'experiment-2021-03-15-21-02-51', 195000
 
     for i in range(300):
         done = 0
@@ -523,6 +526,7 @@ def select_and_rename_snapshots_of_an_episode(logdir, epinum, num):
 
 if __name__ == '__main__':
     main()
+    # image2video('./results/forvideos/2021-03-28-17-30-47/episode6')
     # plot_static_path()
     # plot_and_save_ith_episode_data('./results/good/2021-03-15-23-56-21', 0)
     # select_and_rename_snapshots_of_an_episode('./results/good/2021-03-15-23-56-21', 0, 12)

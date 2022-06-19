@@ -37,17 +37,17 @@ class LoadPolicy(object):
         self.run_batch(init_obs[np.newaxis, :])
         self.obj_value_batch(init_obs[np.newaxis, :])
 
-    # @tf.function
-    # def run(self, obs):
-    #     processed_obs = self.preprocessor.np_process_obses(obs)
-    #     action, _ = self.policy.compute_action(processed_obs[np.newaxis, :])
-    #     return action[0]
-    #
-    # @tf.function
-    # def obj_value(self, obs):
-    #     processed_obs = self.preprocessor.np_process_obses(obs)
-    #     value = self.policy.compute_obj_v(processed_obs[np.newaxis, :])
-    #     return value
+    @tf.function
+    def run(self, obs):
+        processed_obs = self.preprocessor.np_process_obses(obs)
+        action, _ = self.policy.compute_action(processed_obs[np.newaxis, :])
+        return action[0]
+
+    @tf.function
+    def obj_value(self, obs):
+        processed_obs = self.preprocessor.np_process_obses(obs)
+        value = self.policy.compute_obj_v(processed_obs[np.newaxis, :])
+        return value
 
     @tf.function
     def run_batch(self, obses):
